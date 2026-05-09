@@ -134,13 +134,13 @@ function Nav({ urls }: { urls: Urls }) {
           </a>
           <a
             href={urls.appUrl}
-            className="group ml-1 inline-flex items-center gap-1.5 rounded-md bg-emerald-400 px-3.5 py-1.5 text-[12px] font-semibold tracking-tight text-[#04110b] transition-transform hover:-translate-y-px hover:bg-emerald-300"
+            className="group ml-2 inline-flex items-center gap-1.5 rounded-[4px] bg-white px-3 py-1.5 text-[12px] font-medium tracking-[-0.005em] text-[#0a0b0e] transition-colors hover:bg-white/92"
           >
             Launch app
             <ArrowRight
-              size={13}
-              strokeWidth={2.25}
-              className="transition-transform group-hover:translate-x-0.5"
+              size={12}
+              strokeWidth={2}
+              className="text-[#0a0b0e]/70 transition-transform group-hover:translate-x-0.5"
             />
           </a>
         </div>
