@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { AlertTriangle, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
 
 type Props = {
   title: string;
@@ -16,6 +16,13 @@ type Props = {
   theme: "light" | "dark";
 };
 
+/**
+ * Top bar for the console shell.
+ *
+ * Deliberately quiet. No glowing orbs or pill chromatics. Page title in
+ * serif-weighted sans, optional subtitle in small muted text, a tidy
+ * cluster of controls on the right.
+ */
 export default function Header({
   title,
   subtitle,
@@ -31,26 +38,26 @@ export default function Header({
   theme,
 }: Props) {
   const wrongChain = account && chainId !== undefined && chainId !== expectedChainId;
-  const shortAddr = account ? `${account.slice(0, 6)}…${account.slice(-4)}` : null;
+  const shortAddr = account ? `${account.slice(0, 6)}\u2009\u2009${account.slice(-4)}` : null;
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[var(--line)] bg-[var(--paper-translucent)] px-6 backdrop-blur-md">
-      {/* Left: title + subtitle */}
+    <header className="sticky top-0 z-20 flex h-[52px] items-center justify-between gap-6 border-b border-[var(--line)] bg-[var(--paper-translucent)] px-6 backdrop-blur-md">
+      {/* Title cluster */}
       <div className="min-w-0">
-        <h1 className="truncate text-[15px] font-semibold tracking-tight text-[var(--ink)]">
+        <h1 className="truncate text-[14px] font-semibold leading-tight tracking-[-0.01em] text-[var(--ink)]">
           {title}
         </h1>
         {subtitle && (
-          <p className="truncate text-xs leading-tight text-[var(--muted)]">
+          <p className="truncate text-[11.5px] leading-tight text-[var(--muted)]">
             {subtitle}
           </p>
         )}
       </div>
 
-      {/* Right: controls */}
-      <div className="flex items-center gap-1.5">
+      {/* Controls */}
+      <div className="flex items-center gap-1">
         <IconButton onClick={onOpenSettings} ariaLabel="Open settings">
-          <SettingsIcon size={16} strokeWidth={1.75} />
+          <SettingsIcon size={15} strokeWidth={1.6} />
         </IconButton>
 
         <IconButton
@@ -62,56 +69,59 @@ export default function Header({
               <motion.span
                 key="moon"
                 className="inline-flex"
-                initial={{ opacity: 0, rotate: -40 }}
+                initial={{ opacity: 0, rotate: -30 }}
                 animate={{ opacity: 1, rotate: 0 }}
-                exit={{ opacity: 0, rotate: 40 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                exit={{ opacity: 0, rotate: 30 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
               >
-                <Moon size={16} strokeWidth={1.75} />
+                <Moon size={15} strokeWidth={1.6} />
               </motion.span>
             ) : (
               <motion.span
                 key="sun"
                 className="inline-flex"
-                initial={{ opacity: 0, rotate: 40 }}
+                initial={{ opacity: 0, rotate: 30 }}
                 animate={{ opacity: 1, rotate: 0 }}
-                exit={{ opacity: 0, rotate: -40 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                exit={{ opacity: 0, rotate: -30 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
               >
-                <Sun size={16} strokeWidth={1.75} />
+                <Sun size={15} strokeWidth={1.6} />
               </motion.span>
             )}
           </AnimatePresence>
         </IconButton>
 
-        <span className="mx-1 h-5 w-px bg-[var(--line)]" aria-hidden="true" />
+        <span className="mx-1.5 h-4 w-px bg-[var(--line)]" aria-hidden="true" />
 
-        {/* Wallet pill */}
+        {/* Wallet state */}
         {!account ? (
           <button
             type="button"
             onClick={onConnect}
             disabled={isConnecting}
-            className="rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--focus)] hover:bg-[var(--panel-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] disabled:opacity-60"
+            className="rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-3 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] disabled:opacity-60"
           >
-            {isConnecting ? "Connecting…" : "Connect wallet"}
+            {isConnecting ? "Connecting\u2026" : "Connect wallet"}
           </button>
         ) : wrongChain ? (
           <button
             type="button"
             onClick={onSwitch}
             disabled={isConnecting}
-            className="rounded-full border border-[var(--red-text)]/40 bg-[var(--red-bg)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--red-text)] transition-colors hover:bg-[var(--red-text)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--red-text)]"
+            className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--yellow-text)]/30 bg-[var(--yellow-bg)] px-3 py-1.5 text-[11.5px] font-medium text-[var(--yellow-text)] transition-colors hover:border-[var(--yellow-text)]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--yellow-text)]"
           >
+            <AlertTriangle size={12} strokeWidth={1.75} />
             Switch to {expectedChainLabel}
           </button>
         ) : (
-          <div className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-3 py-1.5">
+          <div className="flex items-center gap-2 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-2.5 py-1.5">
             <span
-              className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
+              className="h-1.5 w-1.5 rounded-full bg-[var(--primary-bg)]"
               aria-hidden="true"
             />
-            <span className="font-mono text-[11px] text-[var(--ink)]">{shortAddr}</span>
+            <span className="font-mono text-[11px] leading-none text-[var(--ink)]">
+              {shortAddr}
+            </span>
           </div>
         )}
       </div>
@@ -133,7 +143,7 @@ function IconButton({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+      className="rounded-[var(--btn-radius)] p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
     >
       {children}
     </button>

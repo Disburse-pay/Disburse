@@ -1,8 +1,12 @@
 import { useMemo, useState } from "react";
-import { motion } from "motion/react";
 import { QrCode } from "lucide-react";
 import type { PaymentRequest, Receipt, PaymentStatus } from "../lib/payments";
-import { refreshDerivedStatus, shortAddress, encodeRequestPayload, isCrossChainPaymentRequest } from "../lib/payments";
+import {
+  encodeRequestPayload,
+  isCrossChainPaymentRequest,
+  refreshDerivedStatus,
+  shortAddress,
+} from "../lib/payments";
 import { formatInvoiceDate } from "../lib/invoice";
 
 type Props = {
@@ -12,7 +16,10 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-const STATUS_CONFIG: Record<PaymentStatus, { label: string; dot: string; text: string }> = {
+const STATUS_CONFIG: Record<
+  PaymentStatus,
+  { label: string; dot: string; text: string }
+> = {
   open:           { label: "Open",    dot: "bg-[var(--blue-text)]",   text: "text-[var(--blue-text)]" },
   paid:           { label: "Paid",    dot: "bg-[var(--green-text)]",  text: "text-[var(--green-text)]" },
   expired:        { label: "Expired", dot: "bg-[var(--muted)]",       text: "text-[var(--muted)]" },
@@ -29,7 +36,19 @@ const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = {
   failed: "Failed",
 };
 
-export default function TransactionsTable({ requests, receipts, now, onNavigate }: Props) {
+/**
+ * Ledger of recent payment requests.
+ *
+ * Designed to read like a statement: a quiet header row, a dense hairline
+ * grid, tabular numerals, monospace references. No row hover chrome beyond
+ * a soft background change.
+ */
+export default function TransactionsTable({
+  requests,
+  receipts,
+  now,
+  onNavigate,
+}: Props) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
 
   const displayRequests = useMemo(() => {
@@ -51,21 +70,26 @@ export default function TransactionsTable({ requests, receipts, now, onNavigate 
   }, [requests, now]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
+    <section className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
-        <div className="flex items-center gap-2.5">
-          <h3 className="text-[14px] font-semibold tracking-tight text-[var(--ink)]">
-            Recent activity
-          </h3>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-baseline gap-3">
+          <div>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+              Ledger
+            </p>
+            <h3 className="mt-0.5 text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+              Recent requests
+            </h3>
+          </div>
           {requests.length > 0 && (
-            <span className="rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 text-[10px] font-mono text-[var(--muted)]">
+            <span className="font-mono text-[10px] text-[var(--muted)]">
               {requests.length} {requests.length === 1 ? "record" : "records"}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] p-0.5">
           {FILTERS.map((f) => {
             const count = statusCounts[f] ?? 0;
             const active = filter === f;
@@ -76,85 +100,95 @@ export default function TransactionsTable({ requests, receipts, now, onNavigate 
                 onClick={() => setFilter(f)}
                 aria-pressed={active}
                 className={[
-                  "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
+                  "rounded-[3px] px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
                   active
-                    ? "bg-[var(--line-soft)] text-[var(--ink)]"
-                    : "text-[var(--muted)] hover:bg-[var(--line-soft)] hover:text-[var(--ink)]",
+                    ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
+                    : "text-[var(--muted)] hover:text-[var(--ink)]",
                 ].join(" ")}
               >
                 {FILTER_LABEL[f]}
                 {count > 0 && f !== "all" && (
-                  <span className="ml-1 text-[var(--muted)]">{count}</span>
+                  <span
+                    className={[
+                      "ml-1 font-mono text-[9.5px] tabular-nums",
+                      active ? "text-[var(--muted)]" : "text-[var(--muted-soft)]",
+                    ].join(" ")}
+                  >
+                    {count}
+                  </span>
                 )}
               </button>
             );
           })}
         </div>
-      </div>
+      </header>
 
-      {/* Table / Empty state */}
       {displayRequests.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--line-soft)]">
+              <tr className="border-b border-[var(--line)] bg-[var(--paper-2)]/50">
                 <Th>Status</Th>
                 <Th>Reference</Th>
                 <Th>Recipient</Th>
                 <Th>Route</Th>
                 <Th align="right">Amount</Th>
-                <Th align="right">Date</Th>
+                <Th align="right">Issued</Th>
               </tr>
             </thead>
             <tbody>
-              {displayRequests.map((r, index) => {
+              {displayRequests.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] ?? STATUS_CONFIG.open;
                 const receipt = receipts.find((rec) => rec.requestId === r.id);
-                void receipt; // (kept for future row-expanded receipt details)
+                void receipt;
                 return (
-                  <motion.tr
+                  <tr
                     key={r.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.22,
-                      delay: Math.min(index * 0.02, 0.18),
-                      ease: [0.16, 1, 0.3, 1],
-                    }}
-                    className="group cursor-pointer border-b border-[var(--line-soft)] transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/60"
-                    onClick={() => onNavigate(`/pay?r=${encodeRequestPayload(r)}`)}
+                    className="group cursor-pointer border-b border-[var(--line-soft)] transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/50"
+                    onClick={() =>
+                      onNavigate(`/pay?r=${encodeRequestPayload(r)}`)
+                    }
                   >
                     <Td>
                       <div className="flex items-center gap-2">
-                        <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} aria-hidden="true" />
-                        <span className={`text-xs font-medium ${cfg.text}`}>{cfg.label}</span>
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}
+                          aria-hidden="true"
+                        />
+                        <span className={`text-[11.5px] font-medium ${cfg.text}`}>
+                          {cfg.label}
+                        </span>
                       </div>
                     </Td>
                     <Td>
-                      <span className="text-[13px] font-medium text-[var(--ink)]">{r.label}</span>
+                      <span className="text-[12.5px] font-medium text-[var(--ink)]">
+                        {r.label}
+                      </span>
                     </Td>
                     <Td>
-                      <span className="font-mono text-xs text-[var(--muted)]">
+                      <span className="font-mono text-[11px] text-[var(--muted)]">
                         {shortAddress(r.recipient)}
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-xs text-[var(--muted)]">
+                      <span className="text-[11.5px] text-[var(--muted)]">
                         {isCrossChainPaymentRequest(r) ? "Cross-chain" : "Arc direct"}
                       </span>
                     </Td>
                     <Td align="right">
-                      <span className="text-[13px] font-medium text-[var(--ink)] tabular-nums">
+                      <span className="text-[12.5px] font-medium text-[var(--ink)] tabular-nums">
                         {r.amount}
                       </span>
-                      <span className="ml-1 text-xs text-[var(--muted)]">{r.token}</span>
+                      <span className="ml-1 font-mono text-[10px] text-[var(--muted)]">
+                        {r.token}
+                      </span>
                     </Td>
                     <Td align="right">
-                      <span className="text-xs text-[var(--muted)]">
+                      <span className="font-mono text-[11px] text-[var(--muted)]">
                         {formatInvoiceDate(r.invoiceDate)}
                       </span>
                     </Td>
-                  </motion.tr>
+                  </tr>
                 );
               })}
             </tbody>
@@ -163,7 +197,7 @@ export default function TransactionsTable({ requests, receipts, now, onNavigate 
       ) : (
         <EmptyState filter={filter} onCreate={() => onNavigate("/qr-payments")} />
       )}
-    </div>
+    </section>
   );
 }
 
@@ -177,7 +211,7 @@ function Th({
   return (
     <th
       className={[
-        "px-5 py-3 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]",
+        "px-5 py-2.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]",
         align === "right" ? "text-right" : "text-left",
       ].join(" ")}
     >
@@ -194,7 +228,12 @@ function Td({
   align?: "left" | "right";
 }) {
   return (
-    <td className={["px-5 py-3.5", align === "right" ? "text-right" : "text-left"].join(" ")}>
+    <td
+      className={[
+        "px-5 py-3",
+        align === "right" ? "text-right" : "text-left",
+      ].join(" ")}
+    >
       {children}
     </td>
   );
@@ -210,13 +249,13 @@ function EmptyState({
   const isFiltered = filter !== "all";
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]">
-        <QrCode size={20} strokeWidth={1.5} />
+      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]">
+        <QrCode size={18} strokeWidth={1.5} />
       </div>
       <p className="mb-1 text-[13px] font-medium text-[var(--ink)]">
         {isFiltered ? `No ${filter} requests` : "No requests yet"}
       </p>
-      <p className="mb-4 text-xs text-[var(--muted)]">
+      <p className="mb-4 max-w-[32ch] text-[11.5px] leading-relaxed text-[var(--muted)]">
         {isFiltered
           ? "Change the filter to see all records."
           : "Create a QR request to start collecting payments."}
@@ -225,7 +264,7 @@ function EmptyState({
         <button
           type="button"
           onClick={onCreate}
-          className="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+          className="rounded-[var(--btn-radius)] border border-[var(--line)] px-3 py-1.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
         >
           Create your first request
         </button>

@@ -617,7 +617,7 @@ function App() {
     localStorage.setItem(THEME_KEY, theme);
     document
       .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-      ?.setAttribute("content", theme === "dark" ? "#0c0e12" : "#f8f9fb");
+      ?.setAttribute("content", theme === "dark" ? "#0a0b0e" : "#f6f6f3");
   }, [theme]);
 
   useEffect(() => {
@@ -1629,7 +1629,7 @@ function App() {
         onNavigate={handleNavigate}
       />
 
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-[60px]" : "ml-60")}>
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-[56px]" : "ml-[236px]")}>
         <Header
           title={headerTitle}
           subtitle={headerSubtitle}
@@ -3474,9 +3474,9 @@ function DashboardPage({
   const progressPct = Math.round((completedSteps / onboardingSteps.length) * 100);
 
   return (
-    <div className="relative z-10 mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-5 pb-12 xl:grid-cols-12">
+    <div className="relative z-10 mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-4 pb-12 xl:grid-cols-12">
       {/* Main column */}
-      <div className="space-y-5 xl:col-span-8">
+      <div className="space-y-4 xl:col-span-8">
         <BalanceCard
           totalVolume={totalVolume.toFixed(2)}
           verifiedVolume={verifiedVolume.toFixed(2)}
@@ -3487,7 +3487,7 @@ function DashboardPage({
           onNavigate={onNavigate}
         />
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <MonthlyStats activityData={activityData} />
           <SystemStatusCard
             monthlyData={monthlyData}
@@ -3506,7 +3506,7 @@ function DashboardPage({
       </div>
 
       {/* Right rail */}
-      <aside className="space-y-5 xl:col-span-4">
+      <aside className="space-y-4 xl:col-span-4">
         <QuickActionsCard
           onNavigate={onNavigate}
           onExport={onExport}
@@ -3546,36 +3546,38 @@ function QuickActionsCard({
   hasData: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
-      <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-5 py-3.5">
-        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
-          Quick actions
-        </h3>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-          Shortcuts
-        </span>
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div>
+          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            Actions
+          </p>
+          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            Quick actions
+          </h3>
+        </div>
       </div>
       <div className="grid grid-cols-2">
         <QuickActionTile
           onClick={() => onNavigate("/qr-payments")}
-          icon={<QrCode size={16} strokeWidth={1.75} />}
+          icon={<QrCode size={15} strokeWidth={1.6} />}
           label="Create QR request"
           tone="accent"
         />
         <QuickActionTile
           onClick={() => onNavigate("/payments")}
-          icon={<Send size={16} strokeWidth={1.75} />}
+          icon={<Send size={15} strokeWidth={1.6} />}
           label="Direct send"
         />
         <QuickActionTile
           onClick={hasData ? onExport : () => onNavigate("/import-export")}
-          icon={<Download size={16} strokeWidth={1.75} />}
+          icon={<Download size={15} strokeWidth={1.6} />}
           label={hasData ? "Export ledger" : "Import ledger"}
         />
         <QuickActionTile
           href={faucetUrl}
           external
-          icon={<ExternalLink size={16} strokeWidth={1.75} />}
+          icon={<ExternalLink size={15} strokeWidth={1.6} />}
           label="USDC faucet"
         />
       </div>
@@ -3599,19 +3601,19 @@ function QuickActionTile({
   tone?: "accent";
 }) {
   const body = (
-    <div className="flex h-full items-center gap-3 px-4 py-3.5">
+    <div className="flex h-full items-center gap-3 px-4 py-3">
       <span
         className={cn(
-          "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border text-[var(--ink)]",
+          "inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[3px] border",
           tone === "accent"
-            ? "border-[var(--primary-bg)]/30 bg-[var(--panel-accent)] text-[var(--green-text)]"
+            ? "border-[var(--primary-bg)]/25 bg-[var(--panel-accent)] text-[var(--green-text)]"
             : "border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]"
         )}
       >
         {icon}
       </span>
-      <span className="flex-1 truncate text-[12.5px] font-medium text-[var(--ink)]">{label}</span>
-      <ArrowRightLeft size={12} strokeWidth={1.75} className="text-[var(--muted)]/0 transition-colors group-hover:text-[var(--muted)]" />
+      <span className="flex-1 truncate text-[12px] font-medium text-[var(--ink)]">{label}</span>
+      <ArrowRightLeft size={11} strokeWidth={1.6} className="text-[var(--muted)]/0 transition-colors group-hover:text-[var(--muted)]" />
     </div>
   );
   const className =
@@ -3648,17 +3650,22 @@ function GettingStartedCard({
 }) {
   const allDone = completed === total;
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
-      <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-5 py-3.5">
-        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
-          {allDone ? "You're all set" : "Getting started"}
-        </h3>
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div>
+          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            Onboarding
+          </p>
+          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            {allDone ? "All steps complete" : "Getting started"}
+          </h3>
+        </div>
         <span className="font-mono text-[10px] tabular-nums text-[var(--muted)]">
           {completed}/{total}
         </span>
       </div>
       {/* Progress bar */}
-      <div className="h-[3px] w-full bg-[var(--line-soft)]">
+      <div className="h-[2px] w-full bg-[var(--line-soft)]">
         <div
           className="h-full bg-[var(--primary-bg)] transition-all duration-500"
           style={{ width: `${progressPct}%` }}
@@ -3671,7 +3678,7 @@ function GettingStartedCard({
               href={step.href}
               target={step.href.startsWith("http") ? "_blank" : undefined}
               rel={step.href.startsWith("http") ? "noreferrer" : undefined}
-              className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-[var(--line-soft)]/50"
+              className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-[var(--line-soft)]/50"
             >
               <span
                 aria-hidden="true"
@@ -3679,7 +3686,7 @@ function GettingStartedCard({
                   "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
                   step.done
                     ? "border-[var(--primary-bg)] bg-[var(--primary-bg)]"
-                    : "border-[var(--line)] bg-transparent"
+                    : "border-[var(--line-strong)] bg-transparent"
                 )}
               >
                 {step.done && (
@@ -3690,13 +3697,13 @@ function GettingStartedCard({
               </span>
               <span
                 className={cn(
-                  "flex-1 text-[12.5px]",
+                  "flex-1 text-[12px]",
                   step.done ? "text-[var(--muted)] line-through decoration-[var(--line)]" : "text-[var(--ink)]"
                 )}
               >
                 {step.label}
               </span>
-              <ArrowRightLeft size={11} strokeWidth={1.75} className="text-[var(--muted)]" />
+              <ArrowRightLeft size={11} strokeWidth={1.6} className="text-[var(--muted)]" />
             </a>
           </li>
         ))}
@@ -3717,12 +3724,17 @@ function StatusDigestCard({
   rpcHealthy?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-[var(--paper)] p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
-          At a glance
-        </h3>
-        <span className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--muted)]">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div>
+          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            Status
+          </p>
+          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            At a glance
+          </h3>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
@@ -3732,7 +3744,7 @@ function StatusDigestCard({
           {rpcHealthy ? "Operational" : "Initializing"}
         </span>
       </div>
-      <div className="grid grid-cols-3 divide-x divide-[var(--line-soft)] overflow-hidden rounded-lg border border-[var(--line-soft)]">
+      <div className="grid grid-cols-3 divide-x divide-[var(--line-soft)]">
         <DigestCell label="Paid"    value={paidCount}    tone="accent" />
         <DigestCell label="Open"    value={openCount}    tone="info" />
         <DigestCell label="Expired" value={expiredCount} tone="muted" />
@@ -3757,8 +3769,8 @@ function DigestCell({
         ? "text-[var(--blue-text)]"
         : "text-[var(--muted)]";
   return (
-    <div className="p-3 text-center">
-      <p className="mb-1 text-[9px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+    <div className="px-3 py-4 text-center">
+      <p className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--muted)]">
         {label}
       </p>
       <p className={cn("text-[18px] font-semibold tabular-nums", toneClass)}>{value}</p>
@@ -3774,9 +3786,12 @@ function ResourcesCard() {
     { label: "Source on GitHub", href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
   ];
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
-      <div className="border-b border-[var(--line-soft)] px-5 py-3.5">
-        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+      <div className="border-b border-[var(--line)] px-5 py-3.5">
+        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+          Reference
+        </p>
+        <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
           Resources
         </h3>
       </div>
@@ -3789,12 +3804,12 @@ function ResourcesCard() {
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noreferrer" : undefined}
-                className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-3 transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/50"
+                className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/50"
               >
-                <Icon size={13} strokeWidth={1.75} className="text-[var(--muted)]" />
-                <span className="flex-1 text-[12.5px] text-[var(--ink)]">{link.label}</span>
+                <Icon size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
+                <span className="flex-1 text-[12px] text-[var(--ink)]">{link.label}</span>
                 <span className="font-mono text-[10px] text-[var(--muted)]">
-                  {link.external ? "↗" : "→"}
+                  {link.external ? "\u2197" : "\u2192"}
                 </span>
               </a>
             </li>
