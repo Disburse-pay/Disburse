@@ -2,22 +2,70 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0c0e12" />
-    <meta name="description" content="Disburse - Non-custodial payment console for Arc Testnet." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8f9fb" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
+
+    <!-- Primary metadata -->
+    <title>Disburse - Stablecoin invoices with verifiable receipts</title>
+    <meta
+      name="description"
+      content="Non-custodial stablecoin payment console. Issue a QR invoice, settle across Arc, Base Sepolia, or Monad, and export a verifiable receipt derived from onchain Transfer logs."
+    />
+    <meta name="author" content="Disburse" />
+    <meta name="keywords" content="stablecoin, USDC, EURC, invoice, payment, QR code, Arc Testnet, Polymer, cross-chain, VSR, UBL, e-invoicing, non-custodial" />
+    <link rel="canonical" href="https://disburse.online/" />
+
+    <!-- Icons -->
     <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/disburse-logo.png" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Disburse" />
+    <meta property="og:title" content="Disburse - Stablecoin invoices with verifiable receipts" />
+    <meta
+      property="og:description"
+      content="Issue a QR invoice. Settle across Arc, Base Sepolia, or Monad. Export a receipt signed from onchain data - not a spreadsheet."
+    />
+    <meta property="og:url" content="https://disburse.online/" />
+    <meta property="og:image" content="https://disburse.online/disburse-logo.png" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:site" content="@Disburs3" />
+    <meta name="twitter:title" content="Disburse - Stablecoin invoices with verifiable receipts" />
+    <meta
+      name="twitter:description"
+      content="Non-custodial stablecoin payments with receipts your auditor can open. Arc Testnet, Base Sepolia, Monad."
+    />
+    <meta name="twitter:image" content="https://disburse.online/disburse-logo.png" />
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <title>Disburse - Arc Testnet Payment Console</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Theme boot: restore persisted theme before paint to avoid a flash. -->
     <script>
       (() => {
-        const stored = localStorage.getItem("disburse.theme") ?? localStorage.getItem("arc-pay-desk.theme");
-        const theme = stored === "light" || stored === "dark" ? stored : "dark";
-        document.documentElement.dataset.theme = theme;
-        document
-          .querySelector('meta[name="theme-color"]')
-          ?.setAttribute("content", theme === "dark" ? "#0c0e12" : "#f8f9fb");
+        try {
+          const stored =
+            localStorage.getItem("disburse.theme") ??
+            localStorage.getItem("arc-pay-desk.theme");
+          const theme = stored === "light" || stored === "dark" ? stored : "dark";
+          document.documentElement.dataset.theme = theme;
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute("content", theme === "dark" ? "#050505" : "#f8f9fb");
+          }
+        } catch (e) {
+          // localStorage may be unavailable in sandboxed iframes; fall through.
+        }
       })();
     </script>
   </head>

@@ -103,7 +103,7 @@ export default function SettingsDialog({ open, onClose, theme, onToggleTheme }: 
             onChange={(value) => updateLanguage(value as LanguageCode)}
             options={languages.map(([code, meta]) => ({
               value: code,
-              label: `${meta.native} — ${meta.label}`,
+              label: `${meta.native} · ${meta.label}`,
             }))}
           />
         </Section>

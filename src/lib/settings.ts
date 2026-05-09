@@ -27,7 +27,7 @@ export const CURRENCY_META: Record<CurrencyCode, { symbol: string; locale: strin
 /** Format a USDC-denominated amount in the user's chosen display currency. */
 export function formatCurrency(amountUsd: number | string, currency: CurrencyCode): string {
   const value = typeof amountUsd === "string" ? Number(amountUsd) : amountUsd;
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "-";
   const meta = CURRENCY_META[currency] ?? CURRENCY_META.USD;
   const converted = value * meta.usdRate;
   try {
