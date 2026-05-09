@@ -14,10 +14,8 @@
   --color-red-400: #f87171;
 }
 
-.glass-morphism {
-  @apply bg-brand-surface border border-brand-border;
-}
-
+/* Legacy aliases (kept for existing callers; both resolve to the default surface). */
+.glass-morphism,
 .gradient-card {
   @apply bg-brand-surface border border-brand-border;
 }
@@ -116,10 +114,7 @@ html {
     color 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-html[data-tone="blue"]    { --tone-accent: #60a5fa; --primary-bg: #60a5fa; --focus: #60a5fa; --green-text: #60a5fa; --green-bg: rgba(96,165,250,0.1); }
-html[data-tone="amber"]   { --tone-accent: #f59e0b; --primary-bg: #f59e0b; --focus: #f59e0b; --green-text: #f59e0b; --green-bg: rgba(245,158,11,0.1); }
-html[data-tone="violet"]  { --tone-accent: #a78bfa; --primary-bg: #a78bfa; --focus: #a78bfa; --green-text: #a78bfa; --green-bg: rgba(167,139,250,0.1); }
-html[data-tone="rose"]    { --tone-accent: #f43f5e; --primary-bg: #f43f5e; --focus: #f43f5e; --green-text: #f43f5e; --green-bg: rgba(244,63,94,0.1); }
+/* Color tone switcher removed — emerald is the single product accent. */
 
 html::before,
 html::after {
@@ -2701,34 +2696,7 @@ html[data-theme="light"] .quick-card:hover:not(:disabled) {
   color: var(--muted);
 }
 
-/* Tone swatches in Settings */
-.tone-swatch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  background: var(--input-bg);
-  color: var(--ink);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 200ms ease;
-}
-.tone-swatch:hover {
-  border-color: var(--tone-accent);
-  background: var(--paper);
-}
-.tone-swatch.active {
-  border-color: var(--tone-accent);
-  box-shadow: 0 0 0 1px var(--tone-accent);
-}
-.tone-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: inline-block;
-}
+/* Tone swatch styles removed with color-tone switcher. */
 
 /* ============================================
    Compliance Export Actions

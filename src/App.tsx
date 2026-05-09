@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import Sidebar from "@/src/components/Sidebar";
 import Header from "@/src/components/Header";
+import SettingsDialog from "@/src/components/SettingsDialog";
 import BalanceCard from "@/src/components/BalanceCard";
 import TransactionsTable from "@/src/components/TransactionsTable";
 import MonthlyStats from "@/src/components/MonthlyStats";
-import AdjustmentsGraph from "@/src/components/AdjustmentsGraph";
+import SystemStatusCard from "@/src/components/SystemStatusCard";
 import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/SettlementTimeline";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
@@ -51,18 +52,10 @@ import {
   TOKENS
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
-import { I18nProvider, useI18n } from "./lib/i18n";
+import { I18nProvider } from "./lib/i18n";
 import {
   type AppSettings,
-  type ColorTone,
-  type LanguageCode,
-  COLOR_TONE_META,
-  CURRENCY_META,
-  LANGUAGE_META,
-  loadSettings,
-  saveSettings,
-  applyColorTone,
-  defaultSettings
+  loadSettings
 } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
 import {
@@ -170,7 +163,7 @@ type Notice = {
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
 type Theme = "light" | "dark";
-type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs" | "settings";
+type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs";
 type PayLifecycle =
   | "idle"
   | "preparing"
@@ -392,7 +385,8 @@ function getInitialPage(): Page {
     if (p === "/qr-payments") return "qr-payments";
     if (p === "/pay") return "pay";
     if (p === "/import-export") return "import-export";
-    if (p === "/settings") return "settings";
+    // /settings was a dedicated page; it is now a dialog that opens from the header.
+    // Keep the URL working by falling through to the dashboard — the dialog auto-opens (see App component).
     return "dashboard";
   }
   
@@ -542,11 +536,8 @@ function App() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
-  const [appSettings] = useState<AppSettings>(() => {
-    const s = loadSettings();
-    applyColorTone(s.colorTone);
-    return s;
-  });
+  const [appSettings] = useState<AppSettings>(() => loadSettings());
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const selectedRequest = useMemo(
     () => requests.find((request) => request.id === selectedId) ?? requests[0],
@@ -607,8 +598,24 @@ function App() {
     }
   }, []);
 
+  // Legacy: /settings is now a dialog, not a page. Open it and tidy the URL.
   useEffect(() => {
-    const titles: Record<Page, string> = { landing: "Disburse", dashboard: "Dashboard | Disburse", payments: "Payments | Disburse", "qr-payments": "QR Payments | Disburse", pay: "Pay | Disburse", "import-export": "Import / Export | Disburse", docs: "Documentation | Disburse", settings: "Settings | Disburse" };
+    if (page === "dashboard" && window.location.pathname === "/settings") {
+      setIsSettingsOpen(true);
+      window.history.replaceState(null, "", "/");
+    }
+  }, [page]);
+
+  useEffect(() => {
+    const titles: Record<Page, string> = {
+      landing: "Disburse — Settlement-grade stablecoin payments",
+      dashboard: "Overview · Disburse",
+      payments: "Direct send · Disburse",
+      "qr-payments": "QR requests · Disburse",
+      pay: "Pay request · Disburse",
+      "import-export": "Backup · Disburse",
+      docs: "Documentation · Disburse",
+    };
     document.title = titles[page] ?? "Disburse";
   }, [page]);
 
@@ -1556,27 +1563,30 @@ function App() {
     );
   }
 
-  const headerTitle = page === "dashboard" ? "Personal overview" :
-    page === "payments" ? "Payments" :
-    page === "qr-payments" ? "QR Payments" :
-    page === "pay" ? "Pay Request" :
-    page === "import-export" ? "Import / Export" :
-    page === "docs" ? "Documentation" :
-    page === "settings" ? "Settings" : "Dashboard";
+  const routeMeta: Record<Exclude<Page, "landing">, { title: string; subtitle: string }> = {
+    dashboard:       { title: "Overview",       subtitle: "Requests, receipts and network health at a glance." },
+    payments:        { title: "Direct send",    subtitle: "Pay a wallet address directly on Arc Testnet." },
+    "qr-payments":   { title: "QR requests",    subtitle: "Create a QR invoice for someone else to scan and pay." },
+    pay:             { title: "Pay request",    subtitle: "Review and settle a QR payment request." },
+    "import-export": { title: "Import · Export", subtitle: "Back up or restore your requests and receipts." },
+    docs:            { title: "Documentation",  subtitle: "How Disburse settles, verifies, and exports payments." },
+  };
+  const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as Exclude<Page, "landing">] ?? routeMeta.dashboard;
 
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-    <div className="flex min-h-screen bg-brand-dark overflow-x-hidden relative">
+    <div className="flex min-h-screen bg-[var(--canvas)] text-[var(--ink)] overflow-x-hidden relative">
       <Sidebar
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         page={page}
         onNavigate={handleNavigate}
       />
-      
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-64")}>
+
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-60")}>
         <Header
           title={headerTitle}
+          subtitle={headerSubtitle}
           account={account}
           chainId={chainId}
           expectedChainId={commonShellProps.expectedChainId}
@@ -1585,7 +1595,15 @@ function App() {
           onConnect={handleConnectWallet}
           onSwitch={commonShellProps.onSwitch}
           onToggleTheme={handleThemeToggle}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           theme={theme}
+        />
+
+        <SettingsDialog
+          open={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          theme={theme}
+          onToggleTheme={handleThemeToggle}
         />
         
         <div className="flex-1 p-6 overflow-y-auto relative">
@@ -1708,9 +1726,6 @@ function App() {
               onExport={handleExport}
               onImport={handleImport}
             />
-          )}
-          {page === "settings" && (
-            <SettingsPage />
           )}
         </div>
       </main>
@@ -3268,7 +3283,7 @@ function DashboardPage({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <MonthlyStats activityData={activityData} />
-          <AdjustmentsGraph
+          <SystemStatusCard
             monthlyData={monthlyData}
             rpcStatusLabel={rpcStatusLabel}
             rpcBlockLabel={rpcBlockLabel}
@@ -3372,102 +3387,6 @@ function RiskCheckPanel({ request, account, wrongChain, isExpired, requests }: {
         </div>
       ))}
     </div>
-  );
-}
-
-function SettingsPage() {
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const { t, setLang, setCurrency } = useI18n();
-
-  function updateLanguage(lang: LanguageCode) {
-    const mappedCurrency = LANGUAGE_META[lang].currency;
-    const next: AppSettings = { ...settings, language: lang, currency: mappedCurrency };
-    setSettings(next);
-    saveSettings(next);
-    setLang(lang);
-    setCurrency(mappedCurrency);
-  }
-
-  function updateTone(tone: ColorTone) {
-    const next: AppSettings = { ...settings, colorTone: tone };
-    setSettings(next);
-    saveSettings(next);
-    applyColorTone(tone);
-  }
-
-  function updateCurrency(currency: string) {
-    const next: AppSettings = { ...settings, currency: currency as AppSettings["currency"] };
-    setSettings(next);
-    saveSettings(next);
-    setCurrency(next.currency);
-  }
-
-  const languages = Object.entries(LANGUAGE_META) as [LanguageCode, typeof LANGUAGE_META["en"]][];
-  const tones = Object.entries(COLOR_TONE_META) as [ColorTone, typeof COLOR_TONE_META["emerald"]][];
-  const currencies = languages.map(([, meta]) => ({ code: meta.currency, label: `${meta.currency} — ${CURRENCY_META[meta.currency].label} (${CURRENCY_META[meta.currency].symbol})` }));
-
-  return (
-    <>
-      <RouteHero eyebrow={t("settings")} title="Configure console preferences." />
-
-      <section className="workbench" aria-labelledby="settings-heading">
-        <header className="section-header">
-          <h2 id="settings-heading">{t("settings")}</h2>
-        </header>
-
-        <div className="desk-grid single-flow-grid">
-          <section className="desk-pane" aria-labelledby="appearance-heading">
-            <PaneTitle id="appearance-heading" label="Appearance" />
-            <div className="form-stack">
-              <Field label={t("colorTone")}>
-                <div className="field-grid">
-                  {tones.map(([tone, meta]) => (
-                    <button
-                      key={tone}
-                      type="button"
-                      onClick={() => updateTone(tone)}
-                      className={`tone-swatch ${settings.colorTone === tone ? "active" : ""}`}
-                      style={{ borderColor: meta.hex }}
-                      title={meta.label}
-                    >
-                      <span className="tone-dot" style={{ backgroundColor: meta.hex }} />
-                      <span className="tone-label">{meta.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </Field>
-            </div>
-          </section>
-
-          <section className="desk-pane" aria-labelledby="region-heading">
-            <PaneTitle id="region-heading" label="Region & Language" />
-            <div className="form-stack">
-              <Field label={t("language")}>
-                <select
-                  value={settings.language}
-                  onChange={(e) => updateLanguage(e.target.value as LanguageCode)}
-                >
-                  {languages.map(([code, meta]) => (
-                    <option key={code} value={code}>{meta.native} — {meta.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label={t("currency")}>
-                <select
-                  value={settings.currency}
-                  onChange={(e) => updateCurrency(e.target.value)}
-                >
-                  {currencies.map((c) => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          </section>
-        </div>
-      </section>
-    </>
   );
 }
 
