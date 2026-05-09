@@ -1,5 +1,5 @@
 /**
- * Attestation Engine — Verifiable Settlement Receipts (VSR)
+ * Attestation Engine. Verifiable Settlement Receipts (VSR)
  *
  * Creates structured, verifiable attestation records for settled payments.
  * When EAS (Ethereum Attestation Service) is available on Arc or Base Sepolia,
@@ -40,7 +40,7 @@ export type SettlementAttestation = {
   easUrl?: string;
 };
 
-// EAS Schema Registry UID (Base Sepolia — registered for Disburse)
+// EAS Schema Registry UID (Base Sepolia. registered for Disburse)
 export const EAS_SCHEMA_UID =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 export const EAS_BASE_SEPOLIA_URL = "https://base-sepolia.easscan.org";

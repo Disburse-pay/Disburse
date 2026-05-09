@@ -1,5 +1,5 @@
 /**
- * Compliance Module — Settlement Proofs, UBL Invoices, Receipt Fingerprints
+ * Compliance Module. Settlement Proofs, UBL Invoices, Receipt Fingerprints
  *
  * Bridges the gap between onchain payment data and real-world accounting requirements.
  * Produces structured exports that satisfy tax reporting, auditing, and regulatory needs.
@@ -58,7 +58,7 @@ export type SettlementProof = {
 
 /**
  * Generate a structured settlement proof from a verified payment.
- * This is the primary compliance export — a machine-readable JSON document
+ * This is the primary compliance export. a machine-readable JSON document
  * that proves a specific invoice was paid and verified onchain.
  */
 export function generateSettlementProof(

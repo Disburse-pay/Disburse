@@ -2786,7 +2786,7 @@ function DocsTopNav({
 function DocsPage() {
   const [activeSlug, setActiveSlug] = useState<string>(() => slugify(docsSections[0]?.title ?? ""));
 
-  // Scrollspy — highlights the TOC entry for the section nearest the top.
+  // Scrollspy. highlights the TOC entry for the section nearest the top.
   useEffect(() => {
     const slugs = docsSections.map((s) => slugify(s.title));
     const observer = new IntersectionObserver(
