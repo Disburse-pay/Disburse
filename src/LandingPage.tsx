@@ -8,6 +8,7 @@ import {
   FileText,
   Globe2,
   Layers,
+  Lock,
   QrCode,
   ReceiptText,
   ShieldCheck,
@@ -80,12 +81,16 @@ export default function LandingPage() {
 
       <Nav urls={urls} />
       <Hero urls={urls} reduceMotion={reduceMotion} />
+      <TrustStrip />
       <ConsolePreview />
+      <ProblemStatement />
       <Principles />
       <Pipeline />
       <Compliance />
+      <MetricsStrip />
       <CrossChain />
       <UseCases />
+      <Differentiation />
       <FAQ />
       <FinalCta urls={urls} />
       <Footer />
@@ -153,6 +158,47 @@ function Nav({ urls }: { urls: Urls }) {
 }
 
 /* ============================================================
+ * Trust strip — ecosystem the project builds on
+ * ========================================================== */
+
+function TrustStrip() {
+  const ref = useReveal<HTMLDivElement>();
+  const rails: { label: string; sub: string }[] = [
+    { label: "USDC", sub: "Stablecoin" },
+    { label: "EURC", sub: "Euro stable" },
+    { label: "Arc", sub: "Settlement" },
+    { label: "Base", sub: "Source chain" },
+    { label: "Monad", sub: "Source chain" },
+    { label: "Polymer", sub: "Proof relay" },
+  ];
+  return (
+    <section className="border-b border-white/[0.06] bg-[#060607]">
+      <div
+        ref={ref}
+        className="reveal mx-auto flex max-w-[1280px] flex-col items-start gap-6 px-6 py-8 md:flex-row md:items-center md:justify-between md:px-10"
+      >
+        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/35">
+          Powered by the USDC ecosystem
+        </p>
+        <ul className="flex flex-wrap items-center gap-x-7 gap-y-3">
+          {rails.map((r) => (
+            <li
+              key={r.label}
+              className="flex items-baseline gap-2 text-[13px] text-white/70 transition-colors hover:text-white"
+            >
+              <span className="font-semibold tracking-tight text-white/90">{r.label}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
+                {r.sub}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
  * Hero
  * ========================================================== */
 
@@ -168,14 +214,23 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 grain" />
 
       <div className="relative mx-auto max-w-[1280px] px-6 md:px-10">
-        <motion.p
+        <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={reduceMotion ? { duration: 0 } : { duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="mb-8 inline-flex items-center gap-2 border-l border-white/25 pl-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/55"
+          className="mb-8 inline-flex items-center gap-2.5 rounded-full border border-white/[0.08] bg-white/[0.02] py-1 pl-1.5 pr-3 font-mono text-[11px] text-white/60 backdrop-blur-sm"
         >
-          Verifiable Settlement Protocol
-        </motion.p>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+            Live
+          </span>
+          <span className="uppercase tracking-[0.22em] text-white/45">Testnet MVP</span>
+          <span className="text-white/20">/</span>
+          <span className="uppercase tracking-[0.22em] text-white/45">Built on Arc</span>
+        </motion.div>
 
         <motion.h1
           initial={{ opacity: 0, y: 14 }}
@@ -185,15 +240,21 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               ? { duration: 0 }
               : { duration: 0.65, ease: [0.16, 1, 0.3, 1], delay: 0.05 }
           }
-          className="max-w-[16ch] text-[clamp(2.5rem,6.5vw,5.75rem)] font-semibold leading-[1.02] tracking-[-0.035em]"
+          className="max-w-[18ch] text-[clamp(2.5rem,6.5vw,5.75rem)] font-semibold leading-[0.98] tracking-[-0.038em]"
         >
-          Stablecoin invoices,
+          The receipt layer
           <br />
-          <span className="bg-gradient-to-r from-white via-white/80 to-white/40 bg-clip-text text-transparent">
-            settled and receipted
+          <span className="bg-gradient-to-r from-white via-white/85 to-white/40 bg-clip-text text-transparent">
+            for stablecoin
           </span>
           <br />
-          on chain.
+          <span className="inline-flex items-baseline gap-3">
+            payments.
+            <span
+              aria-hidden="true"
+              className="hidden h-2 w-2 translate-y-[-0.9em] rounded-full bg-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.7)] md:inline-block"
+            />
+          </span>
         </motion.h1>
 
         <motion.p
@@ -204,11 +265,12 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               ? { duration: 0 }
               : { duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.12 }
           }
-          className="mt-8 max-w-xl text-[16px] leading-relaxed text-white/60"
+          className="mt-8 max-w-xl text-[17px] leading-[1.55] text-white/60"
         >
-          Issue a QR request. The payer settles from any supported chain. Disburse
-          writes a verifiable receipt, signed from raw chain data, that you can
-          hand to your accountant or auditor.
+          Issue a QR request. The payer settles from any supported chain in USDC.
+          Disburse writes a{" "}
+          <span className="text-white/85">cryptographically verifiable receipt</span>{" "}
+          — the document your accountant, auditor, and tax office can actually file.
         </motion.p>
 
         <motion.div
@@ -243,6 +305,12 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               className="text-white/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
             />
           </a>
+          <span className="ml-1 hidden items-center gap-1.5 font-mono text-[11px] text-white/35 sm:inline-flex">
+            <Lock size={11} strokeWidth={1.75} />
+            No signup
+            <span className="text-white/20">/</span>
+            No custody
+          </span>
         </motion.div>
 
         {/* Supported rails footnote - no live status pill */}
@@ -397,6 +465,77 @@ function ConsolePreview() {
 
         {/* Bottom fade */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-10 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#050505]" />
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
+ * Problem statement
+ * ========================================================== */
+
+function ProblemStatement() {
+  const ref = useReveal<HTMLDivElement>();
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div
+        ref={ref}
+        className="reveal mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-28"
+      >
+        <div className="grid grid-cols-1 gap-12 md:grid-cols-12">
+          <div className="md:col-span-5">
+            <p className="mb-5 font-mono text-[11px] uppercase tracking-[0.22em] text-white/40">
+              The problem
+            </p>
+            <h2 className="text-[clamp(1.75rem,4vw,3rem)] font-semibold leading-[1.05] tracking-[-0.022em]">
+              A transaction hash
+              <br />
+              <span className="text-white/45">is not a receipt.</span>
+            </h2>
+          </div>
+          <div className="space-y-6 md:col-span-7">
+            <p className="text-[17px] leading-[1.65] text-white/65">
+              Stablecoin volume is approaching{" "}
+              <span className="text-white">trillions</span> annually. Yet the
+              accounting infrastructure around it is stuck at{" "}
+              <span className="text-white/85">
+                "here is a block explorer link"
+              </span>{" "}
+              — which no auditor, tax office, or enterprise AP system will
+              accept as evidence that an invoice was paid.
+            </p>
+            <p className="text-[15px] leading-[1.65] text-white/50">
+              Freelancers export spreadsheets by hand. DAOs reconcile from
+              Discord screenshots. Enterprises pay accountants to re-derive
+              what already exists onchain. Every settlement happens twice —
+              once on the chain, once in a shadow ledger.
+            </p>
+            <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.06] sm:grid-cols-3">
+              {[
+                { k: "Today", v: "Transaction hash", note: "Untrustworthy, easily misread" },
+                { k: "Stopgap", v: "Screenshot + PDF", note: "Unverifiable, manually produced" },
+                { k: "Disburse", v: "Signed VSR", note: "Re-derivable from onchain data" },
+              ].map((cell, i) => (
+                <div key={cell.k} className="bg-[#050505] p-5">
+                  <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+                    {cell.k}
+                  </p>
+                  <p
+                    className={[
+                      "mb-1.5 text-[14px] font-semibold tracking-tight",
+                      i === 2 ? "text-emerald-300" : "text-white/85",
+                    ].join(" ")}
+                  >
+                    {cell.v}
+                  </p>
+                  <p className="text-[12px] leading-relaxed text-white/45">
+                    {cell.note}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -614,6 +753,36 @@ function ComplianceCard({
 }
 
 /* ============================================================
+ * Metrics strip — numeric proof of surface area
+ * ========================================================== */
+
+function MetricsStrip() {
+  const metrics = [
+    { k: "Chains live", v: "3", s: "Arc · Base · Monad" },
+    { k: "Receipt formats", v: "3", s: "VSR · UBL 2.1 · PDF" },
+    { k: "Custody footprint", v: "0", s: "Wallet-signed, non-custodial" },
+    { k: "Settlement target", v: "<15s", s: "Arc direct transfer" },
+  ];
+  return (
+    <section className="border-y border-white/[0.06] bg-[#060607]">
+      <div className="mx-auto grid max-w-[1280px] grid-cols-2 gap-px bg-white/[0.05] md:grid-cols-4">
+        {metrics.map((m) => (
+          <div key={m.k} className="bg-[#060607] px-6 py-10 md:px-8 md:py-12">
+            <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
+              {m.k}
+            </p>
+            <p className="mb-2 text-[clamp(2rem,3.5vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
+              {m.v}
+            </p>
+            <p className="text-[12px] leading-relaxed text-white/45">{m.s}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
  * Cross-chain
  * ========================================================== */
 
@@ -741,6 +910,122 @@ function UseCaseCard({
 }
 
 /* ============================================================
+ * Differentiation table — Disburse vs. the alternatives
+ * ========================================================== */
+
+function Differentiation() {
+  const ref = useReveal<HTMLDivElement>();
+  const rows: {
+    feature: string;
+    explorer: string | boolean;
+    card: string | boolean;
+    stripe: string | boolean;
+    disburse: string | boolean;
+  }[] = [
+    { feature: "Non-custodial",               explorer: true,  card: false, stripe: false, disburse: true },
+    { feature: "Accepts any chain / wallet",  explorer: true,  card: false, stripe: false, disburse: true },
+    { feature: "Exact-amount invoice match",  explorer: false, card: false, stripe: true,  disburse: true },
+    { feature: "Auditor-ready receipt",       explorer: false, card: true,  stripe: true,  disburse: true },
+    { feature: "Re-derivable from chain",     explorer: false, card: false, stripe: false, disburse: true },
+    { feature: "UBL 2.1 e-invoice export",    explorer: false, card: false, stripe: false, disburse: true },
+    { feature: "No signup, no KYC gate",      explorer: true,  card: false, stripe: false, disburse: true },
+  ];
+
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div ref={ref} className="reveal mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-28">
+        <SectionHeader
+          eyebrow="Comparison"
+          title="The category Disburse completes."
+          lede="Block explorers prove a payment happened. Stripe gives you a receipt, but only for fiat rails. Disburse is the first tool that does both, for stablecoins, without custody."
+        />
+
+        <div className="mt-14 overflow-hidden rounded-xl border border-white/[0.08] bg-[#070708]">
+          <div className="hidden grid-cols-[1.4fr_repeat(4,1fr)] border-b border-white/[0.06] bg-white/[0.015] md:grid">
+            <div className="px-5 py-3.5 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+              Capability
+            </div>
+            {["Block explorer", "Card payment", "Stripe", "Disburse"].map((h, i) => (
+              <div
+                key={h}
+                className={[
+                  "px-5 py-3.5 text-center font-mono text-[10px] uppercase tracking-[0.18em]",
+                  i === 3 ? "text-emerald-300" : "text-white/40",
+                ].join(" ")}
+              >
+                {h}
+              </div>
+            ))}
+          </div>
+
+          {rows.map((row, i) => (
+            <div
+              key={row.feature}
+              className={[
+                "grid grid-cols-2 gap-2 border-b border-white/[0.04] px-5 py-4 md:grid-cols-[1.4fr_repeat(4,1fr)] md:gap-0 md:px-0 md:py-0",
+                i === rows.length - 1 ? "border-b-0" : "",
+              ].join(" ")}
+            >
+              <div className="col-span-2 text-[13px] font-medium text-white/85 md:col-span-1 md:px-5 md:py-4">
+                {row.feature}
+              </div>
+              <Cell v={row.explorer} label="Explorer" />
+              <Cell v={row.card} label="Card" />
+              <Cell v={row.stripe} label="Stripe" />
+              <Cell v={row.disburse} label="Disburse" highlight />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Cell({
+  v,
+  label,
+  highlight = false,
+}: {
+  v: string | boolean;
+  label: string;
+  highlight?: boolean;
+}) {
+  const isBool = typeof v === "boolean";
+  return (
+    <div
+      className={[
+        "flex items-center justify-between gap-3 md:justify-center md:px-5 md:py-4",
+        highlight ? "md:bg-emerald-400/[0.04]" : "",
+      ].join(" ")}
+    >
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/30 md:hidden">
+        {label}
+      </span>
+      {isBool ? (
+        v ? (
+          <CheckCircle2
+            size={16}
+            strokeWidth={1.75}
+            className={highlight ? "text-emerald-400" : "text-white/75"}
+          />
+        ) : (
+          <span className="text-[13px] text-white/20">—</span>
+        )
+      ) : (
+        <span
+          className={[
+            "text-[12px] tracking-tight",
+            highlight ? "text-emerald-300" : "text-white/70",
+          ].join(" ")}
+        >
+          {v}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
  * FAQ
  * ========================================================== */
 
@@ -831,14 +1116,20 @@ function FinalCta({ urls }: { urls: Urls }) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_50%,rgba(52,211,153,0.08),transparent_70%)]"
         />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-bg opacity-40" />
         <div className="relative mx-auto max-w-2xl text-center">
-          <h2 className="text-[clamp(2rem,4.75vw,3.5rem)] font-semibold leading-[1.05] tracking-[-0.025em]">
+          <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-white/45">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Testnet — production launching 2026
+          </p>
+          <h2 className="text-[clamp(2rem,4.75vw,3.5rem)] font-semibold leading-[1.05] tracking-[-0.028em]">
             Test a payment end-to-end
             <span className="block text-white/40">in less than a minute.</span>
           </h2>
-          <p className="mt-6 text-[15px] text-white/55">
-            Connect a wallet, grab testnet USDC from the Arc faucet, and walk the
-            full request, confirmation, and receipt flow. No signup, no waitlist.
+          <p className="mx-auto mt-6 max-w-lg text-[15px] leading-relaxed text-white/55">
+            Connect a wallet, grab testnet USDC from the Circle faucet, and walk
+            the full request, confirmation, and receipt flow. No signup. No
+            waitlist. No custody.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <a
@@ -856,6 +1147,9 @@ function FinalCta({ urls }: { urls: Urls }) {
               <ArrowUpRight size={14} strokeWidth={1.75} className="text-white/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </a>
           </div>
+          <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.22em] text-white/30">
+            Built for the USDC ecosystem
+          </p>
         </div>
       </div>
     </section>
@@ -868,21 +1162,91 @@ function FinalCta({ urls }: { urls: Urls }) {
 
 function Footer() {
   return (
-    <footer className="mx-auto flex max-w-[1280px] flex-col items-start justify-between gap-4 px-6 py-10 text-[11px] text-white/30 md:flex-row md:items-center md:px-10">
-      <div className="flex items-center gap-2">
-        <img src="/favicon.png" alt="" className="h-4 w-4 opacity-40" aria-hidden="true" />
-        <span>Disburse / Non-custodial stablecoin payments</span>
+    <footer className="border-t border-white/[0.06] bg-[#060607]">
+      <div className="mx-auto flex max-w-[1280px] flex-col gap-8 px-6 py-12 md:flex-row md:items-start md:justify-between md:px-10">
+        <div className="max-w-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <img src="/favicon.png" alt="" className="h-5 w-5" aria-hidden="true" />
+            <span className="text-[13px] font-semibold tracking-tight text-white">
+              Disburse
+            </span>
+          </div>
+          <p className="text-[12px] leading-relaxed text-white/45">
+            A non-custodial receipt layer for stablecoin payments. Built for
+            freelancers, DAOs, and teams that need settlement they can audit.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-12 md:grid-cols-3 md:gap-16">
+          <FooterColumn
+            title="Product"
+            items={[
+              { label: "Console", href: "https://app.disburse.online" },
+              { label: "Documentation", href: "https://docs.disburse.online" },
+              { label: "Pay link", href: "https://app.disburse.online/pay" },
+            ]}
+          />
+          <FooterColumn
+            title="Ecosystem"
+            items={[
+              { label: "USDC", href: "https://www.circle.com/usdc" },
+              { label: "Arc", href: "https://www.circle.com/arc" },
+              { label: "Polymer", href: "https://www.polymerlabs.org" },
+            ]}
+          />
+          <FooterColumn
+            title="Follow"
+            items={[
+              { label: "GitHub", href: "https://github.com/Disburse-pay" },
+              { label: "X / Twitter", href: "https://x.com/Disburs3" },
+            ]}
+          />
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <a href="https://x.com/Disburs3" target="_blank" rel="noreferrer" className="transition-colors hover:text-white/70">
-          @Disburs3
-        </a>
-        <a href="https://github.com/Disburse-pay" target="_blank" rel="noreferrer" className="transition-colors hover:text-white/70">
-          GitHub
-        </a>
-        <span>&copy; 2026</span>
+      <div className="border-t border-white/[0.04]">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-start justify-between gap-3 px-6 py-5 text-[11px] text-white/30 md:flex-row md:items-center md:px-10">
+          <span className="font-mono uppercase tracking-[0.18em]">
+            Disburse · Verifiable settlement · 2026
+          </span>
+          <span className="font-mono uppercase tracking-[0.18em]">
+            Testnet — do not use in production
+          </span>
+        </div>
       </div>
     </footer>
+  );
+}
+
+function FooterColumn({
+  title,
+  items,
+}: {
+  title: string;
+  items: { label: string; href: string }[];
+}) {
+  return (
+    <div>
+      <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
+        {title}
+      </p>
+      <ul className="space-y-2.5">
+        {items.map((item) => (
+          <li key={item.label}>
+            <a
+              href={item.href}
+              target={item.href.startsWith("http") ? "_blank" : undefined}
+              rel={item.href.startsWith("http") ? "noreferrer" : undefined}
+              className="inline-flex items-center gap-1.5 text-[13px] text-white/65 transition-colors hover:text-white"
+            >
+              {item.label}
+              {item.href.startsWith("http") && (
+                <ArrowUpRight size={11} strokeWidth={1.75} className="text-white/30" />
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

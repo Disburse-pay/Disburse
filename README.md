@@ -1,32 +1,61 @@
+<div align="center">
+
+<img src="public/disburse-logo.png" alt="Disburse" width="96" />
+
 # Disburse
 
-Disburse is a client-side Arc Testnet payment console for wallet-signed stablecoin transfers.
+**The receipt layer for stablecoin payments.**
 
-It supports two current flows:
+Issue a QR request. The payer settles from any supported chain in USDC. Disburse writes a cryptographically verifiable receipt — the document your accountant, auditor, and tax office can actually file.
 
-- **Payments**: send USDC or EURC directly from the connected wallet to a recipient address.
-- **QR Payments**: create a USDC request to an Arc Testnet recipient, share it as a QR code, let the payer choose Arc Testnet, Base Sepolia, or Monad Testnet as the source, and generate a PDF invoice after settlement.
+[App](https://app.disburse.online) · [Docs](https://docs.disburse.online) · [X / Twitter](https://x.com/Disburs3) · [GitHub](https://github.com/Disburse-pay)
 
+</div>
+
+---
+
+## The problem
+
+Stablecoin volume is approaching trillions annually. Yet the accounting infrastructure around it is stuck at _"here is a block explorer link"_ — which no auditor, tax office, or enterprise AP system will accept as evidence that an invoice was paid.
+
+Freelancers export spreadsheets by hand. DAOs reconcile from Discord screenshots. Enterprises pay accountants to re-derive what already exists onchain. Every settlement happens twice — once on the chain, once in a shadow ledger.
+
+**Disburse closes that gap.** A transaction hash becomes a signed, structured, auditor-ready receipt that can be independently re-derived from raw chain data.
+
+## What Disburse does
+
+| Step | What happens |
+| --- | --- |
+| **1. Request** | Requester generates a QR payload with recipient, token, amount, label, invoice date, and expiry. |
+| **2. Pay** | Payer scans the QR, picks a source chain (Arc, Base, Monad), and signs a standard ERC-20 transfer. No signup. |
+| **3. Settle** | On Arc the transfer is direct. On Base and Monad, Polymer proves the source escrow event and a relayer submits `settle(proof)` to the Arc settlement contract. |
+| **4. Verify** | Disburse matches the exact token contract, recipient, and amount against the onchain Transfer log. No fuzzy matches auto-settle. |
+| **5. Receipt** | A Verifiable Settlement Receipt (VSR) is produced. Export as JSON proof, UBL 2.1 XML, or PDF. |
+
+## Why it matters for the USDC ecosystem
+
+- **Non-custodial.** Disburse never holds a private key, never touches a balance, never gates withdrawal. The wallet is the authority.
+- **Any-chain in, USDC-settled.** Cross-chain payers see a single invoice, pay from their home chain, and the recipient sees USDC on Arc.
+- **Compliance-first exports.** UBL 2.1 slots into existing EU e-invoicing pipelines. PDFs go to finance inboxes. JSON proofs are fingerprinted with SHA-256 so third parties can re-verify independently.
+- **Built on Arc.** The settlement contract lives on Arc, aligning the product with Circle's economic OS for the internet.
 
 ## Stack
 
-- Vite
-- React 19
-- TypeScript
+- Vite + React 19 + TypeScript
+- viem for wallet / RPC / contract calls
 - Supabase Realtime for cross-device QR payment status updates
-- viem for wallet/RPC/contract calls
+- Polymer Prove API for testnet cross-chain event proofs
 - qrcode for QR image generation
 - pdf-lib for local invoice PDFs
-- Polymer Prove API for testnet cross-chain event proofs
 - Vitest for unit tests
 
 ## Scripts
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
 npm run typecheck
-npm test
+npm test           # Vitest (57 tests across client, server, onchain)
 npm run build
 ```
 
@@ -36,7 +65,9 @@ Serve documentation from `docs.disburse.online` on the same Vercel project. The 
 
 For Supabase-backed QR realtime and API routes, run the app through Vercel locally or deploy it to Vercel so `/api/*` functions are available. Plain Vite dev still supports the previous local-only QR fallback.
 
-Required realtime environment variables:
+## Environment
+
+### Realtime
 
 ```bash
 VITE_SUPABASE_URL=
@@ -47,7 +78,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 Apply `supabase/migrations/202604300001_qr_realtime.sql` to create the payment request, receipt, and realtime event tables before enabling the production realtime flow.
 Apply `supabase/migrations/202604300002_crosschain_qr_payments.sql` to add Arc-settlement columns and the proving/settling realtime event types.
 
-Required Arc-settlement QR environment variables:
+### Arc-settlement QR (cross-chain)
 
 ```bash
 POLYMER_TESTNET_API_KEY=
@@ -68,16 +99,16 @@ MONAD_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
 MONAD_QR_PAYMENT_SOURCE=
 ```
 
-Contract deployment helper:
+### Contract deployment helper
 
 ```bash
 npm run deploy:qr-contracts -- --compile-only
 npm run deploy:qr-contracts -- --add-monad-source
 ```
 
-The Monad migration helper reads `QR_DEPLOYER_PRIVATE_KEY`, `ARC_QR_PAYMENT_SETTLEMENT`, Monad USDC/source settings, the old MegaETH source address if overridden, and optional RPC overrides from local env files or the process environment. It deploys only the Monad `QrPaymentSource`, configures the existing Arc settlement contract, disables the old MegaETH source authorization, writes deployment metadata to `deployments/`, and writes public contract addresses to `.env.qr-contracts.generated`. Use `npm run deploy:qr-contracts -- --full` only when intentionally deploying a fresh Arc/Base/Monad contract set.
+The Monad migration helper reads `QR_DEPLOYER_PRIVATE_KEY`, `ARC_QR_PAYMENT_SETTLEMENT`, Monad USDC / source settings, the old MegaETH source address if overridden, and optional RPC overrides from local env files or the process environment. It deploys only the Monad `QrPaymentSource`, configures the existing Arc settlement contract, disables the old MegaETH source authorization, writes deployment metadata to `deployments/`, and writes public contract addresses to `.env.qr-contracts.generated`. Use `npm run deploy:qr-contracts -- --full` only when intentionally deploying a fresh Arc / Base / Monad contract set.
 
-Current testnet deployment:
+### Current testnet deployment
 
 - Arc settlement contract: `0x8c535227ed2b2963a3c1176510bc59e7a7fef07d`
 - Base Sepolia source contract: `0x8c535227ed2b2963a3c1176510bc59e7a7fef07d`
@@ -91,14 +122,15 @@ Existing Arc/Base deployment metadata is recorded in `deployments/qr-contracts-1
 
 ## Routes
 
-- `/payments`: direct wallet transfer flow.
-- `/qr-payments`: create, preview, export, import, and manage QR payment requests.
-- `/pay?r=<payload>`: payer page opened from a QR code.
-- `docs.disburse.online`: project documentation for the current build.
+- `/` — Landing page.
+- `/payments` — direct wallet transfer flow.
+- `/qr-payments` — create, preview, export, import, and manage QR payment requests.
+- `/pay?r=<payload>` — payer page opened from a QR code.
+- `docs.disburse.online` — project documentation for the current build.
 
-## Network And Assets
+## Network and assets
 
-Disburse is pinned to Arc Testnet.
+Disburse is pinned to Arc Testnet as the settlement chain.
 
 - Chain ID: `5042002`
 - Explorer: `https://testnet.arcscan.app`
@@ -119,7 +151,7 @@ QR payment source choices currently target:
 
 QR Payments are USDC-only and always settle on Arc Testnet. Arc source payments use the existing Arc ERC-20 transfer path. Base Sepolia and Monad source payments use a configured 6-decimal ERC-20 source token, `QrPaymentSource` escrow, Polymer proof, and a prefunded Arc `QrPaymentSettlement` contract. Polymer proves the source escrow event; it does not supply liquidity by itself. Monad payers need Monad Testnet `MON` for gas and Monad Testnet USDC from Circle's faucet.
 
-## Wallet Flow
+## Wallet flow
 
 The app expects an injected EIP-1193 wallet.
 
@@ -132,7 +164,7 @@ The app expects an injected EIP-1193 wallet.
 
 The app never receives private keys and does not custody funds.
 
-## QR Payment Requests
+## QR payment requests
 
 A QR code contains a `/pay` URL with a base64url JSON payload in the `r` query parameter.
 
@@ -183,7 +215,7 @@ When Supabase is configured, QR requests are also written through Vercel API fun
 
 For Base Sepolia and Monad sources, `/api/qr-confirmations` reads the source-chain `QrPaymentInitiated` log, requests a Polymer proof, submits `settle(proof)` to the Arc settlement contract from the configured backend relayer, and stores the Arc settlement receipt. Realtime event types include `submitted`, `proving`, `settling`, `paid`, `failed`, and `expired`.
 
-## Local Data
+## Local data
 
 QR requests and receipts are stored in browser localStorage:
 
@@ -215,19 +247,33 @@ Status rules:
 
 Receipts contain request id, transaction hash, payer, recipient, token, amount, block number, confirmation time, and Arcscan URL.
 
-## Invoices
+## Receipts and invoices
 
-After successful verification, Disburse can generate a local PDF invoice with:
+A successful verification produces three export formats, all derived from the same underlying onchain fact:
 
-- request id
-- label and note
-- invoice date
-- amount and token
-- recipient and payer
-- transaction hash
-- block number
-- confirmation time
-- Arcscan link
-- Arc Testnet chain id
+| Format | Audience | Contents |
+| --- | --- | --- |
+| **VSR (JSON)** | Auditors, third-party verifiers | Structured settlement record with a SHA-256 fingerprint. Re-derivable from the transaction hash without Disburse. |
+| **UBL 2.1 (XML)** | EU e-invoicing pipelines | Machine-readable invoice compatible with existing public sector and enterprise AP systems. |
+| **PDF** | Humans, finance inboxes | Clean one-page receipt with amount, parties, tx hash, and Arcscan link. |
 
 Invoice files are generated in the browser. They are not uploaded or emailed by the app.
+
+## Roadmap
+
+The testnet MVP covers end-to-end payment, verification, and receipt export. What comes next:
+
+- **Mainnet launch on Arc** once Arc mainnet is available.
+- **More source chains** — additional Polymer-supported chains as routes expand.
+- **Recurring invoices and retainers** using Permit2 for scheduled pulls.
+- **Team accounts** — multi-recipient workspaces without custody.
+- **Webhook + API** — push paid-state events into QuickBooks, Xero, Notion, and Zapier.
+- **Attestation marketplace** — attach external attestations (KYC, business registry, sanctions screening) to a VSR.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE) if present, otherwise all rights reserved pending license selection.
+
+---
+
+<sub>Disburse is an independent project built on the USDC ecosystem. Not affiliated with Circle Internet Financial.</sub>

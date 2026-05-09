@@ -45,7 +45,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
     <nav
       className={cn(
         "fixed left-0 top-0 z-30 flex h-[100dvh] flex-col border-r border-[var(--line)] bg-[var(--paper)] transition-[width] duration-300",
-        isCollapsed ? "w-20" : "w-60",
+        isCollapsed ? "w-[60px]" : "w-60",
       )}
       aria-label="Primary"
     >
@@ -63,8 +63,13 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
         >
           <img src="/favicon.png" alt="" className="h-5 w-5" aria-hidden="true" />
           {!isCollapsed && (
-            <span className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
-              Disburse
+            <span className="flex items-baseline gap-2">
+              <span className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
+                Disburse
+              </span>
+              <span className="rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                Testnet
+              </span>
             </span>
           )}
         </a>
@@ -72,6 +77,11 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
 
       {/* Navigation items */}
       <div className="flex-1 overflow-y-auto py-3">
+        {!isCollapsed && (
+          <p className="mb-2 px-5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-[var(--muted)]/70">
+            Workspace
+          </p>
+        )}
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =

@@ -23,29 +23,29 @@ export default function MonthlyStats({ activityData }: Props) {
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-[var(--line)] bg-[var(--paper)] p-5">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <div>
-          <h4 className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+          <h4 className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
             Last 7 days
           </h4>
-          <p className="text-lg font-semibold text-[var(--ink)] tabular-nums">
+          <p className="text-[17px] font-semibold text-[var(--ink)] tabular-nums">
             {totalCount}
-            <span className="ml-1.5 text-xs font-normal text-[var(--muted)]">
+            <span className="ml-1.5 text-[11px] font-normal text-[var(--muted)]">
               {totalCount === 1 ? "request" : "requests"}
             </span>
           </p>
         </div>
         <div className="text-right">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+          <p className="mb-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
             Volume
           </p>
-          <p className="text-sm font-medium tabular-nums text-[var(--green-text)]">
+          <p className="text-[12.5px] font-medium tabular-nums text-[var(--green-text)]">
             {totalVolume.toFixed(2)}
           </p>
         </div>
       </div>
 
-      <div className="min-h-[140px] flex-1">
+      <div className="min-h-[120px] flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={activityData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
             <defs>

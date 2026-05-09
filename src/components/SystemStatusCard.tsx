@@ -33,7 +33,7 @@ export default function SystemStatusCard({
     <div className="flex h-full flex-col rounded-xl border border-[var(--line)] bg-[var(--paper)] p-5">
       {/* System Status */}
       <div className="mb-4">
-        <h4 className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+        <h4 className="mb-3 text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
           System status
         </h4>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -49,8 +49,8 @@ export default function SystemStatusCard({
       </div>
 
       {/* Monthly chart */}
-      <div className="mt-2 min-h-[96px] flex-1">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+      <div className="mt-1 min-h-[88px] flex-1">
+        <p className="mb-2 text-[9.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
           6-month volume
         </p>
         <ResponsiveContainer width="100%" height="100%">
@@ -102,8 +102,8 @@ function StatusRow({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-[11px] text-[var(--muted)]">{label}</span>
-      <span className="flex items-center gap-1.5 text-[11px] text-[var(--ink)]">
+      <span className="text-[10.5px] text-[var(--muted)]">{label}</span>
+      <span className="flex items-center gap-1.5 text-[10.5px] text-[var(--ink)]">
         {healthy !== undefined && (
           <span
             className={`h-1.5 w-1.5 rounded-full ${
