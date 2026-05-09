@@ -1,11 +1,9 @@
 export type LanguageCode = "en" | "de" | "id" | "ng" | "hi" | "zh";
 export type CurrencyCode = "USD" | "EUR" | "IDR" | "NGN" | "INR" | "CNY";
-export type ColorTone = "emerald" | "blue" | "amber" | "violet" | "rose";
 
 export interface AppSettings {
   language: LanguageCode;
   currency: CurrencyCode;
-  colorTone: ColorTone;
 }
 
 export const LANGUAGE_META: Record<LanguageCode, { label: string; native: string; currency: CurrencyCode }> = {
@@ -48,20 +46,11 @@ export function getCurrencySymbol(currency: CurrencyCode): string {
   return CURRENCY_META[currency]?.symbol ?? "$";
 }
 
-export const COLOR_TONE_META: Record<ColorTone, { label: string; hex: string }> = {
-  emerald: { label: "Emerald", hex: "#34d399" },
-  blue: { label: "Blue", hex: "#60a5fa" },
-  amber: { label: "Amber", hex: "#f59e0b" },
-  violet: { label: "Violet", hex: "#a78bfa" },
-  rose: { label: "Rose", hex: "#f43f5e" },
-};
-
 const SETTINGS_KEY = "disburse.settings";
 
 export const defaultSettings: AppSettings = {
   language: "en",
   currency: "USD",
-  colorTone: "emerald",
 };
 
 export function loadSettings(): AppSettings {
@@ -72,7 +61,6 @@ export function loadSettings(): AppSettings {
     return {
       language: parsed.language ?? defaultSettings.language,
       currency: parsed.currency ?? defaultSettings.currency,
-      colorTone: parsed.colorTone ?? defaultSettings.colorTone,
     };
   } catch {
     return defaultSettings;
@@ -81,8 +69,4 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-}
-
-export function applyColorTone(tone: ColorTone): void {
-  document.documentElement.dataset.tone = tone;
 }

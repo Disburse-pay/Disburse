@@ -1,6 +1,6 @@
 import {
-  AreaChart,
   Area,
+  AreaChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,61 +22,74 @@ export default function MonthlyStats({ activityData }: Props) {
   const totalVolume = activityData.reduce((s, d) => s + d.volume, 0);
 
   return (
-    <div className="border border-brand-border bg-brand-surface/30 backdrop-blur-sm p-5 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex h-full flex-col rounded-xl border border-[var(--line)] bg-[var(--paper)] p-5">
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h4 className="text-[10px] font-mono uppercase tracking-widest text-muted mb-1">
-            7-Day Activity
+          <h4 className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+            Last 7 days
           </h4>
-          <p className="text-lg font-semibold text-white tabular-nums">
-            {totalCount} <span className="text-xs text-muted font-normal">requests</span>
+          <p className="text-lg font-semibold text-[var(--ink)] tabular-nums">
+            {totalCount}
+            <span className="ml-1.5 text-xs font-normal text-[var(--muted)]">
+              {totalCount === 1 ? "request" : "requests"}
+            </span>
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-1">Volume</p>
-          <p className="text-sm font-medium text-emerald-400 tabular-nums">{totalVolume.toFixed(2)}</p>
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+            Volume
+          </p>
+          <p className="text-sm font-medium tabular-nums text-[var(--green-text)]">
+            {totalVolume.toFixed(2)}
+          </p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-[140px]">
+      <div className="min-h-[140px] flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={activityData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                <stop offset="0%" stopColor="var(--primary-bg)" stopOpacity={0.22} />
+                <stop offset="100%" stopColor="var(--primary-bg)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <XAxis
               dataKey="name"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#555", fontSize: 10, fontFamily: "monospace" }}
+              tick={{ fill: "var(--muted)", fontSize: 10 }}
               dy={8}
             />
             <YAxis hide />
             <Tooltip
               contentStyle={{
-                background: "#111",
-                border: "1px solid #222",
-                borderRadius: "0",
+                background: "var(--paper)",
+                border: "1px solid var(--line)",
+                borderRadius: "6px",
                 fontSize: "11px",
-                fontFamily: "monospace",
-                padding: "8px 12px",
+                padding: "8px 10px",
+                color: "var(--ink)",
+                boxShadow: "0 8px 24px -12px rgba(0,0,0,0.4)",
               }}
-              labelStyle={{ color: "#888", fontSize: "10px", marginBottom: "4px" }}
-              itemStyle={{ color: "#eaeaea", padding: 0 }}
-              cursor={{ stroke: "#333", strokeWidth: 1 }}
+              labelStyle={{ color: "var(--muted)", fontSize: "10px", marginBottom: "4px" }}
+              itemStyle={{ color: "var(--ink)", padding: 0 }}
+              cursor={{ stroke: "var(--line)", strokeWidth: 1 }}
             />
             <Area
               type="monotone"
               dataKey="volume"
-              stroke="#10b981"
-              strokeWidth={1.5}
+              stroke="var(--primary-bg)"
+              strokeWidth={1.75}
               fill="url(#activityGradient)"
               name="Volume (USDC)"
               dot={false}
-              activeDot={{ r: 3, fill: "#10b981", stroke: "#050505", strokeWidth: 2 }}
+              activeDot={{
+                r: 3,
+                fill: "var(--primary-bg)",
+                stroke: "var(--paper)",
+                strokeWidth: 2,
+              }}
             />
           </AreaChart>
         </ResponsiveContainer>

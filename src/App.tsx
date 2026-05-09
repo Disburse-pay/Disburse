@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import Sidebar from "@/src/components/Sidebar";
 import Header from "@/src/components/Header";
+import SettingsDialog from "@/src/components/SettingsDialog";
 import BalanceCard from "@/src/components/BalanceCard";
 import TransactionsTable from "@/src/components/TransactionsTable";
 import MonthlyStats from "@/src/components/MonthlyStats";
-import AdjustmentsGraph from "@/src/components/AdjustmentsGraph";
+import SystemStatusCard from "@/src/components/SystemStatusCard";
 import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/SettlementTimeline";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
@@ -51,18 +52,10 @@ import {
   TOKENS
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
-import { I18nProvider, useI18n } from "./lib/i18n";
+import { I18nProvider } from "./lib/i18n";
 import {
   type AppSettings,
-  type ColorTone,
-  type LanguageCode,
-  COLOR_TONE_META,
-  CURRENCY_META,
-  LANGUAGE_META,
-  loadSettings,
-  saveSettings,
-  applyColorTone,
-  defaultSettings
+  loadSettings
 } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
 import {
@@ -170,7 +163,7 @@ type Notice = {
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
 type Theme = "light" | "dark";
-type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs" | "settings";
+type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs";
 type PayLifecycle =
   | "idle"
   | "preparing"
@@ -392,7 +385,8 @@ function getInitialPage(): Page {
     if (p === "/qr-payments") return "qr-payments";
     if (p === "/pay") return "pay";
     if (p === "/import-export") return "import-export";
-    if (p === "/settings") return "settings";
+    // /settings was a dedicated page; it is now a dialog that opens from the header.
+    // Keep the URL working by falling through to the dashboard — the dialog auto-opens (see App component).
     return "dashboard";
   }
   
@@ -542,11 +536,8 @@ function App() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
-  const [appSettings] = useState<AppSettings>(() => {
-    const s = loadSettings();
-    applyColorTone(s.colorTone);
-    return s;
-  });
+  const [appSettings] = useState<AppSettings>(() => loadSettings());
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const selectedRequest = useMemo(
     () => requests.find((request) => request.id === selectedId) ?? requests[0],
@@ -607,8 +598,24 @@ function App() {
     }
   }, []);
 
+  // Legacy: /settings is now a dialog, not a page. Open it and tidy the URL.
   useEffect(() => {
-    const titles: Record<Page, string> = { landing: "Disburse", dashboard: "Dashboard | Disburse", payments: "Payments | Disburse", "qr-payments": "QR Payments | Disburse", pay: "Pay | Disburse", "import-export": "Import / Export | Disburse", docs: "Documentation | Disburse", settings: "Settings | Disburse" };
+    if (page === "dashboard" && window.location.pathname === "/settings") {
+      setIsSettingsOpen(true);
+      window.history.replaceState(null, "", "/");
+    }
+  }, [page]);
+
+  useEffect(() => {
+    const titles: Record<Page, string> = {
+      landing: "Disburse — Settlement-grade stablecoin payments",
+      dashboard: "Overview · Disburse",
+      payments: "Direct send · Disburse",
+      "qr-payments": "QR requests · Disburse",
+      pay: "Pay request · Disburse",
+      "import-export": "Backup · Disburse",
+      docs: "Documentation · Disburse",
+    };
     document.title = titles[page] ?? "Disburse";
   }, [page]);
 
@@ -1556,27 +1563,48 @@ function App() {
     );
   }
 
-  const headerTitle = page === "dashboard" ? "Personal overview" :
-    page === "payments" ? "Payments" :
-    page === "qr-payments" ? "QR Payments" :
-    page === "pay" ? "Pay Request" :
-    page === "import-export" ? "Import / Export" :
-    page === "docs" ? "Documentation" :
-    page === "settings" ? "Settings" : "Dashboard";
+  // On the docs.* subdomain, skip the app shell and render a docs-only layout
+  // with a slim top nav and a link back to the console. On `app.*`, the docs
+  // page still renders inside the regular app shell so it behaves like any
+  // other route.
+  const onDocsSubdomain = isDocsHostname(window.location.hostname);
+  if (page === "docs" && onDocsSubdomain) {
+    return (
+      <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
+        <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
+          <DocsTopNav onToggleTheme={handleThemeToggle} theme={theme} />
+          <main className="mx-auto max-w-[1180px] px-6 pt-10 md:px-10">
+            <DocsPage />
+          </main>
+        </div>
+      </I18nProvider>
+    );
+  }
+
+  const routeMeta: Record<Exclude<Page, "landing">, { title: string; subtitle: string }> = {
+    dashboard:       { title: "Overview",       subtitle: "Requests, receipts and network health at a glance." },
+    payments:        { title: "Direct send",    subtitle: "Pay a wallet address directly on Arc Testnet." },
+    "qr-payments":   { title: "QR requests",    subtitle: "Create a QR invoice for someone else to scan and pay." },
+    pay:             { title: "Pay request",    subtitle: "Review and settle a QR payment request." },
+    "import-export": { title: "Import · Export", subtitle: "Back up or restore your requests and receipts." },
+    docs:            { title: "Documentation",  subtitle: "How Disburse settles, verifies, and exports payments." },
+  };
+  const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as Exclude<Page, "landing">] ?? routeMeta.dashboard;
 
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-    <div className="flex min-h-screen bg-brand-dark overflow-x-hidden relative">
+    <div className="flex min-h-screen bg-[var(--canvas)] text-[var(--ink)] overflow-x-hidden relative">
       <Sidebar
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         page={page}
         onNavigate={handleNavigate}
       />
-      
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-64")}>
+
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-60")}>
         <Header
           title={headerTitle}
+          subtitle={headerSubtitle}
           account={account}
           chainId={chainId}
           expectedChainId={commonShellProps.expectedChainId}
@@ -1585,7 +1613,15 @@ function App() {
           onConnect={handleConnectWallet}
           onSwitch={commonShellProps.onSwitch}
           onToggleTheme={handleThemeToggle}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           theme={theme}
+        />
+
+        <SettingsDialog
+          open={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          theme={theme}
+          onToggleTheme={handleThemeToggle}
         />
         
         <div className="flex-1 p-6 overflow-y-auto relative">
@@ -1708,9 +1744,6 @@ function App() {
               onExport={handleExport}
               onImport={handleImport}
             />
-          )}
-          {page === "settings" && (
-            <SettingsPage />
           )}
         </div>
       </main>
@@ -2664,62 +2697,210 @@ function EstimateGrid({ estimate }: { estimate: TransferEstimate }) {
   );
 }
 
-function DocsPage() {
+function DocsTopNav({
+  theme,
+  onToggleTheme,
+}: {
+  theme: Theme;
+  onToggleTheme: () => void;
+}) {
+  const appHref = `https://app.disburse.online`;
+  const homeHref = `https://disburse.online`;
   return (
-    <>
-      <section className="docs-hero" aria-labelledby="docs-heading">
-        <div className="docs-hero-copy">
-          <p className="eyebrow">Documentation</p>
-          <h1 id="docs-heading">Disburse project documentation</h1>
-          <p className="docs-lede">
-            A concise technical reference for the Arc Testnet payment console: what the product does, how requests move
-            from QR code to wallet transaction, and where the current release draws its boundaries.
-          </p>
+    <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--paper-translucent)] backdrop-blur-md">
+      <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6 md:px-10">
+        <a
+          href={homeHref}
+          className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
+        >
+          <img src="/favicon.png" alt="" className="h-5 w-5" aria-hidden="true" />
+          <span className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
+            Disburse
+          </span>
+          <span className="ml-1 rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+            Docs
+          </span>
+        </a>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)]"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            )}
+          </button>
+          <a
+            href={appHref}
+            className="group inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90"
+          >
+            Launch console
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-0.5">
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
+          </a>
         </div>
-        <dl className="docs-summary" aria-label="Project summary">
+      </div>
+    </header>
+  );
+}
+
+function DocsPage() {
+  const [activeSlug, setActiveSlug] = useState<string>(() => slugify(docsSections[0]?.title ?? ""));
+
+  // Scrollspy — highlights the TOC entry for the section nearest the top.
+  useEffect(() => {
+    const slugs = docsSections.map((s) => slugify(s.title));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (visible?.target.id) {
+          setActiveSlug(visible.target.id);
+        }
+      },
+      { rootMargin: "-20% 0px -70% 0px", threshold: [0, 1] },
+    );
+    for (const slug of slugs) {
+      const el = document.getElementById(slug);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  function scrollToSlug(slug: string) {
+    const el = document.getElementById(slug);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setActiveSlug(slug);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-[1180px] pb-16">
+      {/* Hero */}
+      <section className="border-b border-[var(--line)] pb-10">
+        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+          Documentation
+        </p>
+        <h1 className="max-w-[24ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
+          How Disburse settles, verifies, and exports a payment.
+        </h1>
+        <p className="mt-5 max-w-[66ch] text-[15px] leading-relaxed text-[var(--muted)]">
+          A concise technical reference for the Arc Testnet payment console: what
+          the product does, how requests move from QR code to wallet transaction,
+          and where the current release draws its boundaries.
+        </p>
+
+        <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[var(--line-soft)] pt-6 sm:grid-cols-4">
           {docsSummaryItems.map((item) => (
-            <div key={item.label}>
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
+            <div key={item.label} className="min-w-0">
+              <dt className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+                {item.label}
+              </dt>
+              <dd className="truncate text-[13px] font-medium text-[var(--ink)]">
+                {item.value}
+              </dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <section className="docs-manual" aria-label="Documentation sections">
-        <aside className="docs-toc" aria-label="Documentation contents">
-          <strong>Contents</strong>
-          <nav>
-            {docsSections.map((section) => (
-              <a href={`#${slugify(section.title)}`} key={section.title}>
-                {section.title}
-              </a>
-            ))}
+      {/* Manual */}
+      <section className="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-16">
+        {/* TOC */}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+            On this page
+          </p>
+          <nav className="flex flex-col gap-0.5">
+            {docsSections.map((section) => {
+              const slug = slugify(section.title);
+              const active = slug === activeSlug;
+              return (
+                <a
+                  key={slug}
+                  href={`#${slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    scrollToSlug(slug);
+                    window.history.replaceState(null, "", `#${slug}`);
+                  }}
+                  className={cx(
+                    "relative rounded-md py-1.5 pl-3 pr-2 text-[13px] transition-colors",
+                    active
+                      ? "text-[var(--ink)]"
+                      : "text-[var(--muted)] hover:text-[var(--ink)]",
+                  )}
+                >
+                  <span
+                    className={cx(
+                      "absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-r-full transition-all",
+                      active ? "bg-[var(--primary-bg)]" : "bg-transparent",
+                    )}
+                    aria-hidden="true"
+                  />
+                  {section.title}
+                </a>
+              );
+            })}
           </nav>
         </aside>
-        <div className="docs-content">
+
+        {/* Content */}
+        <div className="min-w-0">
           {docsSections.map((section, index) => (
-            <article className="docs-section" id={slugify(section.title)} key={section.title}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <h2>{section.title}</h2>
+            <article
+              key={section.title}
+              id={slugify(section.title)}
+              className="scroll-mt-20 border-b border-[var(--line-soft)] py-10 first:pt-0 last:border-b-0"
+            >
+              <p className="mb-3 font-mono text-[11px] text-[var(--muted)]">
+                § {String(index + 1).padStart(2, "0")}
+              </p>
+              <h2 className="mb-4 text-[22px] font-semibold tracking-tight text-[var(--ink)]">
+                {section.title}
+              </h2>
+              <div className="space-y-3 text-[15px] leading-[1.7] text-[var(--muted)]">
                 {section.body.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                  <p key={paragraph} className="max-w-[72ch]">
+                    {paragraph}
+                  </p>
                 ))}
-                {section.points && (
-                  <ul>
-                    {section.points.map((point) => (
-                      <li key={point}>{point}</li>
-                    ))}
-                  </ul>
-                )}
-                {section.code && <code>{section.code}</code>}
               </div>
+              {section.points && (
+                <ul className="mt-5 max-w-[72ch] space-y-2">
+                  {section.points.map((point) => (
+                    <li
+                      key={point}
+                      className="relative pl-5 text-[14px] leading-[1.65] text-[var(--muted)] before:absolute before:left-0 before:top-[0.65em] before:h-1.5 before:w-1.5 before:rounded-full before:border before:border-[var(--primary-bg)]/60"
+                    >
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {section.code && (
+                <pre className="mt-5 max-w-[72ch] overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--input-bg)] px-4 py-3 font-mono text-[12.5px] leading-relaxed text-[var(--ink)]">
+                  <code>{section.code}</code>
+                </pre>
+              )}
             </article>
           ))}
         </div>
       </section>
-    </>
+    </div>
   );
 }
 
@@ -3268,7 +3449,7 @@ function DashboardPage({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <MonthlyStats activityData={activityData} />
-          <AdjustmentsGraph
+          <SystemStatusCard
             monthlyData={monthlyData}
             rpcStatusLabel={rpcStatusLabel}
             rpcBlockLabel={rpcBlockLabel}
@@ -3372,102 +3553,6 @@ function RiskCheckPanel({ request, account, wrongChain, isExpired, requests }: {
         </div>
       ))}
     </div>
-  );
-}
-
-function SettingsPage() {
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const { t, setLang, setCurrency } = useI18n();
-
-  function updateLanguage(lang: LanguageCode) {
-    const mappedCurrency = LANGUAGE_META[lang].currency;
-    const next: AppSettings = { ...settings, language: lang, currency: mappedCurrency };
-    setSettings(next);
-    saveSettings(next);
-    setLang(lang);
-    setCurrency(mappedCurrency);
-  }
-
-  function updateTone(tone: ColorTone) {
-    const next: AppSettings = { ...settings, colorTone: tone };
-    setSettings(next);
-    saveSettings(next);
-    applyColorTone(tone);
-  }
-
-  function updateCurrency(currency: string) {
-    const next: AppSettings = { ...settings, currency: currency as AppSettings["currency"] };
-    setSettings(next);
-    saveSettings(next);
-    setCurrency(next.currency);
-  }
-
-  const languages = Object.entries(LANGUAGE_META) as [LanguageCode, typeof LANGUAGE_META["en"]][];
-  const tones = Object.entries(COLOR_TONE_META) as [ColorTone, typeof COLOR_TONE_META["emerald"]][];
-  const currencies = languages.map(([, meta]) => ({ code: meta.currency, label: `${meta.currency} — ${CURRENCY_META[meta.currency].label} (${CURRENCY_META[meta.currency].symbol})` }));
-
-  return (
-    <>
-      <RouteHero eyebrow={t("settings")} title="Configure console preferences." />
-
-      <section className="workbench" aria-labelledby="settings-heading">
-        <header className="section-header">
-          <h2 id="settings-heading">{t("settings")}</h2>
-        </header>
-
-        <div className="desk-grid single-flow-grid">
-          <section className="desk-pane" aria-labelledby="appearance-heading">
-            <PaneTitle id="appearance-heading" label="Appearance" />
-            <div className="form-stack">
-              <Field label={t("colorTone")}>
-                <div className="field-grid">
-                  {tones.map(([tone, meta]) => (
-                    <button
-                      key={tone}
-                      type="button"
-                      onClick={() => updateTone(tone)}
-                      className={`tone-swatch ${settings.colorTone === tone ? "active" : ""}`}
-                      style={{ borderColor: meta.hex }}
-                      title={meta.label}
-                    >
-                      <span className="tone-dot" style={{ backgroundColor: meta.hex }} />
-                      <span className="tone-label">{meta.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </Field>
-            </div>
-          </section>
-
-          <section className="desk-pane" aria-labelledby="region-heading">
-            <PaneTitle id="region-heading" label="Region & Language" />
-            <div className="form-stack">
-              <Field label={t("language")}>
-                <select
-                  value={settings.language}
-                  onChange={(e) => updateLanguage(e.target.value as LanguageCode)}
-                >
-                  {languages.map(([code, meta]) => (
-                    <option key={code} value={code}>{meta.native} — {meta.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label={t("currency")}>
-                <select
-                  value={settings.currency}
-                  onChange={(e) => updateCurrency(e.target.value)}
-                >
-                  {currencies.map((c) => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          </section>
-        </div>
-      </section>
-    </>
   );
 }
 

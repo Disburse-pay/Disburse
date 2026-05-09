@@ -1,3 +1,5 @@
+import { motion } from "motion/react";
+import { ArrowUpRight, Send } from "lucide-react";
 import type { Address } from "viem";
 
 type Props = {
@@ -23,100 +25,126 @@ export default function BalanceCard({
     requestCount > 0 ? Math.round((receiptCount / requestCount) * 100) : 0;
 
   return (
-    <div className="relative overflow-hidden border border-brand-border bg-brand-surface/30 backdrop-blur-sm">
-      {/* Ambient glow */}
-      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-emerald-500/[0.04] blur-[100px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/3" />
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      className="relative overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]"
+    >
+      {/* Quiet highlight along the top edge — no giant blur blob. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--primary-bg)]/40 to-transparent"
+        aria-hidden="true"
+      />
 
-      <div className="relative p-6">
+      <div className="relative p-6 sm:p-7">
         {/* Top row */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-2">
-              Total Requested Volume
+        <div className="mb-7 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+              Total requested volume
             </p>
-            <h2 className="text-4xl font-semibold tracking-tight text-white tabular-nums">
+            <h2 className="flex items-baseline gap-2 text-[2.25rem] font-semibold tracking-tight text-[var(--ink)] tabular-nums sm:text-[2.75rem]">
               {totalVolume}
-              <span className="text-lg text-white/30 ml-2 font-normal">USDC</span>
+              <span className="text-base font-normal text-[var(--muted)]">USDC</span>
             </h2>
           </div>
 
           {account && (
-            <div className="text-right">
-              <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-1">
+            <div className="shrink-0 text-right">
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
                 Connected
               </p>
-              <p className="text-xs font-mono text-white/50">
-                {account.slice(0, 6)}...{account.slice(-4)}
+              <p className="font-mono text-xs text-[var(--ink)]">
+                {account.slice(0, 6)}…{account.slice(-4)}
               </p>
             </div>
           )}
         </div>
 
-        {/* Metrics grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {/* Metrics — dividers, not nested borders */}
+        <div className="mb-7 grid grid-cols-2 divide-x divide-y divide-[var(--line-soft)] overflow-hidden rounded-lg border border-[var(--line-soft)] md:grid-cols-4 md:divide-y-0">
           <MetricCell
             label="Verified"
             value={verifiedVolume}
             unit="USDC"
-            accent="text-emerald-400"
+            tone="accent"
           />
           <MetricCell
             label="Pending"
             value={pendingVolume}
             unit="USDC"
-            accent="text-blue-400"
+            tone="info"
           />
           <MetricCell
             label="Requests"
             value={String(requestCount)}
-            accent="text-white"
+            tone="default"
           />
           <MetricCell
-            label="Success Rate"
+            label="Success rate"
             value={`${successRate}%`}
-            accent={successRate >= 80 ? "text-emerald-400" : successRate >= 50 ? "text-amber-400" : "text-red-400"}
+            tone={successRate >= 80 ? "accent" : successRate >= 50 ? "warn" : "danger"}
           />
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
-            className="px-4 py-2 bg-white text-black font-medium text-xs tracking-wide hover:bg-white/90 transition-colors"
             onClick={() => onNavigate("/qr-payments")}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-4 py-2 text-[13px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
           >
-            Create Request
+            Create request
+            <ArrowUpRight size={14} strokeWidth={2} />
           </button>
           <button
             type="button"
-            className="px-4 py-2 border border-white/15 text-white font-medium text-xs tracking-wide hover:bg-white/5 transition-colors"
             onClick={() => onNavigate("/payments")}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line)] px-4 py-2 text-[13px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
           >
-            Direct Send
+            <Send size={14} strokeWidth={1.75} />
+            Direct send
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
+
+type Tone = "accent" | "info" | "warn" | "danger" | "default";
+
+const TONE_CLASS: Record<Tone, string> = {
+  accent: "text-[var(--green-text)]",
+  info: "text-[var(--blue-text)]",
+  warn: "text-[var(--yellow-text)]",
+  danger: "text-[var(--red-text)]",
+  default: "text-[var(--ink)]",
+};
 
 function MetricCell({
   label,
   value,
   unit,
-  accent,
+  tone,
 }: {
   label: string;
   value: string;
   unit?: string;
-  accent: string;
+  tone: Tone;
 }) {
   return (
-    <div className="p-3 border border-brand-border/50 bg-white/[0.01]">
-      <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-1.5">{label}</p>
-      <p className={`text-lg font-semibold tabular-nums ${accent}`}>
+    <div className="p-3.5">
+      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+        {label}
+      </p>
+      <p className={`text-[17px] font-semibold tabular-nums ${TONE_CLASS[tone]}`}>
         {value}
-        {unit && <span className="text-[10px] text-muted ml-1 font-normal">{unit}</span>}
+        {unit && (
+          <span className="ml-1 text-[11px] font-normal text-[var(--muted)]">
+            {unit}
+          </span>
+        )}
       </p>
     </div>
   );

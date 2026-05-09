@@ -1,371 +1,564 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CheckCircle2,
+  FileText,
+  Layers,
+  ShieldCheck,
+} from "lucide-react";
 
-function useReveal() {
-  const ref = useRef<HTMLDivElement>(null);
+/* --------------------------------------------------------------------
+ * A low-noise, editorial landing page. One accent (emerald), one grain
+ * layer, and calmer section transitions. Copy leans human, not protocol-
+ * speak.
+ * ------------------------------------------------------------------ */
+
+function useReveal<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
   useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          entry.target.classList.add("reveal-visible");
+          entry.target.classList.add("is-revealed");
           observer.unobserve(entry.target);
         }
       },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+      { threshold: 0.12, rootMargin: "0px 0px -60px 0px" },
     );
-    if (ref.current) observer.observe(ref.current);
+    observer.observe(el);
     return () => observer.disconnect();
   }, []);
   return ref;
 }
 
-const ArrowRightIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-);
-
-const ShieldIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-);
-
-const FileIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
-);
-
-const LayersIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-);
-
 export default function LandingPage() {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const isLocal =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
   const appUrl = isLocal ? "http://app.localhost:5173" : "https://app.disburse.online";
+  const docsUrl = isLocal ? "/docs" : "https://docs.disburse.online";
+  const reduceMotion = useReducedMotion();
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#eaeaea] font-sans overflow-x-hidden selection:bg-[#eaeaea] selection:text-[#050505]">
-      <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        :root {
-          --matte-black: #050505;
-          --old-white: #eaeaea;
-          --border-color: #1a1a1a;
-          --muted-text: #888888;
-          --accent: #34d399;
-        }
-        body {
-          background-color: var(--matte-black);
-          color: var(--old-white);
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-          letter-spacing: -0.01em;
-        }
-        .reveal-hidden { opacity: 0; transform: translateY(15px); transition: opacity 0.8s ease-out, transform 0.8s ease-out; }
-        .reveal-visible { opacity: 1; transform: translateY(0); }
-        .delay-1 { transition-delay: 0.1s; }
-        .delay-2 { transition-delay: 0.2s; }
-        .delay-3 { transition-delay: 0.3s; }
-        .delay-4 { transition-delay: 0.4s; }
-        .delay-5 { transition-delay: 0.5s; }
-        
-        .grid-bg {
-          background-size: 40px 40px;
-          background-image: linear-gradient(to right, #111 1px, transparent 1px),
-                            linear-gradient(to bottom, #111 1px, transparent 1px);
-          mask-image: radial-gradient(circle at center, black, transparent 80%);
-        }
-        .grain-overlay {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          opacity: 0.03;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-          background-repeat: repeat;
-          background-size: 128px 128px;
-        }
-        .feature-watermark {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          font-size: 16rem;
-          font-weight: 500;
-          color: #eaeaea;
-          opacity: 0.02;
-          pointer-events: none;
-          line-height: 1;
-          font-family: 'Inter', sans-serif;
-          letter-spacing: -0.05em;
-        }
+    <div className="landing-root min-h-screen bg-[#050505] font-sans text-[#eaeaea] antialiased selection:bg-emerald-400/30 selection:text-white">
+      <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
 
-        .pipeline-step {
-          position: relative;
-          padding-left: 28px;
-        }
-        .pipeline-step::before {
-          content: '';
-          position: absolute;
-          left: 8px;
-          top: 8px;
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: var(--accent);
-          box-shadow: 0 0 8px var(--accent);
-        }
-        .pipeline-step::after {
-          content: '';
-          position: absolute;
-          left: 10px;
-          top: 18px;
-          width: 2px;
-          height: calc(100% - 8px);
-          background: linear-gradient(to bottom, rgba(52,211,153,0.3), transparent);
-        }
-        .pipeline-step:last-child::after {
-          display: none;
-        }
-      `}} />
+      <Nav appUrl={appUrl} docsUrl={docsUrl} />
+      <Hero appUrl={appUrl} docsUrl={docsUrl} reduceMotion={Boolean(reduceMotion)} />
+      <Principles />
+      <Pipeline />
+      <Compliance />
+      <CrossChain />
+      <FinalCta appUrl={appUrl} />
+      <Footer />
+    </div>
+  );
+}
 
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 flex items-center justify-between px-8 py-5 border-b border-[#1a1a1a] bg-[#050505]/95 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <img src="/favicon.png" alt="Disburse Logo" className="w-5 h-5 object-contain" />
-          <span className="text-xs tracking-widest uppercase font-medium">Disburse</span>
-        </div>
-        <div className="flex items-center gap-8">
-          <a href="https://x.com/Disburs3" target="_blank" rel="noreferrer" className="text-xs tracking-widest uppercase text-[#888] hover:text-[#eaeaea] transition-colors">
-            X (Twitter)
+/* ---------- Nav ---------- */
+
+function Nav({ appUrl, docsUrl }: { appUrl: string; docsUrl: string }) {
+  return (
+    <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[#050505]/85 backdrop-blur-md">
+      <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-6 md:px-10">
+        <a href="/" className="flex items-center gap-2.5" aria-label="Disburse home">
+          <img src="/favicon.png" alt="" className="h-5 w-5" aria-hidden="true" />
+          <span className="text-[13px] font-semibold tracking-tight">Disburse</span>
+        </a>
+        <div className="flex items-center gap-1">
+          <a
+            href={docsUrl}
+            className="hidden rounded-md px-3 py-1.5 text-xs text-white/60 transition-colors hover:text-white sm:inline-block"
+          >
+            Docs
+          </a>
+          <a
+            href="https://x.com/Disburs3"
+            target="_blank"
+            rel="noreferrer"
+            className="hidden rounded-md px-3 py-1.5 text-xs text-white/60 transition-colors hover:text-white sm:inline-block"
+          >
+            X / Twitter
           </a>
           <a
             href={appUrl}
-            style={{ color: '#000' }}
-            className="text-xs tracking-widest uppercase px-5 py-2.5 border border-gray-200 bg-gray-200 hover:bg-transparent hover:!text-gray-200 transition-all flex items-center gap-2 group"
+            className="group ml-1 inline-flex items-center gap-1.5 rounded-md bg-white px-3.5 py-1.5 text-[12px] font-medium text-black transition-transform hover:-translate-y-px"
           >
-            Launch App
-            <ArrowRightIcon className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            Launch app
+            <ArrowRight
+              size={14}
+              strokeWidth={2}
+              className="transition-transform group-hover:translate-x-0.5"
+            />
           </a>
         </div>
-      </nav>
-
-      {/* Hero Section */}
-      <section className="relative pt-48 pb-32 px-8 md:px-16 min-h-[85vh] flex flex-col justify-center border-b border-[#1a1a1a]">
-        <div className="absolute inset-0 grid-bg pointer-events-none opacity-40" />
-        <div className="absolute inset-0 grain-overlay" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[radial-gradient(ellipse_at_center,rgba(52,211,153,0.04),transparent_70%)] pointer-events-none" />
-
-        <HeroContent appUrl={appUrl} />
-      </section>
-
-      {/* Features Grid */}
-      <section className="border-b border-[#1a1a1a]">
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#1a1a1a]">
-          <FeatureCard 
-            number="01"
-            title="Non-Custodial Architecture"
-            description="Absolute control over assets. Disburse operates entirely at the edge, relying on direct wallet signatures for transaction execution without intermediation."
-            delay="delay-1"
-          />
-          <FeatureCard 
-            number="02"
-            title="Cryptographic QR Protocol"
-            description="Deterministic request payloads formatted as standardized QR codes, enabling immediate invoice sharing and peer-to-peer settlement."
-            delay="delay-2"
-          />
-          <FeatureCard 
-            number="03"
-            title="Onchain Verification"
-            description="Immutable receipt validation. Settlement status is derived directly from raw network logs rather than trusted centralized databases."
-            delay="delay-3"
-          />
-        </div>
-      </section>
-
-      {/* Settlement Pipeline Section */}
-      <section className="border-b border-[#1a1a1a]">
-        <SettlementPipeline />
-      </section>
-
-      {/* Compliance Section */}
-      <section className="border-b border-[#1a1a1a]">
-        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#1a1a1a]">
-          <ComplianceCard
-            icon={<ShieldIcon className="w-5 h-5" />}
-            title="Verifiable Settlement Receipts"
-            description="Every payment through Disburse produces a VSR — a structured, attestable proof that a specific invoice was paid, verified from raw chain data, with the full audit trail from request creation to settlement confirmation."
-            badge="VSR"
-            delay="delay-1"
-          />
-          <ComplianceCard
-            icon={<FileIcon className="w-5 h-5" />}
-            title="Compliance-Grade Exports"
-            description="Settlement proofs in machine-readable JSON, UBL 2.1 XML invoices for EU e-invoicing compliance, and PDF receipts with cryptographic fingerprints. Bridges onchain data with real-world accounting standards."
-            badge="UBL 2.1"
-            delay="delay-2"
-          />
-        </div>
-      </section>
-
-      {/* Cross-Chain Section */}
-      <section className="border-b border-[#1a1a1a]">
-        <CrossChainSection />
-      </section>
-
-      {/* Footer */}
-      <footer className="px-8 md:px-16 py-8 flex flex-col md:flex-row justify-between items-start md:items-center text-[#555] text-xs tracking-widest uppercase font-mono border-t border-[#1a1a1a]">
-        <div className="flex items-center gap-3">
-          <img src="/favicon.png" alt="Disburse Logo" className="w-4 h-4 grayscale opacity-30" />
-          <span>Disburse Protocol // System Operational</span>
-        </div>
-        <div className="mt-4 md:mt-0 flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-12">
-          <a href="https://x.com/Disburs3" target="_blank" rel="noreferrer" className="hover:text-[#eaeaea] transition-colors">
-            Follow @Disburs3
-          </a>
-          <span>&copy; 2026</span>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </nav>
   );
 }
 
-function HeroContent({ appUrl }: { appUrl: string }) {
-  const ref = useReveal();
-  return (
-    <div ref={ref} className="reveal-hidden relative z-10 max-w-5xl">
-      <div className="text-xs tracking-widest uppercase text-[#888] mb-10 border-l border-[#888] pl-4 font-mono">
-        Verifiable Settlement Protocol
-      </div>
-      <h1 className="text-5xl md:text-8xl font-medium tracking-tighter leading-[1.05] mb-12 text-[#eaeaea]">
-        Settlement-grade payments,<br />
-        cryptographically verified.
-      </h1>
-      <p className="text-base md:text-lg text-[#888] mb-14 max-w-2xl leading-relaxed tracking-wide font-light">
-        The first non-custodial protocol that bridges real-world invoicing with onchain payment verification.
-        Generate requests, settle across chains, and export compliance-grade receipts.
-      </p>
-      <div className="flex flex-col sm:flex-row items-start gap-6">
-        <a
-          href={appUrl}
-          style={{ color: '#000' }}
-          className="text-xs tracking-widest uppercase px-8 py-4 border border-gray-200 bg-gray-200 hover:bg-transparent hover:!text-gray-200 transition-all flex items-center gap-3 group font-medium"
-        >
-          Launch App
-          <ArrowRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-        </a>
-        <div className="flex items-center gap-3 text-xs text-[#555] font-mono tracking-wider">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          Arc Testnet · Live
-        </div>
-      </div>
-    </div>
-  );
-}
+/* ---------- Hero ---------- */
 
-function FeatureCard({ number, title, description, delay }: { number: string, title: string, description: string, delay: string }) {
-  const ref = useReveal();
-  return (
-    <div ref={ref} className={`reveal-hidden ${delay} relative p-12 md:p-16 hover:bg-[#0a0a0a] transition-all duration-500 flex flex-col justify-between min-h-[320px] overflow-hidden hover:-translate-y-1`}>
-      <div className="feature-watermark">{number}</div>
-      <div className="text-xs text-[#555] tracking-widest font-mono relative z-10">
-        // {number}
-      </div>
-      <div className="mt-12 relative z-10">
-        <h3 className="text-xl md:text-2xl font-medium tracking-tight mb-5">{title}</h3>
-        <p className="text-[#888] text-sm leading-relaxed tracking-wide font-light max-w-sm">
-          {description}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function SettlementPipeline() {
-  const ref = useReveal();
-  return (
-    <div ref={ref} className="reveal-hidden p-12 md:p-16 max-w-4xl mx-auto">
-      <div className="text-xs text-[#555] tracking-widest font-mono mb-4">// Settlement Pipeline</div>
-      <h2 className="text-3xl md:text-4xl font-medium tracking-tight mb-4 text-[#eaeaea]">
-        Invoice → Settlement → Attestation
-      </h2>
-      <p className="text-[#888] text-sm leading-relaxed mb-12 max-w-2xl">
-        Unlike traditional payment tools that stop at "transaction sent," Disburse follows every payment
-        through a complete verification pipeline — producing a Verifiable Settlement Receipt at the end.
-      </p>
-
-      <div className="space-y-6">
-        {[
-          { step: "01", label: "Request Created", detail: "Structured QR payload with recipient, amount, token, invoice metadata, and expiry" },
-          { step: "02", label: "Payment Submitted", detail: "Wallet-signed ERC-20 transfer on Arc, Base Sepolia, or Monad Testnet" },
-          { step: "03", label: "Onchain Confirmation", detail: "Block confirmation + Polymer proof generation for cross-chain settlements" },
-          { step: "04", label: "Verification", detail: "Receipt extracted from raw chain Transfer logs — no trusted intermediary" },
-          { step: "05", label: "Attestation (VSR)", detail: "SHA-256 fingerprinted settlement record, exportable as JSON proof or UBL XML" },
-        ].map((item) => (
-          <div key={item.step} className="pipeline-step pb-4">
-            <div className="flex items-baseline gap-3 mb-1">
-              <span className="text-[10px] font-mono text-emerald-400/60">{item.step}</span>
-              <span className="text-sm font-medium text-[#eaeaea]">{item.label}</span>
-            </div>
-            <p className="text-xs text-[#666] leading-relaxed">{item.detail}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ComplianceCard({ icon, title, description, badge, delay }: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  badge: string;
-  delay: string;
+function Hero({
+  appUrl,
+  docsUrl,
+  reduceMotion,
+}: {
+  appUrl: string;
+  docsUrl: string;
+  reduceMotion: boolean;
 }) {
-  const ref = useReveal();
   return (
-    <div ref={ref} className={`reveal-hidden ${delay} p-12 md:p-16 hover:bg-[#0a0a0a] transition-all duration-500`}>
-      <div className="flex items-center gap-3 mb-6">
-        <span className="text-emerald-400/60">{icon}</span>
-        <span className="text-[10px] font-mono tracking-widest uppercase px-2 py-0.5 border border-emerald-400/20 text-emerald-400/60">
+    <section className="relative overflow-hidden border-b border-white/[0.06] pt-32 pb-24 md:pt-40 md:pb-32">
+      {/* ONE calm background layer: subtle radial wash, nothing else. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(52,211,153,0.06),transparent_70%)]"
+      />
+      {/* A single faint grain at 2% opacity, not 3% + grid + glow. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grain" />
+
+      <div className="relative mx-auto max-w-[1280px] px-6 md:px-10">
+        <motion.p
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 py-1 text-[11px] text-white/60"
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+            aria-hidden="true"
+          />
+          <span>Live on Arc Testnet</span>
+        </motion.p>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            reduceMotion
+              ? { duration: 0 }
+              : { duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.05 }
+          }
+          className="max-w-[14ch] text-[clamp(2.25rem,6vw,5.5rem)] font-semibold leading-[1.02] tracking-[-0.03em]"
+        >
+          Stablecoin invoices
+          <br />
+          <span className="text-white/50">with receipts that</span>
+          <br />
+          actually settle.
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            reduceMotion
+              ? { duration: 0 }
+              : { duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.12 }
+          }
+          className="mt-8 max-w-xl text-[16px] leading-relaxed text-white/60"
+        >
+          Send a QR request. The payer settles from any supported chain. Disburse
+          writes a verifiable receipt you can hand to your accountant — signed
+          from chain data, not a spreadsheet.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            reduceMotion
+              ? { duration: 0 }
+              : { duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.2 }
+          }
+          className="mt-10 flex flex-wrap items-center gap-3"
+        >
+          <a
+            href={appUrl}
+            className="group inline-flex items-center gap-1.5 rounded-md bg-white px-5 py-3 text-[13px] font-medium text-black transition-transform hover:-translate-y-px"
+          >
+            Launch the console
+            <ArrowRight
+              size={14}
+              strokeWidth={2}
+              className="transition-transform group-hover:translate-x-0.5"
+            />
+          </a>
+          <a
+            href={docsUrl}
+            className="group inline-flex items-center gap-1.5 rounded-md border border-white/10 px-5 py-3 text-[13px] font-medium text-white/80 transition-colors hover:border-white/20 hover:text-white"
+          >
+            Read the docs
+            <ArrowUpRight
+              size={14}
+              strokeWidth={1.75}
+              className="text-white/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+            />
+          </a>
+        </motion.div>
+
+        {/* Quiet footnote of supported rails */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.6, delay: 0.4 }}
+          className="mt-16 flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-white/35"
+        >
+          <span className="uppercase tracking-[0.2em]">Settles on</span>
+          <span>Arc Testnet</span>
+          <span className="text-white/20">·</span>
+          <span>Base Sepolia</span>
+          <span className="text-white/20">·</span>
+          <span>Monad Testnet</span>
+          <span className="text-white/20">·</span>
+          <span>USDC / EURC</span>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Principles ---------- */
+
+function Principles() {
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div className="mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-24">
+        <SectionHeader
+          eyebrow="Principles"
+          title="Three non-negotiables."
+          lede="Not a wallet. Not a custodian. Just a console that turns a wallet signature into a clean accounting record."
+        />
+
+        <div className="mt-12 grid grid-cols-1 gap-px bg-white/[0.06] md:grid-cols-3">
+          <Principle
+            number="01"
+            title="The wallet is the authority"
+            body="Disburse prepares the calldata, the wallet signs it. We never hold a private key, never touch a balance, and never gate withdrawal."
+          />
+          <Principle
+            number="02"
+            title="QR is the contract"
+            body="A payment request is a tiny, portable JSON payload in a QR code. Scan it, inspect it, pay it. No account, no backend login."
+          />
+          <Principle
+            number="03"
+            title="Chain data is the source of truth"
+            body="A receipt is only green when a Transfer log on the correct token, to the exact recipient, for the exact amount, has confirmed."
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Principle({
+  number,
+  title,
+  body,
+}: {
+  number: string;
+  title: string;
+  body: string;
+}) {
+  const ref = useReveal<HTMLDivElement>();
+  return (
+    <div ref={ref} className="reveal group relative bg-[#050505] p-10 md:p-12">
+      <span className="mb-8 block font-mono text-[11px] text-white/30">{number}</span>
+      <h3 className="mb-3 text-[20px] font-semibold tracking-tight text-white">
+        {title}
+      </h3>
+      <p className="max-w-sm text-[14px] leading-relaxed text-white/55">{body}</p>
+    </div>
+  );
+}
+
+/* ---------- Pipeline ---------- */
+
+function Pipeline() {
+  const ref = useReveal<HTMLDivElement>();
+  const steps = [
+    { n: "01", t: "Request", d: "Recipient, amount, token, invoice date. Encoded into a QR payload." },
+    { n: "02", t: "Submit", d: "Payer scans, connects a wallet, signs an ERC-20 transfer." },
+    { n: "03", t: "Confirm", d: "Transaction lands on Arc. Cross-chain settles via Polymer proof." },
+    { n: "04", t: "Verify", d: "Receipt derived from raw Transfer logs — not a database." },
+    { n: "05", t: "Attest", d: "SHA-256 fingerprinted record. Export as JSON, UBL XML, or PDF." },
+  ];
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div ref={ref} className="reveal mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-24">
+        <SectionHeader
+          eyebrow="Lifecycle"
+          title="From invoice to attestation."
+          lede="Most payment tools stop at 'transaction sent.' Disburse keeps going until the accountant has something to file."
+        />
+
+        {/* Horizontal pipeline on lg+, vertical on mobile. */}
+        <ol className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-5">
+          {steps.map((s, i) => (
+            <li
+              key={s.n}
+              className="relative rounded-lg border border-white/[0.06] bg-white/[0.015] p-5"
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/5 font-mono text-[10px] text-emerald-400">
+                  {s.n}
+                </span>
+                {i < steps.length - 1 && (
+                  <span
+                    aria-hidden="true"
+                    className="hidden h-px flex-1 bg-gradient-to-r from-emerald-400/30 via-white/10 to-transparent md:block"
+                  />
+                )}
+              </div>
+              <p className="mb-1 text-[14px] font-semibold text-white">{s.t}</p>
+              <p className="text-[12px] leading-relaxed text-white/50">{s.d}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Compliance ---------- */
+
+function Compliance() {
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div className="mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-24">
+        <SectionHeader
+          eyebrow="Compliance"
+          title="Receipts your auditor can open."
+          lede="Three formats, one source of truth. Every export is derived from the onchain Transfer log — not from a summary table."
+        />
+
+        <div className="mt-12 grid grid-cols-1 gap-px bg-white/[0.06] md:grid-cols-3">
+          <ComplianceCard
+            icon={<ShieldCheck size={18} strokeWidth={1.5} />}
+            badge="VSR"
+            title="Verifiable Settlement Receipt"
+            body="Structured JSON proof, SHA-256 fingerprinted. Anyone can re-derive it from the transaction hash."
+          />
+          <ComplianceCard
+            icon={<FileText size={18} strokeWidth={1.5} />}
+            badge="UBL 2.1"
+            title="EU-compliant invoice XML"
+            body="Machine-readable invoice in the format EU e-invoicing systems already accept."
+          />
+          <ComplianceCard
+            icon={<CheckCircle2 size={18} strokeWidth={1.5} />}
+            badge="PDF"
+            title="Human-readable receipt"
+            body="One-page PDF with the amount, parties, tx hash, and an Arcscan link. No marketing."
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ComplianceCard({
+  icon,
+  badge,
+  title,
+  body,
+}: {
+  icon: React.ReactNode;
+  badge: string;
+  title: string;
+  body: string;
+}) {
+  const ref = useReveal<HTMLDivElement>();
+  return (
+    <div ref={ref} className="reveal bg-[#050505] p-10 md:p-12">
+      <div className="mb-6 flex items-center gap-2.5">
+        <span className="text-emerald-400/70">{icon}</span>
+        <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-400/80">
           {badge}
         </span>
       </div>
-      <h3 className="text-xl md:text-2xl font-medium tracking-tight mb-5 text-[#eaeaea]">{title}</h3>
-      <p className="text-[#888] text-sm leading-relaxed tracking-wide font-light">
-        {description}
-      </p>
+      <h3 className="mb-3 text-[18px] font-semibold tracking-tight text-white">
+        {title}
+      </h3>
+      <p className="text-[13px] leading-relaxed text-white/55">{body}</p>
     </div>
   );
 }
 
-function CrossChainSection() {
-  const ref = useReveal();
-  return (
-    <div ref={ref} className="reveal-hidden p-12 md:p-16">
-      <div className="flex items-center gap-3 mb-6">
-        <LayersIcon className="w-5 h-5 text-emerald-400/60" />
-        <span className="text-[10px] font-mono tracking-widest uppercase text-[#555]">Multi-Chain Settlement</span>
-      </div>
-      <h2 className="text-3xl md:text-4xl font-medium tracking-tight mb-4 text-[#eaeaea]">
-        Pay from any chain.<br />
-        Settle on Arc.
-      </h2>
-      <p className="text-[#888] text-sm leading-relaxed mb-10 max-w-2xl">
-        Payers choose their source chain — Arc Testnet for direct ERC-20 transfers, or Base Sepolia / Monad Testnet
-        for cross-chain settlement via Polymer cryptographic proofs.
-      </p>
+/* ---------- Cross-chain ---------- */
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-[#1a1a1a]">
-        {[
-          { chain: "Arc Testnet", speed: "~15s", type: "Direct", symbol: "USDC" },
-          { chain: "Base Sepolia", speed: "~2-5 min", type: "Polymer Proof", symbol: "ETH" },
-          { chain: "Monad Testnet", speed: "~2-5 min", type: "Polymer Proof", symbol: "MON" },
-        ].map((route) => (
-          <div key={route.chain} className="bg-[#050505] p-6 hover:bg-[#0a0a0a] transition-colors">
-            <p className="text-xs font-mono text-emerald-400/60 mb-2">{route.type}</p>
-            <h4 className="text-sm font-medium text-[#eaeaea] mb-3">{route.chain}</h4>
-            <div className="flex items-center justify-between text-[10px] font-mono text-[#555]">
-              <span>Settlement: {route.speed}</span>
-              <span>Gas: {route.symbol}</span>
+function CrossChain() {
+  const routes = [
+    { chain: "Arc Testnet", speed: "~15s", route: "Direct ERC-20", gas: "USDC" },
+    { chain: "Base Sepolia", speed: "~2–5 min", route: "Polymer proof", gas: "ETH" },
+    { chain: "Monad Testnet", speed: "~2–5 min", route: "Polymer proof", gas: "MON" },
+  ];
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div className="mx-auto max-w-[1280px] px-6 py-20 md:px-10 md:py-24">
+        <div className="grid grid-cols-1 gap-12 md:grid-cols-12">
+          <div className="md:col-span-5">
+            <SectionHeader
+              eyebrow={
+                <span className="inline-flex items-center gap-1.5">
+                  <Layers size={14} strokeWidth={1.5} className="text-emerald-400/70" />
+                  Multi-chain
+                </span>
+              }
+              title={
+                <>
+                  Pay from any chain.
+                  <br />
+                  <span className="text-white/50">Settle on Arc.</span>
+                </>
+              }
+              lede="Payers choose their home chain — direct on Arc, or across Base Sepolia and Monad via Polymer proofs. The request, receipt, and invoice stay the same."
+            />
+          </div>
+
+          <div className="md:col-span-7">
+            <div className="grid grid-cols-1 gap-px bg-white/[0.06] md:grid-cols-3">
+              {routes.map((r) => (
+                <div key={r.chain} className="bg-[#050505] p-6">
+                  <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-400/70">
+                    {r.route}
+                  </p>
+                  <h4 className="mb-6 text-[15px] font-semibold text-white">{r.chain}</h4>
+                  <dl className="space-y-1.5 text-[11px] text-white/40">
+                    <div className="flex justify-between">
+                      <dt>Settlement</dt>
+                      <dd className="text-white/70">{r.speed}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>Gas</dt>
+                      <dd className="text-white/70">{r.gas}</dd>
+                    </div>
+                  </dl>
+                </div>
+              ))}
             </div>
           </div>
-        ))}
+        </div>
       </div>
+    </section>
+  );
+}
+
+/* ---------- Final CTA ---------- */
+
+function FinalCta({ appUrl }: { appUrl: string }) {
+  return (
+    <section className="border-b border-white/[0.06]">
+      <div className="mx-auto max-w-[1280px] px-6 py-24 md:px-10 md:py-32">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.05] tracking-[-0.02em]">
+            Test a payment end-to-end
+            <span className="block text-white/40">in less than a minute.</span>
+          </h2>
+          <p className="mt-6 text-[15px] text-white/55">
+            Connect a wallet, grab testnet USDC from the Arc faucet, and walk the
+            full request → confirmation → receipt flow. No signup.
+          </p>
+          <a
+            href={appUrl}
+            className="mt-10 inline-flex items-center gap-1.5 rounded-md bg-white px-6 py-3.5 text-[13px] font-medium text-black transition-transform hover:-translate-y-px"
+          >
+            Open the console
+            <ArrowRight size={14} strokeWidth={2} />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Footer ---------- */
+
+function Footer() {
+  return (
+    <footer className="mx-auto flex max-w-[1280px] flex-col items-start justify-between gap-4 px-6 py-8 text-[11px] text-white/30 md:flex-row md:items-center md:px-10">
+      <div className="flex items-center gap-2">
+        <img src="/favicon.png" alt="" className="h-4 w-4 opacity-40" aria-hidden="true" />
+        <span>Disburse · Non-custodial stablecoin payments</span>
+      </div>
+      <div className="flex items-center gap-6">
+        <a
+          href="https://x.com/Disburs3"
+          target="_blank"
+          rel="noreferrer"
+          className="transition-colors hover:text-white/70"
+        >
+          @Disburs3
+        </a>
+        <span>&copy; 2026</span>
+      </div>
+    </footer>
+  );
+}
+
+/* ---------- Section header helper ---------- */
+
+function SectionHeader({
+  eyebrow,
+  title,
+  lede,
+}: {
+  eyebrow: React.ReactNode;
+  title: React.ReactNode;
+  lede?: string;
+}) {
+  const ref = useReveal<HTMLDivElement>();
+  return (
+    <div ref={ref} className="reveal max-w-2xl">
+      <p className="mb-5 font-mono text-[11px] uppercase tracking-[0.22em] text-white/40">
+        {eyebrow}
+      </p>
+      <h2 className="text-[clamp(1.75rem,4vw,3rem)] font-semibold leading-[1.08] tracking-[-0.02em] text-white">
+        {title}
+      </h2>
+      {lede && <p className="mt-5 text-[15px] leading-relaxed text-white/55">{lede}</p>}
     </div>
   );
 }
+
+/* ---------- Scoped CSS for landing-only tricks ---------- */
+
+const LANDING_CSS = `
+  .landing-root {
+    letter-spacing: -0.005em;
+  }
+
+  /* Reveal-on-scroll. Falls back gracefully if IntersectionObserver never fires. */
+  .landing-root .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    transition:
+      opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .landing-root .reveal.is-revealed {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-root .reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  /* A single subtle grain, at lower opacity than the old combo. */
+  .landing-root .grain {
+    opacity: 0.018;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+    mix-blend-mode: overlay;
+  }
+`;
