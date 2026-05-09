@@ -1629,7 +1629,7 @@ function App() {
         onNavigate={handleNavigate}
       />
 
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-60")}>
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-[60px]" : "ml-60")}>
         <Header
           title={headerTitle}
           subtitle={headerSubtitle}
@@ -1652,7 +1652,7 @@ function App() {
           onToggleTheme={handleThemeToggle}
         />
         
-        <div className="flex-1 p-6 overflow-y-auto relative">
+        <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
           {page === "dashboard" && (
             <DashboardPage
               requests={requests}
@@ -3437,6 +3437,8 @@ function DashboardPage({
   const pendingVolume = requests
     .filter((request) => refreshDerivedStatus(request, now).status === "open")
     .reduce((sum, request) => sum + Number(request.amount || 0), 0);
+  const paidCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "paid").length;
+  const openCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "open").length;
   const expiredCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "expired").length;
   const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
   const activityData = Array.from({ length: 7 }, (_, offset) => {
@@ -3461,10 +3463,20 @@ function DashboardPage({
     };
   });
 
+  const hasActivity = requests.length > 0;
+  const onboardingSteps: { label: string; done: boolean; href: string }[] = [
+    { label: "Connect a wallet", done: Boolean(account), href: "/" },
+    { label: "Fund it from the Circle faucet", done: Boolean(account), href: ARC_FAUCET_URL },
+    { label: "Create your first QR request", done: hasActivity, href: "/qr-payments" },
+    { label: "Verify a payment and export a receipt", done: receipts.length > 0, href: "/qr-payments" }
+  ];
+  const completedSteps = onboardingSteps.filter((s) => s.done).length;
+  const progressPct = Math.round((completedSteps / onboardingSteps.length) * 100);
+
   return (
-    <div className="w-full mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6 pb-12 relative z-10">
-      {/* Main Area */}
-      <div className="xl:col-span-8 space-y-6">
+    <div className="relative z-10 mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-5 pb-12 xl:grid-cols-12">
+      {/* Main column */}
+      <div className="space-y-5 xl:col-span-8">
         <BalanceCard
           totalVolume={totalVolume.toFixed(2)}
           verifiedVolume={verifiedVolume.toFixed(2)}
@@ -3475,7 +3487,7 @@ function DashboardPage({
           onNavigate={onNavigate}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <MonthlyStats activityData={activityData} />
           <SystemStatusCard
             monthlyData={monthlyData}
@@ -3493,13 +3505,302 @@ function DashboardPage({
         />
       </div>
 
-      {/* Right Sidebar */}
-      <aside className="xl:col-span-4 space-y-6">
-        <div className="border border-brand-border bg-brand-dark p-6 text-xs text-muted leading-relaxed hover:border-[#222] transition-all duration-300 hover:-translate-y-0.5">
-          <p className="font-medium text-white mb-1">Console Note</p>
-          <p>Test the complete payment flow using the QR Generator without signing real transactions on Arc Testnet.</p>
-        </div>
+      {/* Right rail */}
+      <aside className="space-y-5 xl:col-span-4">
+        <QuickActionsCard
+          onNavigate={onNavigate}
+          onExport={onExport}
+          faucetUrl={ARC_FAUCET_URL}
+          hasData={requests.length + receipts.length > 0}
+        />
+
+        <GettingStartedCard
+          steps={onboardingSteps}
+          completed={completedSteps}
+          total={onboardingSteps.length}
+          progressPct={progressPct}
+        />
+
+        <StatusDigestCard
+          paidCount={paidCount}
+          openCount={openCount}
+          expiredCount={expiredCount}
+          rpcHealthy={rpcHealth?.healthy}
+        />
+
+        <ResourcesCard />
       </aside>
+    </div>
+  );
+}
+
+function QuickActionsCard({
+  onNavigate,
+  onExport,
+  faucetUrl,
+  hasData
+}: {
+  onNavigate: (target: string) => void;
+  onExport: () => void;
+  faucetUrl: string;
+  hasData: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-5 py-3.5">
+        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
+          Quick actions
+        </h3>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+          Shortcuts
+        </span>
+      </div>
+      <div className="grid grid-cols-2">
+        <QuickActionTile
+          onClick={() => onNavigate("/qr-payments")}
+          icon={<QrCode size={16} strokeWidth={1.75} />}
+          label="Create QR request"
+          tone="accent"
+        />
+        <QuickActionTile
+          onClick={() => onNavigate("/payments")}
+          icon={<Send size={16} strokeWidth={1.75} />}
+          label="Direct send"
+        />
+        <QuickActionTile
+          onClick={hasData ? onExport : () => onNavigate("/import-export")}
+          icon={<Download size={16} strokeWidth={1.75} />}
+          label={hasData ? "Export ledger" : "Import ledger"}
+        />
+        <QuickActionTile
+          href={faucetUrl}
+          external
+          icon={<ExternalLink size={16} strokeWidth={1.75} />}
+          label="USDC faucet"
+        />
+      </div>
+    </div>
+  );
+}
+
+function QuickActionTile({
+  onClick,
+  href,
+  external,
+  icon,
+  label,
+  tone
+}: {
+  onClick?: () => void;
+  href?: string;
+  external?: boolean;
+  icon: ReactNode;
+  label: string;
+  tone?: "accent";
+}) {
+  const body = (
+    <div className="flex h-full items-center gap-3 px-4 py-3.5">
+      <span
+        className={cn(
+          "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border text-[var(--ink)]",
+          tone === "accent"
+            ? "border-[var(--primary-bg)]/30 bg-[var(--panel-accent)] text-[var(--green-text)]"
+            : "border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]"
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 truncate text-[12.5px] font-medium text-[var(--ink)]">{label}</span>
+      <ArrowRightLeft size={12} strokeWidth={1.75} className="text-[var(--muted)]/0 transition-colors group-hover:text-[var(--muted)]" />
+    </div>
+  );
+  const className =
+    "group block border-b border-r border-[var(--line-soft)] text-left transition-colors hover:bg-[var(--line-soft)]/60 focus-visible:bg-[var(--line-soft)]/60 focus-visible:outline-none [&:nth-child(2n)]:border-r-0 last:border-b-0 [&:nth-last-child(-n+2)]:border-b-0";
+  if (href) {
+    return (
+      <a
+        className={className}
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noreferrer" : undefined}
+      >
+        {body}
+      </a>
+    );
+  }
+  return (
+    <button type="button" className={className} onClick={onClick}>
+      {body}
+    </button>
+  );
+}
+
+function GettingStartedCard({
+  steps,
+  completed,
+  total,
+  progressPct
+}: {
+  steps: { label: string; done: boolean; href: string }[];
+  completed: number;
+  total: number;
+  progressPct: number;
+}) {
+  const allDone = completed === total;
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-5 py-3.5">
+        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
+          {allDone ? "You're all set" : "Getting started"}
+        </h3>
+        <span className="font-mono text-[10px] tabular-nums text-[var(--muted)]">
+          {completed}/{total}
+        </span>
+      </div>
+      {/* Progress bar */}
+      <div className="h-[3px] w-full bg-[var(--line-soft)]">
+        <div
+          className="h-full bg-[var(--primary-bg)] transition-all duration-500"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+      <ul className="divide-y divide-[var(--line-soft)]">
+        {steps.map((step) => (
+          <li key={step.label}>
+            <a
+              href={step.href}
+              target={step.href.startsWith("http") ? "_blank" : undefined}
+              rel={step.href.startsWith("http") ? "noreferrer" : undefined}
+              className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-[var(--line-soft)]/50"
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
+                  step.done
+                    ? "border-[var(--primary-bg)] bg-[var(--primary-bg)]"
+                    : "border-[var(--line)] bg-transparent"
+                )}
+              >
+                {step.done && (
+                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 stroke-[var(--primary-text)] stroke-[2]">
+                    <path d="M2 5l2 2 4-4.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+              <span
+                className={cn(
+                  "flex-1 text-[12.5px]",
+                  step.done ? "text-[var(--muted)] line-through decoration-[var(--line)]" : "text-[var(--ink)]"
+                )}
+              >
+                {step.label}
+              </span>
+              <ArrowRightLeft size={11} strokeWidth={1.75} className="text-[var(--muted)]" />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StatusDigestCard({
+  paidCount,
+  openCount,
+  expiredCount,
+  rpcHealthy
+}: {
+  paidCount: number;
+  openCount: number;
+  expiredCount: number;
+  rpcHealthy?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--paper)] p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
+          At a glance
+        </h3>
+        <span className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--muted)]">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              rpcHealthy ? "bg-[var(--green-text)]" : "bg-[var(--yellow-text)]"
+            )}
+          />
+          {rpcHealthy ? "Operational" : "Initializing"}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 divide-x divide-[var(--line-soft)] overflow-hidden rounded-lg border border-[var(--line-soft)]">
+        <DigestCell label="Paid"    value={paidCount}    tone="accent" />
+        <DigestCell label="Open"    value={openCount}    tone="info" />
+        <DigestCell label="Expired" value={expiredCount} tone="muted" />
+      </div>
+    </div>
+  );
+}
+
+function DigestCell({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: number;
+  tone: "accent" | "info" | "muted";
+}) {
+  const toneClass =
+    tone === "accent"
+      ? "text-[var(--green-text)]"
+      : tone === "info"
+        ? "text-[var(--blue-text)]"
+        : "text-[var(--muted)]";
+  return (
+    <div className="p-3 text-center">
+      <p className="mb-1 text-[9px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+        {label}
+      </p>
+      <p className={cn("text-[18px] font-semibold tabular-nums", toneClass)}>{value}</p>
+    </div>
+  );
+}
+
+function ResourcesCard() {
+  const links = [
+    { label: "Documentation", href: getDocsHref(), external: false, icon: BookOpen },
+    { label: "USDC faucet",   href: ARC_FAUCET_URL, external: true,  icon: ExternalLink },
+    { label: "Arcscan",       href: ARC_EXPLORER_URL, external: true, icon: ExternalLink },
+    { label: "Source on GitHub", href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
+  ];
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
+      <div className="border-b border-[var(--line-soft)] px-5 py-3.5">
+        <h3 className="text-[12px] font-semibold tracking-tight text-[var(--ink)]">
+          Resources
+        </h3>
+      </div>
+      <ul>
+        {links.map((link) => {
+          const Icon = link.icon;
+          return (
+            <li key={link.label}>
+              <a
+                href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
+                className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-3 transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/50"
+              >
+                <Icon size={13} strokeWidth={1.75} className="text-[var(--muted)]" />
+                <span className="flex-1 text-[12.5px] text-[var(--ink)]">{link.label}</span>
+                <span className="font-mono text-[10px] text-[var(--muted)]">
+                  {link.external ? "↗" : "→"}
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

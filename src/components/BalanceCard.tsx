@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { ArrowUpRight, Send } from "lucide-react";
+import { ArrowUpRight, QrCode, Send, Shield } from "lucide-react";
 import type { Address } from "viem";
 
 type Props = {
@@ -23,6 +23,7 @@ export default function BalanceCard({
 }: Props) {
   const successRate =
     requestCount > 0 ? Math.round((receiptCount / requestCount) * 100) : 0;
+  const isEmpty = requestCount === 0;
 
   return (
     <motion.div
@@ -37,33 +38,44 @@ export default function BalanceCard({
         aria-hidden="true"
       />
 
-      <div className="relative p-6 sm:p-7">
+      <div className="relative p-5 sm:p-6">
         {/* Top row */}
-        <div className="mb-7 flex items-start justify-between gap-4">
+        <div className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-              Total requested volume
-            </p>
-            <h2 className="flex items-baseline gap-2 text-[2.25rem] font-semibold tracking-tight text-[var(--ink)] tabular-nums sm:text-[2.75rem]">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+                Total requested volume
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                <Shield size={9} strokeWidth={2} className="text-[var(--green-text)]" />
+                Non-custodial
+              </span>
+            </div>
+            <h2 className="flex items-baseline gap-2 text-[2rem] font-semibold tracking-[-0.02em] text-[var(--ink)] tabular-nums sm:text-[2.5rem]">
               {totalVolume}
-              <span className="text-base font-normal text-[var(--muted)]">USDC</span>
+              <span className="text-[13px] font-normal text-[var(--muted)]">USDC</span>
             </h2>
+            {isEmpty && (
+              <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+                No requests yet. Create one to start tracking volume.
+              </p>
+            )}
           </div>
 
           {account && (
             <div className="shrink-0 text-right">
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+              <p className="mb-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
                 Connected
               </p>
-              <p className="font-mono text-xs text-[var(--ink)]">
+              <p className="font-mono text-[11.5px] text-[var(--ink)]">
                 {account.slice(0, 6)}…{account.slice(-4)}
               </p>
             </div>
           )}
         </div>
 
-        {/* Metrics — dividers, not nested borders */}
-        <div className="mb-7 grid grid-cols-2 divide-x divide-y divide-[var(--line-soft)] overflow-hidden rounded-lg border border-[var(--line-soft)] md:grid-cols-4 md:divide-y-0">
+        {/* Metrics */}
+        <div className="mb-6 grid grid-cols-2 divide-x divide-y divide-[var(--line-soft)] overflow-hidden rounded-lg border border-[var(--line-soft)] md:grid-cols-4 md:divide-y-0">
           <MetricCell
             label="Verified"
             value={verifiedVolume}
@@ -82,28 +94,37 @@ export default function BalanceCard({
             tone="default"
           />
           <MetricCell
-            label="Success rate"
-            value={`${successRate}%`}
-            tone={successRate >= 80 ? "accent" : successRate >= 50 ? "warn" : "danger"}
+            label="Settled"
+            value={requestCount > 0 ? `${successRate}%` : "—"}
+            tone={
+              requestCount === 0
+                ? "default"
+                : successRate >= 80
+                ? "accent"
+                : successRate >= 50
+                ? "warn"
+                : "danger"
+            }
           />
         </div>
 
         {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => onNavigate("/qr-payments")}
-            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-4 py-2 text-[13px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--primary-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
           >
+            <QrCode size={13} strokeWidth={2} />
             Create request
-            <ArrowUpRight size={14} strokeWidth={2} />
+            <ArrowUpRight size={13} strokeWidth={2} />
           </button>
           <button
             type="button"
             onClick={() => onNavigate("/payments")}
-            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line)] px-4 py-2 text-[13px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line)] px-3.5 py-2 text-[12.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
           >
-            <Send size={14} strokeWidth={1.75} />
+            <Send size={13} strokeWidth={1.75} />
             Direct send
           </button>
         </div>
@@ -134,14 +155,14 @@ function MetricCell({
   tone: Tone;
 }) {
   return (
-    <div className="p-3.5">
-      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+    <div className="p-3">
+      <p className="mb-1.5 text-[9.5px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
         {label}
       </p>
-      <p className={`text-[17px] font-semibold tabular-nums ${TONE_CLASS[tone]}`}>
+      <p className={`text-[15.5px] font-semibold tabular-nums ${TONE_CLASS[tone]}`}>
         {value}
         {unit && (
-          <span className="ml-1 text-[11px] font-normal text-[var(--muted)]">
+          <span className="ml-1 text-[10.5px] font-normal text-[var(--muted)]">
             {unit}
           </span>
         )}
