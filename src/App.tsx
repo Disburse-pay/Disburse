@@ -194,6 +194,7 @@ const THEME_KEY = "disburse.theme";
 const LEGACY_THEME_KEY = "arc-pay-desk.theme";
 const LEGACY_DOCS_PATH = "/docs";
 const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
+const PRODUCTION_APP_HOSTNAME = "app.disburse.online";
 
 function cx(...values: Array<string | false | undefined>): string {
   return values.filter(Boolean).join(" ");
@@ -426,10 +427,20 @@ function getDocsHostname(hostname: string): string {
   if (isDocsHostname(hostname)) {
     return hostname;
   }
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
+  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
     return "docs.localhost";
   }
   return PRODUCTION_DOCS_HOSTNAME;
+}
+
+function getAppHostname(hostname: string): string {
+  if (hostname.startsWith("app.")) {
+    return hostname;
+  }
+  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
+    return "app.localhost";
+  }
+  return PRODUCTION_APP_HOSTNAME;
 }
 
 function getOriginForHostname(hostname: string): string {
@@ -447,13 +458,20 @@ function getDocsHref(): string {
 
 function getAppHref(path: string): string {
   const hostname = window.location.hostname;
-  if (!isDocsHostname(hostname)) {
-    if (path === "/" && isLocalHostname(hostname)) {
-      return "/?app=1";
-    }
+  
+  // If we are already on an app subdomain, we can use relative paths
+  if (hostname.startsWith("app.")) {
     return path;
   }
-  return `${getOriginForHostname(stripPublicSubdomain(hostname))}${path}`;
+
+  // If we are on localhost but not the app version, use the query param hack
+  if (isLocalHostname(hostname) && !hostname.startsWith("app.")) {
+    if (path === "/") return "/?app=1";
+    return `${path}${path.includes("?") ? "&" : "?"}app=1`;
+  }
+
+  // Otherwise, use the full origin for the app subdomain
+  return `${getOriginForHostname(getAppHostname(hostname))}${path}`;
 }
 
 function getInternalTargetPath(target: string): string | undefined {
