@@ -1,5 +1,5 @@
 /**
- * SettlementTimeline — Visual timeline showing the lifecycle of a payment
+ * SettlementTimeline. Visual timeline showing the lifecycle of a payment
  * from request creation through verification and attestation.
  */
 

@@ -6,7 +6,7 @@
 
 **The receipt layer for stablecoin payments.**
 
-Issue a QR request. The payer settles from any supported chain in USDC. Disburse writes a cryptographically verifiable receipt — the document your accountant, auditor, and tax office can actually file.
+Issue a QR request. The payer settles from any supported chain in USDC. Disburse writes a cryptographically verifiable receipt. the document your accountant, auditor, and tax office can actually file.
 
 [App](https://app.disburse.online) · [Docs](https://docs.disburse.online) · [X / Twitter](https://x.com/Disburs3) · [GitHub](https://github.com/Disburse-pay)
 
@@ -16,9 +16,9 @@ Issue a QR request. The payer settles from any supported chain in USDC. Disburse
 
 ## The problem
 
-Stablecoin volume is approaching trillions annually. Yet the accounting infrastructure around it is stuck at _"here is a block explorer link"_ — which no auditor, tax office, or enterprise AP system will accept as evidence that an invoice was paid.
+Stablecoin volume is approaching trillions annually. Yet the accounting infrastructure around it is stuck at _"here is a block explorer link"_. which no auditor, tax office, or enterprise AP system will accept as evidence that an invoice was paid.
 
-Freelancers export spreadsheets by hand. DAOs reconcile from Discord screenshots. Enterprises pay accountants to re-derive what already exists onchain. Every settlement happens twice — once on the chain, once in a shadow ledger.
+Freelancers export spreadsheets by hand. DAOs reconcile from Discord screenshots. Enterprises pay accountants to re-derive what already exists onchain. Every settlement happens twice. once on the chain, once in a shadow ledger.
 
 **Disburse closes that gap.** A transaction hash becomes a signed, structured, auditor-ready receipt that can be independently re-derived from raw chain data.
 
@@ -122,11 +122,11 @@ Existing Arc/Base deployment metadata is recorded in `deployments/qr-contracts-1
 
 ## Routes
 
-- `/` — Landing page.
-- `/payments` — direct wallet transfer flow.
-- `/qr-payments` — create, preview, export, import, and manage QR payment requests.
-- `/pay?r=<payload>` — payer page opened from a QR code.
-- `docs.disburse.online` — project documentation for the current build.
+- `/`. Landing page.
+- `/payments`. direct wallet transfer flow.
+- `/qr-payments`. create, preview, export, import, and manage QR payment requests.
+- `/pay?r=<payload>`. payer page opened from a QR code.
+- `docs.disburse.online`. project documentation for the current build.
 
 ## Network and assets
 
@@ -264,15 +264,15 @@ Invoice files are generated in the browser. They are not uploaded or emailed by 
 The testnet MVP covers end-to-end payment, verification, and receipt export. What comes next:
 
 - **Mainnet launch on Arc** once Arc mainnet is available.
-- **More source chains** — additional Polymer-supported chains as routes expand.
+- **More source chains**. additional Polymer-supported chains as routes expand.
 - **Recurring invoices and retainers** using Permit2 for scheduled pulls.
-- **Team accounts** — multi-recipient workspaces without custody.
-- **Webhook + API** — push paid-state events into QuickBooks, Xero, Notion, and Zapier.
-- **Attestation marketplace** — attach external attestations (KYC, business registry, sanctions screening) to a VSR.
+- **Team accounts**. multi-recipient workspaces without custody.
+- **Webhook + API**. push paid-state events into QuickBooks, Xero, Notion, and Zapier.
+- **Attestation marketplace**. attach external attestations (KYC, business registry, sanctions screening) to a VSR.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE) if present, otherwise all rights reserved pending license selection.
+MIT. see [`LICENSE`](LICENSE) if present, otherwise all rights reserved pending license selection.
 
 ---
 

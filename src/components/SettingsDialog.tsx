@@ -23,7 +23,7 @@ type Props = {
 
 /**
  * Settings dialog. Replaces the old /settings page. Grouped into three
- * sections — Appearance, Language, Currency — with plain, readable copy.
+ * sections. Appearance, Language, Currency. with plain, readable copy.
  */
 export default function SettingsDialog({ open, onClose, theme, onToggleTheme }: Props) {
   const { t, setLang, setCurrency } = useI18n();

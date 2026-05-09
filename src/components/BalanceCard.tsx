@@ -32,7 +32,7 @@ export default function BalanceCard({
       transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
       className="relative overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]"
     >
-      {/* Quiet highlight along the top edge — no giant blur blob. */}
+      {/* Quiet highlight along the top edge. no giant blur blob. */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--primary-bg)]/40 to-transparent"
         aria-hidden="true"
@@ -95,7 +95,7 @@ export default function BalanceCard({
           />
           <MetricCell
             label="Settled"
-            value={requestCount > 0 ? `${successRate}%` : "—"}
+            value={requestCount > 0 ? `${successRate}%` : "-"}
             tone={
               requestCount === 0
                 ? "default"
