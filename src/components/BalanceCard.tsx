@@ -1,99 +1,123 @@
-import { QrCode, X } from "lucide-react";
-import { AnimatePresence } from "motion/react";
-import { useState } from "react";
-import { useI18n } from "@/src/lib/i18n";
+import type { Address } from "viem";
 
-interface BalanceCardProps {
+type Props = {
   totalVolume: string;
   verifiedVolume: string;
   pendingVolume: string;
   requestCount: number;
   receiptCount: number;
-  account?: string;
+  account?: Address;
   onNavigate: (target: string) => void;
-}
+};
 
-export default function BalanceCard({ totalVolume, verifiedVolume, pendingVolume, requestCount, receiptCount, account, onNavigate }: BalanceCardProps) {
-  const [showQR, setShowQR] = useState(false);
-  const { t, currency, formatCurrency } = useI18n();
+export default function BalanceCard({
+  totalVolume,
+  verifiedVolume,
+  pendingVolume,
+  requestCount,
+  receiptCount,
+  account,
+  onNavigate,
+}: Props) {
+  const successRate =
+    requestCount > 0 ? Math.round((receiptCount / requestCount) * 100) : 0;
 
   return (
-    <>
-      <div className="border border-brand-border bg-brand-dark p-6 hover:border-[#222] transition-all duration-300 hover:-translate-y-0.5">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div className="relative overflow-hidden border border-brand-border bg-brand-surface/30 backdrop-blur-sm">
+      {/* Ambient glow */}
+      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-emerald-500/[0.04] blur-[100px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/3" />
+
+      <div className="relative p-6">
+        {/* Top row */}
+        <div className="flex items-start justify-between mb-6">
           <div>
-            <p className="text-xs font-mono uppercase tracking-widest text-muted mb-2">
-              {t("totalVolume")} · {currency}
+            <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-2">
+              Total Requested Volume
             </p>
-            <h3 className="text-4xl md:text-5xl font-medium tracking-tighter text-white tabular-nums">
-              {formatCurrency(totalVolume)}
-            </h3>
+            <h2 className="text-4xl font-semibold tracking-tight text-white tabular-nums">
+              {totalVolume}
+              <span className="text-lg text-white/30 ml-2 font-normal">USDC</span>
+            </h2>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => onNavigate("/qr-payments")}
-              className="px-5 py-2 border border-brand-border text-white text-xs font-medium uppercase tracking-widest flex items-center gap-2 hover:bg-brand-surface active:scale-[0.98] active:bg-brand-surface transition-all"
-            >
-              <QrCode className="w-4 h-4" />
-              {t("payQR")}
-            </button>
-          </div>
+          {account && (
+            <div className="text-right">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-1">
+                Connected
+              </p>
+              <p className="text-xs font-mono text-white/50">
+                {account.slice(0, 6)}...{account.slice(-4)}
+              </p>
+            </div>
+          )}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-brand-border flex flex-wrap gap-6 text-xs font-mono uppercase tracking-wider text-muted">
-          <div>
-            <span className="text-white font-medium tabular-nums">{formatCurrency(verifiedVolume)}</span> {t("verified")}
-          </div>
-          <div>
-            <span className="text-white font-medium tabular-nums">{formatCurrency(pendingVolume)}</span> {t("pending")}
-          </div>
-          <div>
-            <span className="text-white font-medium tabular-nums">{requestCount}</span> {t("requests")}
-          </div>
-          <div>
-            <span className="text-white font-medium tabular-nums">{receiptCount}</span> {t("receipts")}
-          </div>
+        {/* Metrics grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <MetricCell
+            label="Verified"
+            value={verifiedVolume}
+            unit="USDC"
+            accent="text-emerald-400"
+          />
+          <MetricCell
+            label="Pending"
+            value={pendingVolume}
+            unit="USDC"
+            accent="text-blue-400"
+          />
+          <MetricCell
+            label="Requests"
+            value={String(requestCount)}
+            accent="text-white"
+          />
+          <MetricCell
+            label="Success Rate"
+            value={`${successRate}%`}
+            accent={successRate >= 80 ? "text-emerald-400" : successRate >= 50 ? "text-amber-400" : "text-red-400"}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="px-4 py-2 bg-white text-black font-medium text-xs tracking-wide hover:bg-white/90 transition-colors"
+            onClick={() => onNavigate("/qr-payments")}
+          >
+            Create Request
+          </button>
+          <button
+            type="button"
+            className="px-4 py-2 border border-white/15 text-white font-medium text-xs tracking-wide hover:bg-white/5 transition-colors"
+            onClick={() => onNavigate("/payments")}
+          >
+            Direct Send
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <AnimatePresence>
-        {showQR && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              onClick={() => setShowQR(false)}
-              className="absolute inset-0 bg-black/60"
-            />
-            <div
-              className="relative bg-brand-dark border border-brand-border p-8 max-w-sm w-full z-10"
-            >
-              <button 
-                onClick={() => setShowQR(false)}
-                className="absolute top-4 right-4 p-2 rounded-full hover:bg-brand-surface transition-colors"
-                aria-label="Close QR Modal"
-              >
-                <X className="w-5 h-5 text-muted" />
-              </button>
-
-              <div className="text-center mb-8 mt-2">
-                <h3 className="text-xl font-bold text-white mb-2">Receive Payment</h3>
-                <p className="text-sm text-muted">Scan this code to pay with USDC on Arc Testnet</p>
-              </div>
-
-              <div className="bg-white p-6 aspect-square flex items-center justify-center mb-6">
-                <QrCode className="w-3/4 h-3/4 text-brand-dark" />
-              </div>
-
-              <div className="text-center">
-                <p className="text-xs text-muted mb-2 uppercase tracking-wider font-mono">Wallet Address</p>
-                <p className="text-sm font-mono text-white bg-brand-surface py-3 px-4 break-all border border-brand-border">
-                  {account || "Connect wallet to view address"}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-    </>
+function MetricCell({
+  label,
+  value,
+  unit,
+  accent,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  accent: string;
+}) {
+  return (
+    <div className="p-3 border border-brand-border/50 bg-white/[0.01]">
+      <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-1.5">{label}</p>
+      <p className={`text-lg font-semibold tabular-nums ${accent}`}>
+        {value}
+        {unit && <span className="text-[10px] text-muted ml-1 font-normal">{unit}</span>}
+      </p>
+    </div>
   );
 }

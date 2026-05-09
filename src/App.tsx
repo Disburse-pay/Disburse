@@ -25,7 +25,10 @@ import BalanceCard from "@/src/components/BalanceCard";
 import TransactionsTable from "@/src/components/TransactionsTable";
 import MonthlyStats from "@/src/components/MonthlyStats";
 import AdjustmentsGraph from "@/src/components/AdjustmentsGraph";
+import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/SettlementTimeline";
 import { cn } from "@/src/lib/utils";
+import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
+import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice, generateReceiptFingerprint } from "./lib/compliance";
 import {
   Area,
   AreaChart,
@@ -377,11 +380,11 @@ function getInitialTheme(): Theme {
 
 function getInitialPage(): Page {
   const hostname = window.location.hostname;
-  if (isDocsHostname(hostname)) {
+  const p = window.location.pathname;
+  if (isDocsHostname(hostname) || isLocalDocsPreview(hostname, p)) {
     return "docs";
   }
   
-  const p = window.location.pathname;
   const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
   
   if (isApp) {
@@ -407,6 +410,10 @@ function isLocalAppPreview(hostname: string, pathname: string): boolean {
 
   const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
   return appPreview || ["/payments", "/qr-payments", "/pay", "/import-export", "/settings"].includes(pathname);
+}
+
+function isLocalDocsPreview(hostname: string, pathname: string): boolean {
+  return (isLocalHostname(hostname) || hostname.endsWith(".localhost")) && pathname === LEGACY_DOCS_PATH;
 }
 
 function isDocsHostname(hostname = window.location.hostname): boolean {
@@ -453,6 +460,9 @@ function getDocsHref(): string {
   if (isDocsHostname(hostname)) {
     return "/";
   }
+  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
+    return LEGACY_DOCS_PATH;
+  }
   return `${getOriginForHostname(getDocsHostname(hostname))}/`;
 }
 
@@ -483,7 +493,7 @@ function getInternalTargetPath(target: string): string | undefined {
 }
 
 function shouldRedirectLegacyDocsRoute(): boolean {
-  if (isDocsHostname()) {
+  if (isDocsHostname() || isLocalHostname(window.location.hostname) || window.location.hostname.endsWith(".localhost")) {
     return false;
   }
   return window.location.pathname === LEGACY_DOCS_PATH;
@@ -531,6 +541,7 @@ function App() {
   const [payApprovalHash, setPayApprovalHash] = useState<Hash>();
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
   const [appSettings] = useState<AppSettings>(() => {
     const s = loadSettings();
     applyColorTone(s.colorTone);
@@ -1372,6 +1383,44 @@ function App() {
     }
   }
 
+  async function handleCreateAttestation(request: PaymentRequest, receipt: Receipt) {
+    try {
+      const attestation = await createSettlementAttestation(request, receipt);
+      setPayAttestation(attestation);
+      setReceipts((current) =>
+        current.map((r) =>
+          r.requestId === receipt.requestId
+            ? { ...r, attestationUid: attestation.uid, attestationFingerprint: attestation.fingerprint }
+            : r
+        )
+      );
+      setPayNotice({ tone: "success", text: `Settlement attested. VSR: ${attestation.uid}` });
+      return attestation;
+    } catch (error) {
+      setPayNotice({ tone: "error", text: errorToMessage(error) });
+      return undefined;
+    }
+  }
+
+  function handleDownloadSettlementProof(request: PaymentRequest, receipt: Receipt) {
+    try {
+      const proof = generateSettlementProof(request, receipt, payAttestation);
+      downloadSettlementProof(proof);
+      setPayNotice({ tone: "success", text: "Settlement proof exported." });
+    } catch (error) {
+      setPayNotice({ tone: "error", text: errorToMessage(error) });
+    }
+  }
+
+  function handleDownloadUBLInvoice(request: PaymentRequest, receipt: Receipt) {
+    try {
+      downloadUBLInvoice(request, receipt);
+      setPayNotice({ tone: "success", text: "UBL invoice exported." });
+    } catch (error) {
+      setPayNotice({ tone: "error", text: errorToMessage(error) });
+    }
+  }
+
   async function refreshDirectBalances(transfer = buildTokenTransfer(directForm)) {
     if (!account) {
       return;
@@ -1644,6 +1693,10 @@ function App() {
               onPay={handlePayQrRequest}
               onVerify={() => handleVerifyQrRequest(payRequest)}
               onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
+              onAttest={() => payRequest && payReceipt && handleCreateAttestation(payRequest, payReceipt)}
+              onSettlementProof={() => payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)}
+              onUBLExport={() => payRequest && payReceipt && handleDownloadUBLInvoice(payRequest, payReceipt)}
+              attestation={payAttestation}
               onCopy={(value) => copyValue(value, setPayNotice)}
             />
           )}
@@ -2128,6 +2181,10 @@ function PayRequestPage({
   onPay,
   onVerify,
   onInvoice,
+  onAttest,
+  onSettlementProof,
+  onUBLExport,
+  attestation,
   onCopy
 }: {
   account?: `0x${string}`;
@@ -2160,6 +2217,10 @@ function PayRequestPage({
   onPay: () => void;
   onVerify: () => void;
   onInvoice: () => void;
+  onAttest?: () => void;
+  onSettlementProof?: () => void;
+  onUBLExport?: () => void;
+  attestation?: SettlementAttestation;
   onCopy: (value: string) => void;
 }) {
   const hasSubmittedTransaction = Boolean(request?.txHash && request.status !== "paid");
@@ -2349,23 +2410,71 @@ function PayRequestPage({
               )}
 
               {receipt && (
-                <div className="receipt-line">
-                  <div>
-                    <span>Receipt</span>
-                    <strong>{shortAddress(receipt.txHash, 10, 8)}</strong>
+                <>
+                  <div className="receipt-line">
+                    <div>
+                      <span>Receipt</span>
+                      <strong>{shortAddress(receipt.txHash, 10, 8)}</strong>
+                    </div>
+                    <div className="receipt-actions">
+                      <button className="text-button" type="button" onClick={() => onCopy(receipt.explorerUrl)}>
+                        Copy tx
+                      </button>
+                      <button className="text-button" type="button" onClick={onInvoice} disabled={isGeneratingInvoice}>
+                        {isGeneratingInvoice ? "Preparing PDF" : "Download invoice"}
+                      </button>
+                      <a href={receipt.explorerUrl} target="_blank" rel="noreferrer">
+                        Open tx
+                      </a>
+                    </div>
                   </div>
-                  <div className="receipt-actions">
-                    <button className="text-button" type="button" onClick={() => onCopy(receipt.explorerUrl)}>
-                      Copy tx
-                    </button>
-                    <button className="text-button" type="button" onClick={onInvoice} disabled={isGeneratingInvoice}>
-                      {isGeneratingInvoice ? "Preparing PDF" : "Download invoice"}
-                    </button>
-                    <a href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-                      Open tx
-                    </a>
+
+                  {/* Compliance Export Actions */}
+                  <div className="compliance-actions">
+                    <div className="compliance-header">
+                      <span className="compliance-label">Settlement Exports</span>
+                      {attestation && (
+                        <span className="attestation-badge">
+                          VSR: {attestation.uid}
+                        </span>
+                      )}
+                    </div>
+                    <div className="compliance-buttons">
+                      {!attestation && onAttest && (
+                        <button className="compliance-button" type="button" onClick={onAttest}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                          </svg>
+                          Create Attestation
+                        </button>
+                      )}
+                      {attestation && (
+                        <button className="compliance-button attested" type="button" disabled>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Attested
+                        </button>
+                      )}
+                      {onSettlementProof && (
+                        <button className="compliance-button" type="button" onClick={onSettlementProof}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                          Settlement Proof
+                        </button>
+                      )}
+                      {onUBLExport && (
+                        <button className="compliance-button" type="button" onClick={onUBLExport}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+                          </svg>
+                          UBL Invoice (XML)
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </section>
           </div>

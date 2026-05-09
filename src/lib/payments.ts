@@ -54,6 +54,8 @@ export type Receipt = {
   chainId?: number;
   sourceChainId?: PaymentSourceChainId;
   sourceTxHash?: Hash;
+  attestationUid?: string;
+  attestationFingerprint?: string;
 };
 
 export type SharePayload = Omit<PaymentRequest, "status" | "txHash" | "submittedAt"> & {
