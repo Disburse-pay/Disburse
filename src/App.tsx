@@ -1,4 +1,42 @@
 import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  ArrowRightLeft,
+  BookOpen,
+  ChevronsLeftRight,
+  Download,
+  ExternalLink,
+  Home,
+  LifeBuoy,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  QrCode,
+  Search,
+  Send,
+  Settings,
+  ShieldCheck,
+  Sun,
+  WalletCards
+} from "lucide-react";
+import Sidebar from "@/src/components/Sidebar";
+import Header from "@/src/components/Header";
+import BalanceCard from "@/src/components/BalanceCard";
+import TransactionsTable from "@/src/components/TransactionsTable";
+import MonthlyStats from "@/src/components/MonthlyStats";
+import AdjustmentsGraph from "@/src/components/AdjustmentsGraph";
+import { cn } from "@/src/lib/utils";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import { formatUnits, parseUnits, type Hash } from "viem";
 import {
   ARC_CHAIN_ID,
@@ -10,6 +48,19 @@ import {
   TOKENS
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
+import { I18nProvider, useI18n } from "./lib/i18n";
+import {
+  type AppSettings,
+  type ColorTone,
+  type LanguageCode,
+  COLOR_TONE_META,
+  CURRENCY_META,
+  LANGUAGE_META,
+  loadSettings,
+  saveSettings,
+  applyColorTone,
+  defaultSettings
+} from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
 import {
   ARC_DESTINATION_CHAIN_ID,
@@ -52,6 +103,7 @@ import {
   buildShareUrl,
   createExpiry,
   decodeRequestPayload,
+  encodeRequestPayload,
   formatTokenAmount,
   isCrossChainPaymentRequest,
   isPaymentExpired,
@@ -94,6 +146,7 @@ import {
 } from "./lib/qrApi";
 import { applyQrRealtimeEvent, shouldHideQrForStatus, type QrRealtimeEvent, type QrStatusPayload } from "./lib/realtime";
 import { getSupabaseBrowserClient } from "./lib/supabaseClient";
+import LandingPage from "./LandingPage";
 
 type DirectFormState = {
   recipient: string;
@@ -114,7 +167,7 @@ type Notice = {
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
 type Theme = "light" | "dark";
-type Page = "payments" | "qr-payments" | "pay" | "docs";
+type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs" | "settings";
 type PayLifecycle =
   | "idle"
   | "preparing"
@@ -141,6 +194,10 @@ const THEME_KEY = "disburse.theme";
 const LEGACY_THEME_KEY = "arc-pay-desk.theme";
 const LEGACY_DOCS_PATH = "/docs";
 const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
+
+function cx(...values: Array<string | false | undefined>): string {
+  return values.filter(Boolean).join(" ");
+}
 
 const emptyDirectForm: DirectFormState = {
   recipient: "",
@@ -318,16 +375,37 @@ function getInitialTheme(): Theme {
 }
 
 function getInitialPage(): Page {
-  if (isDocsHostname()) {
+  const hostname = window.location.hostname;
+  if (isDocsHostname(hostname)) {
     return "docs";
   }
-  if (window.location.pathname === "/qr-payments") {
-    return "qr-payments";
+  
+  const p = window.location.pathname;
+  const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
+  
+  if (isApp) {
+    if (p === "/payments") return "payments";
+    if (p === "/qr-payments") return "qr-payments";
+    if (p === "/pay") return "pay";
+    if (p === "/import-export") return "import-export";
+    if (p === "/settings") return "settings";
+    return "dashboard";
   }
-  if (window.location.pathname === "/pay") {
-    return "pay";
+  
+  return "landing";
+}
+
+function isLocalHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0";
+}
+
+function isLocalAppPreview(hostname: string, pathname: string): boolean {
+  if (!isLocalHostname(hostname)) {
+    return false;
   }
-  return "payments";
+
+  const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
+  return appPreview || ["/payments", "/qr-payments", "/pay", "/import-export", "/settings"].includes(pathname);
 }
 
 function isDocsHostname(hostname = window.location.hostname): boolean {
@@ -370,6 +448,9 @@ function getDocsHref(): string {
 function getAppHref(path: string): string {
   const hostname = window.location.hostname;
   if (!isDocsHostname(hostname)) {
+    if (path === "/" && isLocalHostname(hostname)) {
+      return "/?app=1";
+    }
     return path;
   }
   return `${getOriginForHostname(stripPublicSubdomain(hostname))}${path}`;
@@ -397,6 +478,7 @@ function getCurrentRouteKey(): string {
 function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [page, setPage] = useState<Page>(() => getInitialPage());
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [routeKey, setRouteKey] = useState(() => getCurrentRouteKey());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [directForm, setDirectForm] = useState<DirectFormState>(emptyDirectForm);
@@ -431,6 +513,11 @@ function App() {
   const [payApprovalHash, setPayApprovalHash] = useState<Hash>();
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [appSettings] = useState<AppSettings>(() => {
+    const s = loadSettings();
+    applyColorTone(s.colorTone);
+    return s;
+  });
 
   const selectedRequest = useMemo(
     () => requests.find((request) => request.id === selectedId) ?? requests[0],
@@ -482,7 +569,7 @@ function App() {
     localStorage.setItem(THEME_KEY, theme);
     document
       .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-      ?.setAttribute("content", theme === "dark" ? "#0e0f0d" : "#f7f6f3");
+      ?.setAttribute("content", theme === "dark" ? "#0c0e12" : "#f8f9fb");
   }, [theme]);
 
   useEffect(() => {
@@ -492,7 +579,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.title = page === "docs" ? "Documentation | Disburse" : "Disburse";
+    const titles: Record<Page, string> = { landing: "Disburse", dashboard: "Dashboard | Disburse", payments: "Payments | Disburse", "qr-payments": "QR Payments | Disburse", pay: "Pay | Disburse", "import-export": "Import / Export | Disburse", docs: "Documentation | Disburse", settings: "Settings | Disburse" };
+    document.title = titles[page] ?? "Disburse";
   }, [page]);
 
   useEffect(() => {
@@ -1393,112 +1481,170 @@ function App() {
     onToggleTheme: handleThemeToggle
   };
 
+  if (page === "landing") {
+    return (
+      <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
+        <LandingPage />
+      </I18nProvider>
+    );
+  }
+
+  const headerTitle = page === "dashboard" ? "Personal overview" :
+    page === "payments" ? "Payments" :
+    page === "qr-payments" ? "QR Payments" :
+    page === "pay" ? "Pay Request" :
+    page === "import-export" ? "Import / Export" :
+    page === "docs" ? "Documentation" :
+    page === "settings" ? "Settings" : "Dashboard";
+
   return (
-    <main className="site-shell">
-      <TopNav {...commonShellProps} />
-
-      {page === "docs" && <DocsPage />}
-      {page === "payments" && (
-        <PaymentsPage
+    <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
+    <div className="flex min-h-screen bg-brand-dark overflow-x-hidden relative">
+      <Sidebar
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
+        page={page}
+        onNavigate={handleNavigate}
+      />
+      
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-20" : "ml-64")}>
+        <Header
+          title={headerTitle}
           account={account}
-          wrongChain={wrongChain}
-          hasWalletProvider={hasWalletProvider}
-          form={directForm}
-          balances={directBalances}
-          estimate={directEstimate}
-          notice={directNotice}
-          walletNotice={walletNotice}
-          hash={directHash}
-          insufficientToken={directInsufficientToken}
-          missingGas={directMissingGas}
-          rpcBlockLabel={rpcBlockLabel}
-          rpcGasLabel={rpcGasLabel}
-          rpcStatusLabel={rpcStatusLabel}
-          rpcHealth={rpcHealth}
+          chainId={chainId}
+          expectedChainId={commonShellProps.expectedChainId}
+          expectedChainLabel={commonShellProps.expectedChainLabel}
           isConnecting={isConnecting}
-          isEstimating={isEstimatingDirect}
-          isSending={isSendingDirect}
-          onFormChange={(next) => {
-            setDirectForm(next);
-            setDirectEstimate(undefined);
-            setDirectBalances(undefined);
-            setDirectHash(undefined);
-          }}
           onConnect={handleConnectWallet}
-          onSwitch={handleSwitchNetwork}
-          onEstimate={handleDirectEstimate}
-          onSend={handleDirectSend}
-          onCopy={(value) => copyValue(value, setDirectNotice)}
-          onNavigate={navigateTo}
+          onSwitch={commonShellProps.onSwitch}
+          onToggleTheme={handleThemeToggle}
+          theme={theme}
         />
-      )}
-      {page === "qr-payments" && (
-        <QrPaymentsPage
-          account={account}
-          form={qrForm}
-          selectedRequest={selectedRequest}
-          selectedReceipt={selectedReceipt}
-          requests={requests}
-          receipts={receipts}
-          shareUrl={shareUrl}
-          qrDataUrl={qrDataUrl}
-          notice={qrNotice}
-          now={now}
-          isCreating={isCreatingQr}
-          importInputRef={importInputRef}
-          onFormChange={setQrForm}
-          onSubmit={handleCreateQrRequest}
-          onSelectRequest={handleSelectRequest}
-          onCopy={(value) => copyValue(value, setQrNotice)}
-          onExport={handleExport}
-          onImport={handleImport}
-        />
-      )}
-      {page === "pay" && (
-        <PayRequestPage
-          account={account}
-          wrongChain={payWrongChain}
-          hasWalletProvider={hasWalletProvider}
-          request={payRequest}
-          receipt={payReceipt}
-          status={payDisplayStatus}
-          balances={payBalances}
-          estimate={payEstimate}
-          approvalHash={payApprovalHash}
-          notice={payNotice}
-          walletNotice={walletNotice}
-          now={now}
-          isExpired={payIsExpired}
-          isPayable={payIsPayable}
-          insufficientToken={payInsufficientToken}
-          missingGas={payMissingGas}
-          isConnecting={isConnecting}
-          isEstimating={isEstimatingPay}
-          isPaying={isPayingQr}
-          lifecycle={payLifecycle}
-          isVerifying={isVerifying}
-          isGeneratingInvoice={isGeneratingInvoice}
-          onConnect={handleConnectWallet}
-          onSwitch={handleSwitchPayNetwork}
-          sourceChainId={paySourceChainId}
-          onSourceChainChange={(chainId) => {
-            setPaySourceChainId(chainId);
-            setPayBalances(undefined);
-            setPayEstimate(undefined);
-            setPayApprovalHash(undefined);
-            setPayNotice(undefined);
-          }}
-          onEstimate={handlePayEstimate}
-          onPay={handlePayQrRequest}
-          onVerify={() => handleVerifyQrRequest(payRequest)}
-          onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
-          onCopy={(value) => copyValue(value, setPayNotice)}
-        />
-      )}
-
-      {page !== "pay" && page !== "docs" && <FAQSection />}
-      <SiteFooter onNavigate={handleNavigate} />
-    </main>
+        
+        <div className="flex-1 p-6 overflow-y-auto relative">
+          {page === "dashboard" && (
+            <DashboardPage
+              requests={requests}
+              receipts={receipts}
+              account={account}
+              rpcHealth={rpcHealth}
+              rpcStatusLabel={rpcStatusLabel}
+              rpcBlockLabel={rpcBlockLabel}
+              now={now}
+              onNavigate={navigateTo}
+              onExport={handleExport}
+            />
+          )}
+          {page === "docs" && <DocsPage />}
+          {page === "payments" && (
+            <PaymentsPage
+              account={account}
+              wrongChain={wrongChain}
+              hasWalletProvider={hasWalletProvider}
+              form={directForm}
+              balances={directBalances}
+              estimate={directEstimate}
+              notice={directNotice}
+              walletNotice={walletNotice}
+              hash={directHash}
+              insufficientToken={directInsufficientToken}
+              missingGas={directMissingGas}
+              isConnecting={isConnecting}
+              isEstimating={isEstimatingDirect}
+              isSending={isSendingDirect}
+              onFormChange={(next) => {
+                setDirectForm(next);
+                setDirectEstimate(undefined);
+                setDirectBalances(undefined);
+                setDirectHash(undefined);
+              }}
+              onConnect={handleConnectWallet}
+              onSwitch={handleSwitchNetwork}
+              onEstimate={handleDirectEstimate}
+              onSend={handleDirectSend}
+              onCopy={(value) => copyValue(value, setDirectNotice)}
+              onNavigate={navigateTo}
+            />
+          )}
+          {page === "qr-payments" && (
+            <QrPaymentsPage
+              account={account}
+              form={qrForm}
+              selectedRequest={selectedRequest}
+              selectedReceipt={selectedReceipt}
+              requests={requests}
+              receipts={receipts}
+              shareUrl={shareUrl}
+              qrDataUrl={qrDataUrl}
+              notice={qrNotice}
+              now={now}
+              isCreating={isCreatingQr}
+              importInputRef={importInputRef}
+              onFormChange={setQrForm}
+              onSubmit={handleCreateQrRequest}
+              onSelectRequest={handleSelectRequest}
+              onCopy={(value) => copyValue(value, setQrNotice)}
+              onExport={handleExport}
+              onImport={handleImport}
+            />
+          )}
+          {page === "pay" && (
+            <PayRequestPage
+              account={account}
+              wrongChain={payWrongChain}
+              hasWalletProvider={hasWalletProvider}
+              request={payRequest}
+              receipt={payReceipt}
+              status={payDisplayStatus}
+              balances={payBalances}
+              estimate={payEstimate}
+              approvalHash={payApprovalHash}
+              notice={payNotice}
+              walletNotice={walletNotice}
+              now={now}
+              isExpired={payIsExpired}
+              isPayable={payIsPayable}
+              insufficientToken={payInsufficientToken}
+              missingGas={payMissingGas}
+              isConnecting={isConnecting}
+              isEstimating={isEstimatingPay}
+              isPaying={isPayingQr}
+              lifecycle={payLifecycle}
+              isVerifying={isVerifying}
+              isGeneratingInvoice={isGeneratingInvoice}
+              onConnect={handleConnectWallet}
+              onSwitch={handleSwitchPayNetwork}
+              sourceChainId={paySourceChainId}
+              onSourceChainChange={(chainId) => {
+                setPaySourceChainId(chainId);
+                setPayBalances(undefined);
+                setPayEstimate(undefined);
+                setPayApprovalHash(undefined);
+                setPayNotice(undefined);
+              }}
+              onEstimate={handlePayEstimate}
+              onPay={handlePayQrRequest}
+              onVerify={() => handleVerifyQrRequest(payRequest)}
+              onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
+              onCopy={(value) => copyValue(value, setPayNotice)}
+            />
+          )}
+          {page === "import-export" && (
+            <ImportExportPage
+              requests={requests}
+              receipts={receipts}
+              importInputRef={importInputRef}
+              onExport={handleExport}
+              onImport={handleImport}
+            />
+          )}
+          {page === "settings" && (
+            <SettingsPage />
+          )}
+        </div>
+      </main>
+    </div>
+    </I18nProvider>
   );
 }
 
@@ -1514,10 +1660,6 @@ function PaymentsPage({
   hash,
   insufficientToken,
   missingGas,
-  rpcBlockLabel,
-  rpcGasLabel,
-  rpcStatusLabel,
-  rpcHealth,
   isConnecting,
   isEstimating,
   isSending,
@@ -1540,10 +1682,6 @@ function PaymentsPage({
   hash?: Hash;
   insufficientToken: boolean;
   missingGas: boolean;
-  rpcBlockLabel: string;
-  rpcGasLabel: string;
-  rpcStatusLabel: string;
-  rpcHealth?: RpcHealth;
   isConnecting: boolean;
   isEstimating: boolean;
   isSending: boolean;
@@ -1558,12 +1696,6 @@ function PaymentsPage({
   return (
     <>
       <RouteHero eyebrow="Payments" title="Send stablecoins directly from your wallet." />
-      <NetworkStrip
-        rpcBlockLabel={rpcBlockLabel}
-        rpcGasLabel={rpcGasLabel}
-        rpcStatusLabel={rpcStatusLabel}
-        rpcHealth={rpcHealth}
-      />
 
       <section className="workbench" aria-labelledby="payments-heading">
         <header className="section-header">
@@ -2227,31 +2359,6 @@ function PayRequestPage({
   );
 }
 
-function NetworkStrip({
-  rpcBlockLabel,
-  rpcGasLabel,
-  rpcStatusLabel,
-  rpcHealth
-}: {
-  rpcBlockLabel: string;
-  rpcGasLabel: string;
-  rpcStatusLabel: string;
-  rpcHealth?: RpcHealth;
-}) {
-  return (
-    <section className="system-strip-rail" aria-label="Network status">
-      <div className="system-strip">
-        <Metric label="live block" value={rpcBlockLabel} />
-        <Metric label="safe gas" value={rpcGasLabel} />
-        <Metric label="chain" value={String(ARC_CHAIN_ID)} />
-        <Metric label="rpc" value={rpcStatusLabel} />
-        <Metric label="USDC" value={rpcHealth?.usdcDecimals ? `${rpcHealth.usdcDecimals} decimals` : "pending"} />
-        <Metric label="EURC" value={rpcHealth?.eurcDecimals ? `${rpcHealth.eurcDecimals} decimals` : "pending"} />
-      </div>
-    </section>
-  );
-}
-
 function RouteHero({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <section id="top" className="hero route-hero">
@@ -2430,97 +2537,6 @@ function EstimateGrid({ estimate }: { estimate: TransferEstimate }) {
   );
 }
 
-function TopNav({
-  page,
-  theme,
-  account,
-  chainId,
-  expectedChainId,
-  expectedChainLabel,
-  isConnecting,
-  onConnect,
-  onSwitch,
-  onNavigate,
-  onToggleTheme
-}: {
-  page: Page;
-  theme: Theme;
-  account?: string;
-  chainId?: number;
-  expectedChainId: number;
-  expectedChainLabel: string;
-  isConnecting: boolean;
-  onConnect: () => void;
-  onSwitch: () => void;
-  onNavigate: NavigateHandler;
-  onToggleTheme: () => void;
-}) {
-  const paymentsHref = getAppHref("/payments");
-  const qrPaymentsHref = getAppHref("/qr-payments");
-  const docsHref = getDocsHref();
-
-  return (
-    <nav className="top-nav" aria-label="Primary">
-      <a className="brand" href={paymentsHref} onClick={(event) => onNavigate(event, paymentsHref)} aria-label="Disburse payments">
-        <img src="/disburse-logo.png" alt="" aria-hidden="true" />
-        <strong>Disburse</strong>
-      </a>
-      <div className="nav-links">
-        <a
-          className={page === "payments" ? "active" : ""}
-          href={paymentsHref}
-          onClick={(event) => onNavigate(event, paymentsHref)}
-          aria-current={page === "payments" ? "page" : undefined}
-        >
-          Payments
-        </a>
-        <a
-          className={page === "qr-payments" || page === "pay" ? "active" : ""}
-          href={qrPaymentsHref}
-          onClick={(event) => onNavigate(event, qrPaymentsHref)}
-          aria-current={page === "qr-payments" || page === "pay" ? "page" : undefined}
-        >
-          QR Payments
-        </a>
-        <a
-          className={page === "docs" ? "active" : ""}
-          href={docsHref}
-          onClick={(event) => onNavigate(event, docsHref)}
-          aria-current={page === "docs" ? "page" : undefined}
-        >
-          Docs
-        </a>
-      </div>
-      <div className="nav-actions">
-        <a className="text-link" href={ARC_FAUCET_URL} target="_blank" rel="noreferrer">
-          Faucet
-        </a>
-        <WalletPill
-          account={account}
-          chainId={chainId}
-          expectedChainId={expectedChainId}
-          expectedChainLabel={expectedChainLabel}
-          isConnecting={isConnecting}
-          onConnect={onConnect}
-          onSwitch={onSwitch}
-        />
-        <button
-          className="theme-toggle"
-          type="button"
-          onClick={onToggleTheme}
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          aria-pressed={theme === "dark"}
-        >
-          <span className="theme-toggle-track" aria-hidden="true">
-            <span className="theme-toggle-knob" />
-          </span>
-          <span className="theme-toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
-        </button>
-      </div>
-    </nav>
-  );
-}
-
 function DocsPage() {
   return (
     <>
@@ -2617,19 +2633,27 @@ function FAQSection() {
 }
 
 function SiteFooter({ onNavigate }: { onNavigate: NavigateHandler }) {
+  const dashHref = getAppHref("/");
   const paymentsHref = getAppHref("/payments");
   const qrPaymentsHref = getAppHref("/qr-payments");
+  const ieHref = getAppHref("/import-export");
   const docsHref = getDocsHref();
 
   return (
     <footer className="site-footer">
       <strong>Disburse</strong>
       <nav aria-label="Footer">
+        <a href={dashHref} onClick={(event) => onNavigate(event, dashHref)}>
+          Dashboard
+        </a>
         <a href={paymentsHref} onClick={(event) => onNavigate(event, paymentsHref)}>
           Payments
         </a>
         <a href={qrPaymentsHref} onClick={(event) => onNavigate(event, qrPaymentsHref)}>
           QR Payments
+        </a>
+        <a href={ieHref} onClick={(event) => onNavigate(event, ieHref)}>
+          Import / Export
         </a>
         <a href={docsHref} onClick={(event) => onNavigate(event, docsHref)}>
           Docs
@@ -3055,6 +3079,269 @@ function trimDisplay(value: string, maxDecimals: number): string {
   }
   const trimmed = fraction.slice(0, maxDecimals).replace(/0+$/, "");
   return trimmed ? `${whole}.${trimmed}` : whole;
+}
+
+function DashboardPage({
+  requests, receipts, account, rpcHealth, rpcStatusLabel, rpcBlockLabel, now, onNavigate, onExport
+}: {
+  requests: PaymentRequest[];
+  receipts: Receipt[];
+  account?: `0x${string}`;
+  rpcHealth?: RpcHealth;
+  rpcStatusLabel: string;
+  rpcBlockLabel: string;
+  now: Date;
+  onNavigate: (target: string) => void;
+  onExport: () => void;
+}) {
+  const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
+  const verifiedVolume = requests
+    .filter((request) => refreshDerivedStatus(request, now).status === "paid")
+    .reduce((sum, request) => sum + Number(request.amount || 0), 0);
+  const pendingVolume = requests
+    .filter((request) => refreshDerivedStatus(request, now).status === "open")
+    .reduce((sum, request) => sum + Number(request.amount || 0), 0);
+  const expiredCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "expired").length;
+  const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  const activityData = Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - (6 - offset));
+    const key = date.toISOString().slice(0, 10);
+    const dayRequests = requests.filter((request) => request.createdAt.slice(0, 10) === key);
+    return {
+      name: dayFormatter.format(date),
+      volume: dayRequests.reduce((sum, request) => sum + Number(request.amount || 0), 0),
+      count: dayRequests.length
+    };
+  });
+  const monthlyData = Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (5 - offset), 1);
+    const month = date.toISOString().slice(0, 7);
+    const monthRequests = requests.filter((request) => request.createdAt.slice(0, 7) === month);
+    return {
+      month: new Intl.DateTimeFormat(undefined, { month: "short" }).format(date),
+      volume: monthRequests.reduce((sum, request) => sum + Number(request.amount || 0), 0),
+      count: monthRequests.length
+    };
+  });
+
+  return (
+    <div className="w-full mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6 pb-12 relative z-10">
+      {/* Main Area */}
+      <div className="xl:col-span-8 space-y-6">
+        <BalanceCard
+          totalVolume={totalVolume.toFixed(2)}
+          verifiedVolume={verifiedVolume.toFixed(2)}
+          pendingVolume={pendingVolume.toFixed(2)}
+          requestCount={requests.length}
+          receiptCount={receipts.length}
+          account={account}
+          onNavigate={onNavigate}
+        />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <MonthlyStats activityData={activityData} />
+          <AdjustmentsGraph
+            monthlyData={monthlyData}
+            rpcStatusLabel={rpcStatusLabel}
+            rpcBlockLabel={rpcBlockLabel}
+            rpcHealthy={rpcHealth?.healthy}
+          />
+        </div>
+
+        <TransactionsTable
+          requests={requests}
+          receipts={receipts}
+          now={now}
+          onNavigate={onNavigate}
+        />
+      </div>
+
+      {/* Right Sidebar */}
+      <aside className="xl:col-span-4 space-y-6">
+        <div className="border border-brand-border bg-brand-dark p-6 text-xs text-muted leading-relaxed hover:border-[#222] transition-all duration-300 hover:-translate-y-0.5">
+          <p className="font-medium text-white mb-1">Console Note</p>
+          <p>Test the complete payment flow using the QR Generator without signing real transactions on Arc Testnet.</p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ImportExportPage({
+  requests, receipts, importInputRef, onExport, onImport
+}: {
+  requests: PaymentRequest[];
+  receipts: Receipt[];
+  importInputRef: RefObject<HTMLInputElement | null>;
+  onExport: () => void;
+  onImport: (file: File | undefined) => void;
+}) {
+  return (
+    <>
+      <section className="workbench" >
+        <div className="ie-page">
+          <div className="ie-card">
+            <h3>Export payment history</h3>
+            <p>Download all {requests.length} payment requests and {receipts.length} receipts as a JSON file. This file can be imported on another device or browser.</p>
+            <button className="primary-button" type="button" onClick={onExport} disabled={!requests.length}>
+              Export JSON
+            </button>
+          </div>
+          <div className="ie-card">
+            <h3>Import payment data</h3>
+            <p>Upload a previously exported JSON file to merge payment requests and receipts into your local data.</p>
+            <button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>
+              Choose file
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json"
+              className="sr-only"
+              onChange={(event) => onImport(event.target.files?.[0])}
+            />
+          </div>
+          <div className="onboarding-card">
+            <strong>Data stays local</strong>
+            All payment request and receipt data is stored in your browser's localStorage. Exporting creates a portable backup that does not leave your device until you choose to share it.
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function RiskCheckPanel({ request, account, wrongChain, isExpired, requests }: {
+  request: PaymentRequest;
+  account?: `0x${string}`;
+  wrongChain: boolean;
+  isExpired: boolean;
+  requests: PaymentRequest[];
+}) {
+  const networkOk = !wrongChain && Boolean(account);
+  const recipientOk = Boolean(request.recipient);
+  const tokenOk = request.token === "USDC" || request.token === "EURC";
+  const amountOk = Number(request.amount) > 0;
+  const notExpired = !isExpired;
+  const noDuplicate = !requests.some(r => r.id !== request.id && r.txHash && r.recipient === request.recipient && r.amount === request.amount && r.token === request.token && r.status === "paid");
+
+  const checks = [
+    { label: "Correct network", ok: networkOk },
+    { label: "Recipient matches request", ok: recipientOk },
+    { label: "Token matches request", ok: tokenOk },
+    { label: "Amount matches request", ok: amountOk },
+    { label: "Request not expired", ok: notExpired },
+    { label: "No duplicate payment detected", ok: noDuplicate }
+  ];
+
+  return (
+    <div className="risk-panel">
+      <div className="risk-panel-title">Pre-payment checks</div>
+      {checks.map(c => (
+        <div className="risk-row" key={c.label}>
+          <span className={`risk-icon ${c.ok ? "pass" : "fail"}`}>{c.ok ? "✓" : "✗"}</span>
+          <span>{c.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SettingsPage() {
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const { t, setLang, setCurrency } = useI18n();
+
+  function updateLanguage(lang: LanguageCode) {
+    const mappedCurrency = LANGUAGE_META[lang].currency;
+    const next: AppSettings = { ...settings, language: lang, currency: mappedCurrency };
+    setSettings(next);
+    saveSettings(next);
+    setLang(lang);
+    setCurrency(mappedCurrency);
+  }
+
+  function updateTone(tone: ColorTone) {
+    const next: AppSettings = { ...settings, colorTone: tone };
+    setSettings(next);
+    saveSettings(next);
+    applyColorTone(tone);
+  }
+
+  function updateCurrency(currency: string) {
+    const next: AppSettings = { ...settings, currency: currency as AppSettings["currency"] };
+    setSettings(next);
+    saveSettings(next);
+    setCurrency(next.currency);
+  }
+
+  const languages = Object.entries(LANGUAGE_META) as [LanguageCode, typeof LANGUAGE_META["en"]][];
+  const tones = Object.entries(COLOR_TONE_META) as [ColorTone, typeof COLOR_TONE_META["emerald"]][];
+  const currencies = languages.map(([, meta]) => ({ code: meta.currency, label: `${meta.currency} — ${CURRENCY_META[meta.currency].label} (${CURRENCY_META[meta.currency].symbol})` }));
+
+  return (
+    <>
+      <RouteHero eyebrow={t("settings")} title="Configure console preferences." />
+
+      <section className="workbench" aria-labelledby="settings-heading">
+        <header className="section-header">
+          <h2 id="settings-heading">{t("settings")}</h2>
+        </header>
+
+        <div className="desk-grid single-flow-grid">
+          <section className="desk-pane" aria-labelledby="appearance-heading">
+            <PaneTitle id="appearance-heading" label="Appearance" />
+            <div className="form-stack">
+              <Field label={t("colorTone")}>
+                <div className="field-grid">
+                  {tones.map(([tone, meta]) => (
+                    <button
+                      key={tone}
+                      type="button"
+                      onClick={() => updateTone(tone)}
+                      className={`tone-swatch ${settings.colorTone === tone ? "active" : ""}`}
+                      style={{ borderColor: meta.hex }}
+                      title={meta.label}
+                    >
+                      <span className="tone-dot" style={{ backgroundColor: meta.hex }} />
+                      <span className="tone-label">{meta.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </div>
+          </section>
+
+          <section className="desk-pane" aria-labelledby="region-heading">
+            <PaneTitle id="region-heading" label="Region & Language" />
+            <div className="form-stack">
+              <Field label={t("language")}>
+                <select
+                  value={settings.language}
+                  onChange={(e) => updateLanguage(e.target.value as LanguageCode)}
+                >
+                  {languages.map(([code, meta]) => (
+                    <option key={code} value={code}>{meta.native} — {meta.label}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label={t("currency")}>
+                <select
+                  value={settings.currency}
+                  onChange={(e) => updateCurrency(e.target.value)}
+                >
+                  {currencies.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </section>
+        </div>
+      </section>
+    </>
+  );
 }
 
 export default App;
