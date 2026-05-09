@@ -137,13 +137,15 @@ function Nav({ urls }: { urls: Urls }) {
           </a>
           <a
             href={urls.appUrl}
-            className="group ml-2 inline-flex items-center gap-1.5 rounded-[4px] bg-white px-3 py-1.5 text-[12px] font-medium tracking-[-0.005em] text-[#0a0b0e] transition-colors hover:bg-white/92"
+            style={{ color: "#0a0b0e" }}
+            className="group ml-2 inline-flex items-center gap-1.5 rounded-[4px] bg-white px-3 py-1.5 text-[12px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
           >
             Launch app
             <ArrowRight
               size={12}
-              strokeWidth={2}
-              className="text-[#0a0b0e]/70 transition-transform group-hover:translate-x-0.5"
+              strokeWidth={2.25}
+              style={{ color: "#0a0b0e" }}
+              className="transition-transform group-hover:translate-x-0.5"
             />
           </a>
         </div>
@@ -224,12 +226,14 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
             >
               <a
                 href={urls.appUrl}
-                className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-medium tracking-[-0.005em] text-[#0a0b0e] transition-colors hover:bg-white/92"
+                style={{ color: "#0a0b0e" }}
+                className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
               >
                 Launch the console
                 <ArrowRight
                   size={14}
-                  strokeWidth={2}
+                  strokeWidth={2.25}
+                  style={{ color: "#0a0b0e" }}
                   className="transition-transform group-hover:translate-x-0.5"
                 />
               </a>
@@ -847,10 +851,11 @@ function FinalCta({ urls }: { urls: Urls }) {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
             <a
               href={urls.appUrl}
-              className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-medium tracking-[-0.005em] text-[#0a0b0e] transition-colors hover:bg-white/92"
+              style={{ color: "#0a0b0e" }}
+              className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
             >
               Open the console
-              <ArrowRight size={14} strokeWidth={2} className="transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight size={14} strokeWidth={2.25} style={{ color: "#0a0b0e" }} className="transition-transform group-hover:translate-x-0.5" />
             </a>
             <a
               href={urls.docsUrl}
