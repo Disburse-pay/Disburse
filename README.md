@@ -4,11 +4,11 @@
 
 # Disburse
 
-**The receipt layer for stablecoin payments.**
+**A receipt layer for stablecoin payments.**
 
-Issue a QR request. The payer settles from any supported chain in USDC. Disburse writes a cryptographically verifiable receipt. the document your accountant, auditor, and tax office can actually file.
+Issue a QR invoice. The payer settles in USDC from any supported chain. Disburse turns the onchain transfer into a structured, verifiable receipt &mdash; a document your accountant, auditor, or tax office can file.
 
-[App](https://app.disburse.online) · [Docs](https://docs.disburse.online) · [X / Twitter](https://x.com/Disburs3) · [GitHub](https://github.com/Disburse-pay)
+[App](https://app.disburse.online) &middot; [Docs](https://docs.disburse.online) &middot; [X](https://x.com/Disburs3) &middot; [GitHub](https://github.com/Disburse-pay)
 
 </div>
 
@@ -16,27 +16,27 @@ Issue a QR request. The payer settles from any supported chain in USDC. Disburse
 
 ## The problem
 
-Stablecoin volume is approaching trillions annually. Yet the accounting infrastructure around it is stuck at _"here is a block explorer link"_. which no auditor, tax office, or enterprise AP system will accept as evidence that an invoice was paid.
+Stablecoin volume is on track to settle trillions of dollars a year. The accounting infrastructure around it is not. A block explorer link is not evidence an invoice was paid &mdash; not for an auditor, not for a tax office, not for an enterprise AP system.
 
-Freelancers export spreadsheets by hand. DAOs reconcile from Discord screenshots. Enterprises pay accountants to re-derive what already exists onchain. Every settlement happens twice. once on the chain, once in a shadow ledger.
+Freelancers rebuild spreadsheets by hand. DAOs reconcile from Discord screenshots. Enterprises pay accountants to re-derive what already exists on chain. Every settlement happens twice: once on the chain, once in a shadow ledger.
 
-**Disburse closes that gap.** A transaction hash becomes a signed, structured, auditor-ready receipt that can be independently re-derived from raw chain data.
+**Disburse closes that gap.** A transaction hash becomes a signed, structured, auditor-ready receipt that any third party can independently re-derive from raw chain data.
 
-## What Disburse does
+## How it works
 
 | Step | What happens |
 | --- | --- |
-| **1. Request** | Requester generates a QR payload with recipient, token, amount, label, invoice date, and expiry. |
-| **2. Pay** | Payer scans the QR, picks a source chain (Arc, Base, Monad), and signs a standard ERC-20 transfer. No signup. |
+| **1. Request** | The requester generates a QR payload with recipient, token, amount, label, invoice date, and expiry. |
+| **2. Pay** | The payer scans the QR, picks a source chain (Arc, Base, or Monad), and signs a standard ERC-20 transfer. No signup. |
 | **3. Settle** | On Arc the transfer is direct. On Base and Monad, Polymer proves the source escrow event and a relayer submits `settle(proof)` to the Arc settlement contract. |
-| **4. Verify** | Disburse matches the exact token contract, recipient, and amount against the onchain Transfer log. No fuzzy matches auto-settle. |
+| **4. Verify** | Disburse matches the exact token contract, recipient, and amount against the onchain `Transfer` log. Fuzzy matches never auto-settle. |
 | **5. Receipt** | A Verifiable Settlement Receipt (VSR) is produced. Export as JSON proof, UBL 2.1 XML, or PDF. |
 
-## Why it matters for the USDC ecosystem
+## Why it matters
 
 - **Non-custodial.** Disburse never holds a private key, never touches a balance, never gates withdrawal. The wallet is the authority.
-- **Any-chain in, USDC-settled.** Cross-chain payers see a single invoice, pay from their home chain, and the recipient sees USDC on Arc.
-- **Compliance-first exports.** UBL 2.1 slots into existing EU e-invoicing pipelines. PDFs go to finance inboxes. JSON proofs are fingerprinted with SHA-256 so third parties can re-verify independently.
+- **Any chain in, USDC out.** Cross-chain payers see one invoice, pay from their home chain, and the recipient receives USDC on Arc.
+- **Compliance-ready exports.** UBL 2.1 drops into existing EU e-invoicing pipelines. PDFs go to finance inboxes. JSON proofs are SHA-256 fingerprinted so third parties can re-verify independently.
 - **Built on Arc.** The settlement contract lives on Arc, aligning the product with Circle's economic OS for the internet.
 
 ## Stack
@@ -59,11 +59,11 @@ npm test           # Vitest (57 tests across client, server, onchain)
 npm run build
 ```
 
-The dev server runs with `vite --host 0.0.0.0`. Vercel-style single page app routing is handled by `vercel.json`, which rewrites all paths to `index.html`.
+The dev server binds to `0.0.0.0` and routes all paths to `index.html` via `vercel.json`.
 
-Serve documentation from `docs.disburse.online` on the same Vercel project. The app treats that subdomain as the documentation site.
+Documentation is served from `docs.disburse.online` on the same Vercel project. The app treats that subdomain as the docs site.
 
-For Supabase-backed QR realtime and API routes, run the app through Vercel locally or deploy it to Vercel so `/api/*` functions are available. Plain Vite dev still supports the previous local-only QR fallback.
+Supabase-backed QR realtime and the `/api/*` handlers require a Vercel context. Run `vercel dev` locally or deploy to Vercel; plain Vite dev still supports the local-only QR fallback.
 
 ## Environment
 
