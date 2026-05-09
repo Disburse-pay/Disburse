@@ -374,22 +374,34 @@ function getInitialTheme(): Theme {
 function getInitialPage(): Page {
   const hostname = window.location.hostname;
   const p = window.location.pathname;
-  if (isDocsHostname(hostname) || isLocalDocsPreview(hostname, p)) {
+
+  // Dedicated docs subdomain: render the standalone docs layout.
+  if (isDocsHostname(hostname)) {
     return "docs";
   }
-  
+
   const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
-  
+
   if (isApp) {
     if (p === "/payments") return "payments";
     if (p === "/qr-payments") return "qr-payments";
     if (p === "/pay") return "pay";
     if (p === "/import-export") return "import-export";
+    // /docs inside the app shell renders the docs page as a regular route
+    // (sidebar navigation, header, the whole console chrome). The dedicated
+    // docs subdomain is served by the branch above.
+    if (p === LEGACY_DOCS_PATH) return "docs";
     // /settings was a dedicated page; it is now a dialog that opens from the header.
-    // Keep the URL working by falling through to the dashboard — the dialog auto-opens (see App component).
+    // Keep the URL working by falling through to the dashboard. The dialog
+    // auto-opens via an effect in the App component.
     return "dashboard";
   }
-  
+
+  // Naked localhost / other local preview: allow /docs to render docs in-shell.
+  if (isLocalDocsPreview(hostname, p)) {
+    return "docs";
+  }
+
   return "landing";
 }
 
@@ -403,7 +415,10 @@ function isLocalAppPreview(hostname: string, pathname: string): boolean {
   }
 
   const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
-  return appPreview || ["/payments", "/qr-payments", "/pay", "/import-export", "/settings"].includes(pathname);
+  return (
+    appPreview ||
+    ["/payments", "/qr-payments", "/pay", "/import-export", "/settings", "/docs"].includes(pathname)
+  );
 }
 
 function isLocalDocsPreview(hostname: string, pathname: string): boolean {
@@ -454,7 +469,12 @@ function getDocsHref(): string {
   if (isDocsHostname(hostname)) {
     return "/";
   }
-  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
+  // Local dev and app subdomain both render the in-app docs at /docs.
+  if (
+    isLocalHostname(hostname) ||
+    hostname.endsWith(".localhost") ||
+    hostname.startsWith("app.")
+  ) {
     return LEGACY_DOCS_PATH;
   }
   return `${getOriginForHostname(getDocsHostname(hostname))}/`;
@@ -487,7 +507,15 @@ function getInternalTargetPath(target: string): string | undefined {
 }
 
 function shouldRedirectLegacyDocsRoute(): boolean {
-  if (isDocsHostname() || isLocalHostname(window.location.hostname) || window.location.hostname.endsWith(".localhost")) {
+  const hostname = window.location.hostname;
+  // Already on the docs subdomain, a local preview, or inside the app shell:
+  // /docs is a valid route, do not redirect.
+  if (
+    isDocsHostname() ||
+    isLocalHostname(hostname) ||
+    hostname.endsWith(".localhost") ||
+    hostname.startsWith("app.")
+  ) {
     return false;
   }
   return window.location.pathname === LEGACY_DOCS_PATH;
@@ -608,7 +636,7 @@ function App() {
 
   useEffect(() => {
     const titles: Record<Page, string> = {
-      landing: "Disburse — Settlement-grade stablecoin payments",
+      landing: "Disburse - Settlement-grade stablecoin payments",
       dashboard: "Overview · Disburse",
       payments: "Direct send · Disburse",
       "qr-payments": "QR requests · Disburse",
