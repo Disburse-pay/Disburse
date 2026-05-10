@@ -6,6 +6,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useI18n } from "../lib/i18n";
 
 type ActivityDatum = {
   name: string;
@@ -25,6 +26,7 @@ type Props = {
  * series itself.
  */
 export default function MonthlyStats({ activityData }: Props) {
+  const { t, formatCurrency } = useI18n();
   const totalCount = activityData.reduce((s, d) => s + d.count, 0);
   const totalVolume = activityData.reduce((s, d) => s + d.volume, 0);
 
@@ -34,22 +36,21 @@ export default function MonthlyStats({ activityData }: Props) {
       <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-3.5">
         <div>
           <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Activity
+            {t("activity")}
           </p>
           <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-            Last 7 days, by request date
+            {t("last7Days")}
           </p>
         </div>
         <div className="text-right">
           <p className="text-[15px] font-semibold leading-none text-[var(--ink)] tabular-nums">
             {totalCount}
             <span className="ml-1.5 font-mono text-[9.5px] uppercase tracking-[0.18em] font-normal text-[var(--muted)]">
-              {totalCount === 1 ? "req" : "reqs"}
+              {totalCount === 1 ? t("req") : t("reqs")}
             </span>
           </p>
           <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[var(--green-text)]">
-            {totalVolume.toFixed(2)}
-            <span className="ml-1 text-[var(--muted)]">USDC</span>
+            {formatCurrency(totalVolume)}
           </p>
         </div>
       </header>
@@ -84,6 +85,7 @@ export default function MonthlyStats({ activityData }: Props) {
               }}
               labelStyle={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)", marginBottom: 2 }}
               itemStyle={{ color: "var(--ink)", padding: 0 }}
+              formatter={(value) => [formatCurrency(Number(value)), t("settledVolume")]}
               cursor={{ stroke: "var(--line-strong)", strokeWidth: 1, strokeDasharray: "2 3" }}
             />
             <Area
@@ -92,7 +94,7 @@ export default function MonthlyStats({ activityData }: Props) {
               stroke="var(--primary-bg)"
               strokeWidth={1.5}
               fill="url(#activityGradient)"
-              name="Volume (USDC)"
+              name={t("settledVolume")}
               dot={false}
               activeDot={{
                 r: 3,

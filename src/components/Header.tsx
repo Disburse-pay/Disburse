@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { useI18n } from "../lib/i18n";
 
 type Props = {
   title: string;
@@ -37,32 +38,35 @@ export default function Header({
   onOpenSettings,
   theme,
 }: Props) {
+  const { t } = useI18n();
   const wrongChain = account && chainId !== undefined && chainId !== expectedChainId;
   const shortAddr = account ? `${account.slice(0, 6)}\u2009\u2009${account.slice(-4)}` : null;
+  const displayTitle = translateHeaderTitle(title, t);
+  const displaySubtitle = subtitle ? translateHeaderSubtitle(subtitle, t) : undefined;
 
   return (
     <header className="sticky top-0 z-20 flex h-[52px] items-center justify-between gap-6 border-b border-[var(--line)] bg-[var(--paper-translucent)] px-6 backdrop-blur-md">
       {/* Title cluster */}
       <div className="min-w-0">
         <h1 className="truncate text-[14px] font-semibold leading-tight tracking-[-0.01em] text-[var(--ink)]">
-          {title}
+          {displayTitle}
         </h1>
-        {subtitle && (
+        {displaySubtitle && (
           <p className="truncate text-[11.5px] leading-tight text-[var(--muted)]">
-            {subtitle}
+            {displaySubtitle}
           </p>
         )}
       </div>
 
       {/* Controls */}
       <div className="flex items-center gap-1">
-        <IconButton onClick={onOpenSettings} ariaLabel="Open settings">
+        <IconButton onClick={onOpenSettings} ariaLabel={t("openSettings")}>
           <SettingsIcon size={15} strokeWidth={1.6} />
         </IconButton>
 
         <IconButton
           onClick={onToggleTheme}
-          ariaLabel={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          ariaLabel={theme === "dark" ? t("switchToLight") : t("switchToDark")}
         >
           <AnimatePresence mode="wait" initial={false}>
             {theme === "dark" ? (
@@ -101,7 +105,7 @@ export default function Header({
             disabled={isConnecting}
             className="rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-3 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] disabled:opacity-60"
           >
-            {isConnecting ? "Connecting\u2026" : "Connect wallet"}
+            {isConnecting ? t("connecting") : t("connectWallet")}
           </button>
         ) : wrongChain ? (
           <button
@@ -111,7 +115,7 @@ export default function Header({
             className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--yellow-text)]/30 bg-[var(--yellow-bg)] px-3 py-1.5 text-[11.5px] font-medium text-[var(--yellow-text)] transition-colors hover:border-[var(--yellow-text)]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--yellow-text)]"
           >
             <AlertTriangle size={12} strokeWidth={1.75} />
-            Switch to {expectedChainLabel}
+            {t("switchToNetwork", { network: expectedChainLabel })}
           </button>
         ) : (
           <div className="flex items-center gap-2 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-2.5 py-1.5">
@@ -127,6 +131,31 @@ export default function Header({
       </div>
     </header>
   );
+}
+
+function translateHeaderTitle(title: string, t: (key: string, params?: Record<string, string | number>) => string) {
+  const keyByTitle: Record<string, string> = {
+    Overview: "overview",
+    "Direct send": "directSend",
+    "QR requests": "qrPayments",
+    "Pay request": "routePayTitle",
+    "Import Â· Export": "routeBackupTitle",
+    "Import · Export": "routeBackupTitle",
+    Documentation: "documentation",
+  };
+  return keyByTitle[title] ? t(keyByTitle[title]) : title;
+}
+
+function translateHeaderSubtitle(subtitle: string, t: (key: string, params?: Record<string, string | number>) => string) {
+  const keyBySubtitle: Record<string, string> = {
+    "Requests, receipts and network health at a glance.": "routeOverviewSubtitle",
+    "Pay a wallet address directly on Arc Testnet.": "routePaymentsSubtitle",
+    "Create a QR invoice for someone else to scan and pay.": "routeQrSubtitle",
+    "Review and settle a QR payment request.": "routePaySubtitle",
+    "Back up or restore your requests and receipts.": "routeBackupSubtitle",
+    "How Disburse settles, verifies, and exports payments.": "routeDocsSubtitle",
+  };
+  return keyBySubtitle[subtitle] ? t(keyBySubtitle[subtitle]) : subtitle;
 }
 
 function IconButton({

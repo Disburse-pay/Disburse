@@ -52,9 +52,10 @@ import {
   TOKENS
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
-import { I18nProvider } from "./lib/i18n";
+import { I18nProvider, useI18n } from "./lib/i18n";
 import {
   type AppSettings,
+  type LanguageCode,
   loadSettings
 } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
@@ -363,6 +364,522 @@ const docsSummaryItems: DocsSummaryItem[] = [
     value: "Verified from Arc Testnet logs"
   }
 ];
+
+const docsSectionsId: DocsSection[] = [
+  {
+    title: "Ruang lingkup proyek",
+    body: [
+      "Disburse adalah konsol pembayaran non-kustodial untuk Arc Testnet. Aplikasi ini dibuat untuk dua tugas praktis: mengirim transfer stablecoin dari wallet yang terhubung, dan membuat permintaan pembayaran QR yang bisa dibuka dan dibayar oleh wallet lain.",
+      "Build saat ini sengaja dibuat fokus. Aplikasi tidak menyimpan saldo, mengambil private key, atau menjalankan akun kustodial. Browser menyiapkan permintaan, wallet menandatangani transaksi, dan status pembayaran diverifikasi dari data Arc Testnet."
+    ],
+    points: [
+      "Route aplikasi utama: /payments, /qr-payments, dan /pay.",
+      `Dokumentasi disajikan dari ${PRODUCTION_DOCS_HOSTNAME}.`,
+      "Aksi yang didukung: koneksi wallet, perpindahan ke Arc Testnet, estimasi gas, transfer ERC-20, pembuatan permintaan QR, verifikasi transfer, import/export, dan unduhan invoice.",
+      "Di luar cakupan release ini: saldo kustodial, Permit2, alur 402 yang ditegakkan backend, rail MPP, dan perlindungan replay di server."
+    ]
+  },
+  {
+    title: "Alur pembayaran",
+    body: [
+      "Disburse memisahkan transfer langsung dari pembayaran berbasis permintaan. Pembayaran Langsung dipakai saat pengirim sudah tahu penerima, token, dan jumlah. Pembayaran QR dipakai saat requester ingin menerbitkan permintaan tetap untuk dibayar orang lain.",
+      "Permintaan QR yang dipindai membuka halaman payer dengan detail yang terkunci. Payer dapat menghubungkan wallet, memperkirakan transfer, mengirim transaksi, memverifikasi hasil, dan mengunduh invoice setelah konfirmasi."
+    ],
+    points: [
+      "Payments: pengirim mengisi penerima, token, dan jumlah, lalu menandatangani transfer wallet.",
+      "QR Payments: requester mengisi penerima, token, jumlah, label, catatan, dan tanggal invoice, lalu membagikan URL permintaan sebagai QR code.",
+      "Pembayaran Langsung tidak membuat record permintaan QR di ledger lokal."
+    ]
+  },
+  {
+    title: "Jaringan dan aset",
+    body: [
+      "Aplikasi dipasang untuk Arc Testnet. Gas native direpresentasikan sebagai USDC dengan 18 desimal, sedangkan jumlah pembayaran ERC-20 yang didukung memakai 6 desimal.",
+      "Akses RPC ditangani lewat daftar failover kecil. Antarmuka menampilkan endpoint aktif, blok terbaru, harga gas aman, chain id, dan pemeriksaan desimal token agar pengguna bisa melihat apakah jalur jaringan sehat sebelum menandatangani."
+    ],
+    points: [
+      `Chain ID: ${ARC_CHAIN_ID}`,
+      `RPC: ${new URL(ARC_RPC_URL).host}`,
+      `Endpoint failover: ${ARC_RPC_ENDPOINTS.length}`,
+      `USDC: ${TOKENS.USDC.address}`,
+      `EURC: ${TOKENS.EURC.address}`
+    ]
+  },
+  {
+    title: "Payload permintaan QR",
+    body: [
+      "QR code berisi URL /pay dengan payload JSON base64url pada parameter query r. Payload hanya deskripsi permintaan portabel; tidak pernah berisi private key, approval wallet, saldo token, atau transaksi yang sudah ditandatangani.",
+      "Permintaan menyimpan token, jumlah, penerima, label, waktu pembuatan, dan blok awal. Blok awal itu membatasi verifikasi ke transfer yang terjadi setelah permintaan dibuat."
+    ],
+    points: [
+      "Field wajib: version, id, recipient, token, amount, label, createdAt, dan startBlock.",
+      "Field opsional: note, invoiceDate, expiresAt, dan dueAt.",
+      `Kedaluwarsa default: ${PAYMENT_VALIDITY_MINUTES} menit setelah dibuat. Percobaan pembayaran yang dimulai sebelum kedaluwarsa tetap bisa diverifikasi.`
+    ],
+    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
+  },
+  {
+    title: "Eksekusi wallet",
+    body: [
+      "Pembayaran adalah pemanggilan transfer ERC-20 standar yang ditandatangani oleh wallet terhubung. Aplikasi memperkirakan gas dengan viem, menerapkan batas bawah harga gas Arc, menyimpan hash transaksi wallet segera setelah dikirim, lalu menunggu konfirmasi.",
+      "Wallet tetap menjadi otoritas untuk tanda tangan. Disburse menyiapkan calldata dan menampilkan pemeriksaan, tetapi approval akhir terjadi di dalam wallet."
+    ],
+    points: [
+      "Connect: eth_requestAccounts.",
+      "Jaringan: wallet_switchEthereumChain, dengan fallback wallet_addEthereumChain untuk Arc Testnet.",
+      "Transfer: eth_sendTransaction dengan calldata ERC-20 transfer(recipient, parsedAmount) pada kontrak USDC atau EURC yang dipilih.",
+      "Gas: estimasi dipakai untuk tampilan dan pemeriksaan saldo; wallet menentukan gas transaksi akhir saat signing."
+    ]
+  },
+  {
+    title: "Ledger lokal dan realtime",
+    body: [
+      "Permintaan QR dan receipt disimpan di localStorage browser agar requester bisa mengelola pekerjaan tanpa membuat akun. Ledger mendukung export dan import JSON untuk backup atau migrasi.",
+      "Saat Supabase dikonfigurasi, permintaan QR juga bisa ditulis melalui fungsi API Vercel. Event realtime membuat tampilan requester dapat menutup QR code ketika payer mengirim, mengonfirmasi, menggagalkan, atau membuat permintaan kedaluwarsa."
+    ],
+    points: [
+      "Storage key: disburse.requests dan disburse.receipts.",
+      "Key lama tetap dibaca: arc-pay-desk.requests dan arc-pay-desk.receipts.",
+      "Permintaan diindeks memakai request id. Receipt di-upsert memakai request id atau transaction hash.",
+      "URL explorer hasil import dibuat ulang dari hash transaksi Arcscan yang sudah diverifikasi."
+    ]
+  },
+  {
+    title: "Output invoice",
+    body: [
+      "Setelah payer mengonfirmasi dan transfer diverifikasi dari data Arc Testnet, halaman bayar dapat membuat invoice PDF lokal.",
+      "Invoice dibuat di browser. File tidak diunggah oleh aplikasi dan tidak dikirim lewat email oleh server pada build ini."
+    ],
+    points: [
+      "Invoice berisi tx hash, blok, jumlah, label, catatan, tanggal invoice, payer, penerima, waktu konfirmasi, dan link Arcscan.",
+      "Tanggal invoice adalah metadata tampilan, bukan waktu kedaluwarsa pembayaran.",
+      "Tidak ada server yang menyimpan atau mengirim file invoice lewat email pada build ini."
+    ]
+  },
+  {
+    title: "Verifikasi",
+    body: [
+      "Verifikasi pertama memeriksa hash transaksi yang diketahui. Jika tidak ada hash, aplikasi memindai log Transfer ERC-20 dalam jendela 10.000 blok dari blok awal permintaan sampai blok terbaru dan membandingkan penerima serta jumlah token yang tepat.",
+      "Permintaan ditandai lunas hanya ketika kontrak token, penerima, dan jumlah cocok. Transfer ke penerima yang benar dengan jumlah berbeda ditampilkan terpisah agar pengguna bisa meninjaunya tanpa memperlakukannya sebagai settled."
+    ],
+    points: [
+      "Lunas: transfer tepat ke penerima untuk jumlah token yang diminta.",
+      "Kemungkinan cocok: transfer ke penerima ada, tetapi jumlah berbeda.",
+      "Terbuka: tidak ditemukan transfer yang cocok dari blok awal permintaan."
+    ],
+    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+  }
+];
+
+const docsSectionsDe: DocsSection[] = [
+  {
+    title: "Projektumfang",
+    body: [
+      "Disburse ist eine nicht-kustodiale Zahlungskonsole für Arc Testnet. Sie deckt zwei praktische Aufgaben ab: eine Stablecoin-Überweisung aus einer injected Wallet senden und eine QR-Zahlungsanfrage erstellen, die eine andere Wallet öffnen und bezahlen kann.",
+      "Der aktuelle Build ist bewusst eng gehalten. Die App hält keine Guthaben, sammelt keine Private Keys und betreibt kein Verwahrkonto. Der Browser bereitet die Anfrage vor, die Wallet signiert die Transaktion, und der Zahlungsstatus wird gegen Arc-Testnet-Daten verifiziert."
+    ],
+    points: [
+      "Primäre App-Routen: /payments, /qr-payments und /pay.",
+      `Dokumentation wird von ${PRODUCTION_DOCS_HOSTNAME} ausgeliefert.`,
+      "Unterstützt werden Wallet-Verbindung, Wechsel zu Arc Testnet, Gas-Schätzung, ERC-20-Transfers, QR-Anfragen, Transferverifizierung, Import/Export und Rechnungsdownload.",
+      "Nicht enthalten in diesem Release: kustodiale Guthaben, Permit2, backend-erzwungene 402-Flows, MPP-Rails und serverseitiger Replay-Schutz."
+    ]
+  },
+  {
+    title: "Zahlungsabläufe",
+    body: [
+      "Disburse trennt direkte Überweisungen von anfragebasierten Zahlungen. Direkte Zahlungen werden genutzt, wenn Sender, Empfänger, Token und Betrag bereits bekannt sind. QR-Zahlungen werden genutzt, wenn ein Anforderer eine feste Anfrage veröffentlichen will.",
+      "Eine gescannte QR-Anfrage öffnet die Zahlerseite mit gesperrten Details. Der Zahler kann eine Wallet verbinden, den Transfer schätzen, die Transaktion senden, das Ergebnis verifizieren und nach der Bestätigung die Rechnung herunterladen."
+    ],
+    points: [
+      "Payments: Der Sender gibt Empfänger, Token und Betrag ein und signiert eine Wallet-Überweisung.",
+      "QR Payments: Der Anforderer gibt Empfänger, Token, Betrag, Label, Notiz und Rechnungsdatum ein und teilt die Anfrage-URL als QR-Code.",
+      "Direkte Zahlungen erzeugen keine QR-Anfragedatensätze im lokalen Ledger."
+    ]
+  },
+  {
+    title: "Netzwerk und Assets",
+    body: [
+      "Die App ist auf Arc Testnet festgelegt. Native Gas wird als USDC mit 18 Dezimalstellen dargestellt, während unterstützte ERC-20-Zahlungsbeträge 6 Dezimalstellen verwenden.",
+      "RPC-Zugriff läuft über eine kleine Failover-Liste. Die Oberfläche zeigt aktiven Endpoint, neuesten Block, sicheren Gaspreis, Chain-ID und Token-Dezimalprüfungen, damit der Nutzer den Netzwerkpfad vor dem Signieren prüfen kann."
+    ],
+    points: [
+      `Chain ID: ${ARC_CHAIN_ID}`,
+      `RPC: ${new URL(ARC_RPC_URL).host}`,
+      `Failover-Endpunkte: ${ARC_RPC_ENDPOINTS.length}`,
+      `USDC: ${TOKENS.USDC.address}`,
+      `EURC: ${TOKENS.EURC.address}`
+    ]
+  },
+  {
+    title: "QR-Anfrage-Payload",
+    body: [
+      "Ein QR-Code enthält eine /pay-URL mit einem base64url-JSON-Payload im Query-Parameter r. Der Payload ist nur eine portable Anfragebeschreibung; er enthält niemals Private Keys, Wallet-Freigaben, Token-Guthaben oder signierte Transaktionen.",
+      "Die Anfrage speichert Token, Betrag, Empfänger, Label, Erstellungszeit und Startblock. Dieser Startblock begrenzt die Verifizierung auf Transfers, die nach der Erstellung passiert sind."
+    ],
+    points: [
+      "Pflichtfelder: version, id, recipient, token, amount, label, createdAt und startBlock.",
+      "Optionale Felder: note, invoiceDate, expiresAt und dueAt.",
+      `Standardablauf: ${PAYMENT_VALIDITY_MINUTES} Minuten nach Erstellung. Ein vor Ablauf gestarteter Zahlungsversuch kann weiterhin verifiziert werden.`
+    ],
+    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
+  },
+  {
+    title: "Wallet-Ausführung",
+    body: [
+      "Zahlungen sind standardmäßige ERC-20-transfer-Aufrufe, die von der verbundenen Wallet signiert werden. Die App schätzt Gas mit viem, wendet den Arc-Gaspreis-Floor an, speichert den Transaktionshash sofort nach dem Senden und wartet dann auf Bestätigung.",
+      "Die Wallet bleibt die Autorität für Signaturen. Disburse bereitet Calldata vor und zeigt Prüfungen an, aber die finale Freigabe passiert in der Wallet."
+    ],
+    points: [
+      "Connect: eth_requestAccounts.",
+      "Netzwerk: wallet_switchEthereumChain, mit wallet_addEthereumChain als Fallback für Arc Testnet.",
+      "Transfer: eth_sendTransaction mit ERC-20 transfer(recipient, parsedAmount) calldata auf dem gewählten USDC- oder EURC-Kontrakt.",
+      "Gas: Schätzungen werden für Anzeige und Saldo-Prüfungen genutzt; die Wallet finalisiert das Transaktionsgas beim Signieren."
+    ]
+  },
+  {
+    title: "Lokales Ledger und Realtime",
+    body: [
+      "QR-Anfragen und Belege werden im localStorage des Browsers gespeichert, damit der Anforderer ohne Konto arbeiten kann. Das Ledger unterstützt JSON-Export und -Import für Backup oder Migration.",
+      "Wenn Supabase konfiguriert ist, können QR-Anfragen auch über Vercel-API-Funktionen geschrieben werden. Realtime-Events schließen den QR-Code in der Anfordereransicht, wenn der Zahler sendet, bestätigt, fehlschlägt oder eine Anfrage abläuft."
+    ],
+    points: [
+      "Storage-Keys: disburse.requests und disburse.receipts.",
+      "Legacy-Keys werden weiter gelesen: arc-pay-desk.requests und arc-pay-desk.receipts.",
+      "Anfragen werden nach request id gespeichert. Belege werden nach request id oder transaction hash upserted.",
+      "Importierte Explorer-URLs werden aus dem verifizierten Arcscan-Transaktionshash neu erzeugt."
+    ]
+  },
+  {
+    title: "Rechnungsausgabe",
+    body: [
+      "Nachdem der Zahler bestätigt und der Transfer aus Arc-Testnet-Daten verifiziert wurde, kann die Zahlungsseite eine lokale PDF-Rechnung erstellen.",
+      "Rechnungen werden im Browser erzeugt. Sie werden in diesem Build weder von der App hochgeladen noch vom Server per E-Mail versendet."
+    ],
+    points: [
+      "Die Rechnung enthält Tx-Hash, Block, Betrag, Label, Notiz, Rechnungsdatum, Zahler, Empfänger, Bestätigungszeit und Arcscan-Link.",
+      "Das Rechnungsdatum ist Anzeige-Metadatum, nicht der Ablauf der Zahlung.",
+      "Kein Server speichert oder versendet Rechnungsdateien in diesem Build."
+    ]
+  },
+  {
+    title: "Verifizierung",
+    body: [
+      "Die Verifizierung prüft zuerst einen bekannten Transaktionshash. Wenn kein Hash vorliegt, scannt sie ERC-20-Transfer-Logs in 10.000-Block-Fenstern vom Startblock bis zum neuesten Block und vergleicht Empfänger plus exakten Tokenbetrag.",
+      "Eine Anfrage wird nur dann als bezahlt markiert, wenn Token-Kontrakt, Empfänger und Betrag übereinstimmen. Transfers an den richtigen Empfänger mit anderem Betrag werden separat angezeigt."
+    ],
+    points: [
+      "Bezahlt: exakter Transfer an den Empfänger für den angeforderten Tokenbetrag.",
+      "Möglicher Treffer: Transfer an den Empfänger existiert, aber der Betrag ist anders.",
+      "Offen: kein passender Transfer ab dem Startblock gefunden."
+    ],
+    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+  }
+];
+
+const docsSectionsHi: DocsSection[] = [
+  {
+    title: "प्रोजेक्ट का दायरा",
+    body: [
+      "Disburse Arc Testnet के लिए non-custodial भुगतान कंसोल है. यह दो कामों के लिए बनाया गया है: injected wallet से stablecoin transfer भेजना, और QR भुगतान अनुरोध बनाना जिसे दूसरा wallet खोलकर भुगतान कर सके.",
+      "मौजूदा build जानबूझकर सीमित है. यह balance नहीं रखता, private key नहीं लेता, और custodial account नहीं चलाता. Browser अनुरोध तैयार करता है, wallet transaction sign करता है, और payment status Arc Testnet data से verify होता है."
+    ],
+    points: [
+      "मुख्य app routes: /payments, /qr-payments, और /pay.",
+      `Documentation ${PRODUCTION_DOCS_HOSTNAME} से serve होती है.`,
+      "Supported actions: wallet connection, Arc Testnet switching, gas estimation, ERC-20 transfers, QR request creation, transfer verification, import/export, और invoice download.",
+      "इस release के बाहर: custodial balances, Permit2, backend-enforced 402 flows, MPP rails, और server-side replay protection."
+    ]
+  },
+  {
+    title: "भुगतान flow",
+    body: [
+      "Disburse immediate transfers और request-based payments को अलग रखता है. Direct Payments तब उपयोग होते हैं जब sender recipient, token और amount पहले से जानता है. QR Payments तब उपयोग होते हैं जब requester किसी और से भुगतान लेने के लिए fixed request publish करना चाहता है.",
+      "Scanned QR request payer page खोलता है जहां request details locked रहती हैं. Payer wallet connect कर सकता है, transfer estimate कर सकता है, transaction submit कर सकता है, result verify कर सकता है, और confirmation के बाद invoice download कर सकता है."
+    ],
+    points: [
+      "Payments: sender recipient, token और amount भरता है, फिर wallet transfer sign करता है.",
+      "QR Payments: requester recipient, token, amount, label, note और invoice date भरता है, फिर request URL को QR code के रूप में share करता है.",
+      "Direct Payments local ledger में QR request records नहीं बनाते."
+    ]
+  },
+  {
+    title: "नेटवर्क और asset",
+    body: [
+      "App Arc Testnet पर pinned है. Native gas को 18 decimals वाले USDC की तरह दिखाया जाता है, जबकि supported ERC-20 payment amounts 6 decimals उपयोग करते हैं.",
+      "RPC access एक छोटी failover list से संभाला जाता है. Interface active endpoint, latest block, safe gas price, chain id और token decimal checks दिखाता है ताकि user signing से पहले network path की health देख सके."
+    ],
+    points: [
+      `Chain ID: ${ARC_CHAIN_ID}`,
+      `RPC: ${new URL(ARC_RPC_URL).host}`,
+      `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
+      `USDC: ${TOKENS.USDC.address}`,
+      `EURC: ${TOKENS.EURC.address}`
+    ]
+  },
+  {
+    title: "QR अनुरोध payload",
+    body: [
+      "QR code में /pay URL होता है जिसमें r query parameter पर base64url JSON payload रहता है. Payload सिर्फ portable request description है; इसमें private key, wallet approval, token balance या signed transaction कभी नहीं होता.",
+      "Request token, amount, recipient, label, creation time और start block रिकॉर्ड करता है. Start block verification को उन transfers तक सीमित करता है जो request बनने के बाद हुए."
+    ],
+    points: [
+      "Required fields: version, id, recipient, token, amount, label, createdAt, और startBlock.",
+      "Optional fields: note, invoiceDate, expiresAt, और dueAt.",
+      `Default expiry: creation के ${PAYMENT_VALIDITY_MINUTES} मिनट बाद. Expiry से पहले शुरू हुआ submitted payment attempt बाद में भी verify हो सकता है.`
+    ],
+    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
+  },
+  {
+    title: "Wallet execution",
+    body: [
+      "Payments connected wallet द्वारा signed standard ERC-20 transfer calls हैं. App viem से gas estimate करता है, Arc gas-price floor लागू करता है, wallet transaction hash submit होते ही save करता है, और confirmation का wait करता है.",
+      "Signing की authority wallet के पास रहती है. Disburse calldata तैयार करता है और checks दिखाता है, लेकिन final approval wallet के अंदर होता है."
+    ],
+    points: [
+      "Connect: eth_requestAccounts.",
+      "Network: wallet_switchEthereumChain, Arc Testnet के लिए wallet_addEthereumChain fallback के साथ.",
+      "Transfer: selected USDC या EURC contract पर ERC-20 transfer(recipient, parsedAmount) calldata के साथ eth_sendTransaction.",
+      "Gas: estimates display और balance checks के लिए इस्तेमाल होते हैं; wallet signing के समय final transaction gas तय करता है."
+    ]
+  },
+  {
+    title: "Local ledger और realtime",
+    body: [
+      "QR requests और receipts browser localStorage में stored हैं ताकि requester account बनाए बिना काम manage कर सके. Ledger backup या migration के लिए JSON export और import support करता है.",
+      "Supabase configured होने पर QR requests Vercel API functions के जरिए भी लिखे जा सकते हैं. Realtime events requester view में QR code को close कर सकते हैं जब payer request submit, confirm, fail या expire करता है."
+    ],
+    points: [
+      "Storage keys: disburse.requests और disburse.receipts.",
+      "Legacy keys अभी भी read होते हैं: arc-pay-desk.requests और arc-pay-desk.receipts.",
+      "Requests request id से keyed होते हैं. Receipts request id या transaction hash से upsert होते हैं.",
+      "Imported explorer URLs verified Arcscan transaction hash से regenerate होते हैं."
+    ]
+  },
+  {
+    title: "Invoice output",
+    body: [
+      "Payer confirmation और Arc Testnet data से transfer verification के बाद pay page local PDF invoice generate कर सकता है.",
+      "Invoices browser में बनते हैं. इस build में app उन्हें upload नहीं करता और server email नहीं भेजता."
+    ],
+    points: [
+      "Invoice में tx hash, block, amount, label, note, invoice date, payer, recipient, confirmation time और Arcscan link शामिल हैं.",
+      "Invoice date display metadata है, payment expiry नहीं.",
+      "इस build में कोई server invoice files store या email नहीं करता."
+    ]
+  },
+  {
+    title: "Verification",
+    body: [
+      "Verification पहले known transaction hash check करता है. अगर hash नहीं है, तो request start block से latest तक 10,000-block windows में ERC-20 Transfer logs scan करता है और recipient plus exact token amount compare करता है.",
+      "Request सिर्फ तब paid mark होती है जब token contract, recipient और amount match करते हैं. सही recipient को अलग amount वाले transfers अलग दिखाए जाते हैं ताकि user review कर सके."
+    ],
+    points: [
+      "Paid: requested token amount के लिए recipient को exact transfer.",
+      "Possible match: recipient को transfer मिला, लेकिन amount अलग है.",
+      "Open: request start block से कोई matching transfer नहीं मिला."
+    ],
+    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+  }
+];
+
+const docsSectionsZh: DocsSection[] = [
+  {
+    title: "项目范围",
+    body: [
+      "Disburse 是 Arc Testnet 的非托管付款控制台。它面向两个实际任务：从注入式钱包发送稳定币转账，以及创建可由其他钱包打开并支付的 QR 付款请求。",
+      "当前版本刻意保持聚焦。它不持有余额、不收集私钥，也不运营托管账户。浏览器准备请求，钱包签署交易，付款状态从 Arc Testnet 数据中验证。"
+    ],
+    points: [
+      "主要应用路由：/payments、/qr-payments 和 /pay。",
+      `文档由 ${PRODUCTION_DOCS_HOSTNAME} 提供。`,
+      "支持的钱包连接、Arc Testnet 切换、gas 估算、ERC-20 转账、QR 请求创建、转账验证、导入/导出和发票下载。",
+      "本版本不包含：托管余额、Permit2、后端强制的 402 流程、MPP rails 和服务端 replay 防护。"
+    ]
+  },
+  {
+    title: "付款流程",
+    body: [
+      "Disburse 将即时转账和基于请求的付款分开。直接付款用于发送方已知道收款人、token 和金额的场景。QR 付款用于请求方发布固定请求，让他人付款。",
+      "扫描 QR 请求会打开付款页面，并锁定请求详情。付款人可以连接钱包、估算转账、提交交易、验证结果，并在确认后下载发票。"
+    ],
+    points: [
+      "Payments：发送方输入收款人、token 和金额，然后签署钱包转账。",
+      "QR Payments：请求方输入收款人、token、金额、标签、备注和发票日期，然后将请求 URL 作为 QR 码分享。",
+      "直接付款不会在本地账本中创建 QR 请求记录。"
+    ]
+  },
+  {
+    title: "网络和资产",
+    body: [
+      "应用固定在 Arc Testnet。Native gas 显示为 18 位小数的 USDC，受支持的 ERC-20 付款金额使用 6 位小数。",
+      "RPC 访问通过小型 failover 列表处理。界面展示当前 endpoint、最新区块、安全 gas 价格、chain id 和 token decimal 检查，便于用户签名前判断网络路径是否正常。"
+    ],
+    points: [
+      `Chain ID: ${ARC_CHAIN_ID}`,
+      `RPC: ${new URL(ARC_RPC_URL).host}`,
+      `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
+      `USDC: ${TOKENS.USDC.address}`,
+      `EURC: ${TOKENS.EURC.address}`
+    ]
+  },
+  {
+    title: "QR 请求 payload",
+    body: [
+      "QR 码包含 /pay URL，并在 r 查询参数中放入 base64url JSON payload。payload 只是可携带的请求描述；它不会包含私钥、钱包授权、token 余额或已签名交易。",
+      "请求记录 token、金额、收款人、标签、创建时间和起始区块。起始区块将验证范围限制在请求创建之后发生的转账。"
+    ],
+    points: [
+      "必填字段：version、id、recipient、token、amount、label、createdAt 和 startBlock。",
+      "可选字段：note、invoiceDate、expiresAt 和 dueAt。",
+      `默认过期时间：创建后 ${PAYMENT_VALIDITY_MINUTES} 分钟。过期前已开始的付款尝试仍可验证。`
+    ],
+    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
+  },
+  {
+    title: "钱包执行",
+    body: [
+      "付款是由已连接钱包签署的标准 ERC-20 transfer 调用。应用使用 viem 估算 gas，应用 Arc 的 gas-price floor，提交后立即保存钱包交易哈希，然后等待确认。",
+      "钱包仍然是签名的最终授权方。Disburse 准备 calldata 并展示检查结果，但最终 approval 发生在钱包内。"
+    ],
+    points: [
+      "Connect: eth_requestAccounts.",
+      "Network: wallet_switchEthereumChain，并使用 wallet_addEthereumChain 作为 Arc Testnet fallback。",
+      "Transfer: 在所选 USDC 或 EURC 合约上使用 ERC-20 transfer(recipient, parsedAmount) calldata 调用 eth_sendTransaction。",
+      "Gas: 估算用于展示和余额检查；钱包在签名时最终确定交易 gas。"
+    ]
+  },
+  {
+    title: "本地账本和 realtime",
+    body: [
+      "QR 请求和收据存储在浏览器 localStorage 中，请求方无需创建账户即可管理工作。账本支持 JSON 导出和导入，用于备份或迁移。",
+      "配置 Supabase 后，QR 请求也可以通过 Vercel API 函数写入。Realtime 事件可在付款人提交、确认、失败或请求过期时关闭请求方视图中的 QR 码。"
+    ],
+    points: [
+      "Storage keys: disburse.requests 和 disburse.receipts。",
+      "仍会读取旧 key: arc-pay-desk.requests 和 arc-pay-desk.receipts。",
+      "请求按 request id 存储。收据按 request id 或 transaction hash upsert。",
+      "导入的 explorer URL 会从已验证的 Arcscan transaction hash 重新生成。"
+    ]
+  },
+  {
+    title: "发票输出",
+    body: [
+      "付款人确认且转账从 Arc Testnet 数据验证后，付款页面可以生成本地 PDF 发票。",
+      "发票在浏览器中生成。本版本不会由应用上传，也不会由服务器通过邮件发送。"
+    ],
+    points: [
+      "发票包含 tx hash、区块、金额、标签、备注、发票日期、付款人、收款人、确认时间和 Arcscan 链接。",
+      "发票日期是展示元数据，不是付款过期时间。",
+      "本版本没有服务器存储或发送发票文件。"
+    ]
+  },
+  {
+    title: "验证",
+    body: [
+      "验证会先检查已知交易哈希。如果没有哈希，它会从请求起始区块到最新区块按 10,000 区块窗口扫描 ERC-20 Transfer logs，并比较收款人和精确 token 金额。",
+      "只有 token 合约、收款人和金额全部匹配时，请求才会标记为已支付。发送到正确收款人但金额不同的转账会单独显示，供用户复核。"
+    ],
+    points: [
+      "已支付：向收款人转入请求的精确 token 金额。",
+      "可能匹配：存在转给收款人的转账，但金额不同。",
+      "未完成：从请求起始区块起未找到匹配转账。"
+    ],
+    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+  }
+];
+
+const docsSummaryItemsId: DocsSummaryItem[] = [
+  {
+    label: "Jaringan",
+    value: `Arc Testnet ${ARC_CHAIN_ID}`
+  },
+  {
+    label: "Aset",
+    value: "USDC dan EURC"
+  },
+  {
+    label: "Kustodi",
+    value: "Ditandatangani wallet, non-kustodial"
+  },
+  {
+    label: "Receipt",
+    value: "Diverifikasi dari log Arc Testnet"
+  }
+];
+
+const docsSummaryItemsDe: DocsSummaryItem[] = [
+  {
+    label: "Netzwerk",
+    value: `Arc Testnet ${ARC_CHAIN_ID}`
+  },
+  {
+    label: "Assets",
+    value: "USDC und EURC"
+  },
+  {
+    label: "Verwahrung",
+    value: "Wallet-signiert, nicht-kustodial"
+  },
+  {
+    label: "Belege",
+    value: "Aus Arc-Testnet-Logs verifiziert"
+  }
+];
+
+const docsSummaryItemsHi: DocsSummaryItem[] = [
+  {
+    label: "नेटवर्क",
+    value: `Arc Testnet ${ARC_CHAIN_ID}`
+  },
+  {
+    label: "एसेट",
+    value: "USDC और EURC"
+  },
+  {
+    label: "कस्टडी",
+    value: "वॉलेट-signed, non-custodial"
+  },
+  {
+    label: "रसीदें",
+    value: "Arc Testnet logs से verified"
+  }
+];
+
+const docsSummaryItemsZh: DocsSummaryItem[] = [
+  {
+    label: "网络",
+    value: `Arc Testnet ${ARC_CHAIN_ID}`
+  },
+  {
+    label: "资产",
+    value: "USDC 和 EURC"
+  },
+  {
+    label: "托管",
+    value: "钱包签名，非托管"
+  },
+  {
+    label: "收据",
+    value: "从 Arc Testnet logs 验证"
+  }
+];
+
+function getDocsSections(lang: LanguageCode): DocsSection[] {
+  if (lang === "de") return docsSectionsDe;
+  if (lang === "id") return docsSectionsId;
+  if (lang === "hi") return docsSectionsHi;
+  if (lang === "zh") return docsSectionsZh;
+  return docsSections;
+}
+
+function getDocsSummaryItems(lang: LanguageCode): DocsSummaryItem[] {
+  if (lang === "de") return docsSummaryItemsDe;
+  if (lang === "id") return docsSummaryItemsId;
+  if (lang === "hi") return docsSummaryItemsHi;
+  if (lang === "zh") return docsSummaryItemsZh;
+  return docsSummaryItems;
+}
 
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem(THEME_KEY) ?? localStorage.getItem(LEGACY_THEME_KEY);
@@ -1825,20 +2342,21 @@ function PaymentsPage({
   onCopy: (value: string) => void;
   onNavigate: (target: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <>
-      <RouteHero eyebrow="Payments" title="Send stablecoins directly from your wallet." />
+      <RouteHero eyebrow={t("payments")} title={t("paymentsHero")} />
 
       <section className="workbench" aria-labelledby="payments-heading">
         <header className="section-header">
-          <h2 id="payments-heading">Direct transfer</h2>
+          <h2 id="payments-heading">{t("directTransferTitle")}</h2>
         </header>
 
         <div className="desk-grid single-flow-grid">
           <section className="desk-pane" aria-labelledby="direct-form-heading">
-            <PaneTitle id="direct-form-heading" label="Payment details" />
+            <PaneTitle id="direct-form-heading" label={t("paymentDetails")} />
             <form className="form-stack" onSubmit={(event) => event.preventDefault()}>
-              <Field label="Recipient" helper="Address receiving your transfer">
+              <Field label={t("recipient")} helper={t("recipientHelper")}>
                 <input
                   value={form.recipient}
                   onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
@@ -1848,7 +2366,7 @@ function PaymentsPage({
               </Field>
 
               <div className="field-grid">
-                <Field label="Token">
+                <Field label={t("token")}>
                   <select
                     value={form.token}
                     onChange={(event) => onFormChange({ ...form, token: event.target.value as PaymentToken })}
@@ -1857,7 +2375,7 @@ function PaymentsPage({
                     <option value="EURC">EURC</option>
                   </select>
                 </Field>
-                <Field label="Amount">
+                <Field label={t("amount")}>
                   <input
                     value={form.amount}
                     onChange={(event) => onFormChange({ ...form, amount: event.target.value })}
@@ -1894,7 +2412,7 @@ function PaymentsPage({
                   onClick={onEstimate}
                   disabled={!account || wrongChain || isEstimating}
                 >
-                  {isEstimating ? "Estimating..." : "Estimate"}
+                  {isEstimating ? t("estimating") : t("estimate")}
                 </button>
                 <button
                   className="primary-button"
@@ -1902,7 +2420,7 @@ function PaymentsPage({
                   onClick={onSend}
                   disabled={!account || wrongChain || insufficientToken || missingGas || isSending}
                 >
-                  {isSending ? "Sending..." : "Send payment"}
+                  {isSending ? t("sending") : t("sendPayment")}
                 </button>
               </div>
             </form>
@@ -1911,9 +2429,9 @@ function PaymentsPage({
           </section>
 
           <section className="desk-pane pay-pane" aria-labelledby="direct-summary-heading">
-            <PaneTitle id="direct-summary-heading" label="Transfer summary" />
+            <PaneTitle id="direct-summary-heading" label={t("transferSummary")} />
             <PaymentPreview
-              title="Direct payment"
+              title={t("directPayment")}
               amount={form.amount || "0"}
               token={form.token}
               recipient={form.recipient}
@@ -1924,24 +2442,24 @@ function PaymentsPage({
             {hash && (
               <div className="receipt-line">
                 <div>
-                  <span>Transaction</span>
+                  <span>{t("transaction")}</span>
                   <strong>{shortAddress(hash, 10, 8)}</strong>
                 </div>
                 <div className="receipt-actions">
                   <button className="text-button" type="button" onClick={() => onCopy(toExplorerTxUrl(hash))}>
-                    Copy tx
+                    {t("copyTx")}
                   </button>
                   <a href={toExplorerTxUrl(hash)} target="_blank" rel="noreferrer">
-                    Open tx
+                    {t("openTx")}
                   </a>
                 </div>
               </div>
             )}
 
             <div className="request-callout">
-              <strong>Need someone else to pay you?</strong>
+              <strong>{t("needSomeonePay")}</strong>
               <button className="secondary-button" type="button" onClick={() => onNavigate("/qr-payments")}>
-                Generate QR request
+                {t("generateQrRequest")}
               </button>
             </div>
           </section>
@@ -1990,23 +2508,24 @@ function QrPaymentsPage({
   onExport: () => void;
   onImport: (file: File | undefined) => void;
 }) {
+  const { t } = useI18n();
   const displayRequest = selectedRequest ? refreshDerivedStatus(selectedRequest, now) : undefined;
   const qrIsFinal = displayRequest ? shouldHideQrForStatus(displayRequest.status) : false;
 
   return (
     <>
-      <RouteHero eyebrow="QR Payments" title="Create a fixed request for someone else to scan and pay." />
+      <RouteHero eyebrow={t("qrPayments")} title={t("qrHero")} />
 
       <section className="workbench" aria-labelledby="qr-heading">
         <header className="section-header">
-          <h2 id="qr-heading">Generate QR</h2>
+          <h2 id="qr-heading">{t("generateQr")}</h2>
         </header>
 
         <div className="desk-grid">
           <section className="desk-pane create-pane" aria-labelledby="qr-form-heading">
-            <PaneTitle id="qr-form-heading" label="Request details" />
+            <PaneTitle id="qr-form-heading" label={t("requestDetails")} />
             <form className="form-stack" onSubmit={onSubmit}>
-              <Field label="Recipient">
+              <Field label={t("recipient")}>
                 <div className="input-row">
                   <input
                     value={form.recipient}
@@ -2017,21 +2536,21 @@ function QrPaymentsPage({
                   <button
                     className="utility-button"
                     type="button"
-                    aria-label="Use connected wallet"
-                    title="Use connected wallet"
+                    aria-label={t("useConnectedWallet")}
+                    title={t("useConnectedWallet")}
                     onClick={() => account && onFormChange({ ...form, recipient: account })}
                     disabled={!account}
                   >
-                    Me
+                    {t("me")}
                   </button>
                 </div>
               </Field>
 
               <div className="field-grid">
-                <Field label="Token">
+                <Field label={t("token")}>
                   <input value="USDC" readOnly aria-readonly="true" />
                 </Field>
-                <Field label="Amount">
+                <Field label={t("amount")}>
                   <input
                     value={form.amount}
                     onChange={(event) => onFormChange({ ...form, amount: event.target.value })}
@@ -2041,7 +2560,7 @@ function QrPaymentsPage({
                 </Field>
               </div>
 
-              <Field label="Label">
+              <Field label={t("label")}>
                 <input
                   value={form.label}
                   onChange={(event) => onFormChange({ ...form, label: event.target.value })}
@@ -2049,7 +2568,7 @@ function QrPaymentsPage({
                 />
               </Field>
 
-              <Field label="Note">
+              <Field label={t("note")}>
                 <textarea
                   value={form.note}
                   onChange={(event) => onFormChange({ ...form, note: event.target.value })}
@@ -2058,7 +2577,7 @@ function QrPaymentsPage({
                 />
               </Field>
 
-              <Field label="Invoice date">
+              <Field label={t("invoiceDate")}>
                 <input
                   type="date"
                   value={form.invoiceDate}
@@ -2067,7 +2586,7 @@ function QrPaymentsPage({
               </Field>
 
               <button className="primary-button" type="submit" disabled={isCreating}>
-                {isCreating ? "Generating..." : "Generate QR"}
+                {isCreating ? t("generating") : t("generateQr")}
               </button>
             </form>
 
@@ -2075,12 +2594,12 @@ function QrPaymentsPage({
           </section>
 
           <section className="desk-pane pay-pane" aria-labelledby="qr-output-heading">
-            <PaneTitle id="qr-output-heading" label="QR output" />
+            <PaneTitle id="qr-output-heading" label={t("qrOutput")} />
             {displayRequest && shareUrl ? (
               <>
                 <PaymentPreview
                   title={displayRequest.label}
-                  note={displayRequest.note ?? "No note"}
+                  note={displayRequest.note ?? t("noNote")}
                   amount={displayRequest.amount}
                   token={displayRequest.token}
                   recipient={displayRequest.recipient}
@@ -2089,9 +2608,9 @@ function QrPaymentsPage({
                 />
                 {isCrossChainPaymentRequest(displayRequest) && (
                   <div className="route-summary">
-                    <Metric label="settles on" value="Arc Testnet" />
+                    <Metric label={t("settlesOn")} value="Arc Testnet" />
                     <Metric
-                      label="pay from"
+                      label={t("payFrom")}
                       value={(displayRequest.allowedSourceChainIds ?? getAllowedSourceChainIds())
                         .map(getCrossChainLabel)
                         .join(", ")}
@@ -2104,19 +2623,19 @@ function QrPaymentsPage({
                 ) : (
                   <div className={`qr-share ${displayRequest.txHash ? "submitted" : "watching"}`}>
                     {qrDataUrl ? (
-                      <img src={qrDataUrl} alt="QR payment request code" />
+                      <img src={qrDataUrl} alt={t("qrPaymentAlt")} />
                     ) : (
-                      <div className="qr-placeholder">Generating QR</div>
+                      <div className="qr-placeholder">{t("generatingQr")}</div>
                     )}
                     <div>
-                      <span>Pay URL</span>
+                      <span>{t("payUrl")}</span>
                       <code>{shareUrl}</code>
                       <div className="qr-live-line" aria-live="polite">
                         <span className="qr-live-dot" aria-hidden="true" />
                         {formatQrLiveStatus(displayRequest)}
                       </div>
                       <button className="secondary-button" type="button" onClick={() => onCopy(shareUrl)}>
-                        Copy link
+                        {t("copyLink")}
                       </button>
                     </div>
                   </div>
@@ -2125,17 +2644,17 @@ function QrPaymentsPage({
                 {selectedReceipt && !qrIsFinal && (
                   <div className="receipt-line">
                     <div>
-                      <span>Receipt</span>
+                      <span>{t("receipt")}</span>
                       <strong>{shortAddress(selectedReceipt.txHash, 10, 8)}</strong>
                     </div>
                     <a href={selectedReceipt.explorerUrl} target="_blank" rel="noreferrer">
-                      Open tx
+                      {t("openTx")}
                     </a>
                   </div>
                 )}
               </>
             ) : (
-              <EmptyState title="No QR generated" text="Fill the request details and generate a QR payment link." />
+              <EmptyState title={t("noQrGenerated")} text={t("noQrGeneratedText")} />
             )}
           </section>
         </div>
@@ -2144,15 +2663,15 @@ function QrPaymentsPage({
       <section id="qr-ledger" className="ledger-section">
         <header className="section-header inline-header">
           <div>
-            <h2>QR ledger</h2>
-            <p>{requests.length} QR requests stored locally.</p>
+            <h2>{t("qrLedger")}</h2>
+            <p>{t("qrRequestsStored", { count: requests.length })}</p>
           </div>
           <div className="tool-actions">
             <button className="secondary-button" type="button" onClick={onExport} disabled={!requests.length}>
-              Export
+              {t("export")}
             </button>
             <button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>
-              Import
+              {t("import")}
             </button>
             <input
               ref={importInputRef}
@@ -2177,25 +2696,25 @@ function QrPaymentsPage({
                     <div>
                       <strong>{request.label}</strong>
                       <span>
-                        {request.amount} {request.token} to {shortAddress(request.recipient)}
+                        {request.amount} {request.token} {t("to")} {shortAddress(request.recipient)}
                       </span>
                     </div>
                   </button>
                   <div className="ledger-meta">
-                    <span>{isCrossChainPaymentRequest(request) ? "Settles on Arc" : "Wallet QR"}</span>
+                    <span>{isCrossChainPaymentRequest(request) ? t("settlesOnArc") : t("walletQr")}</span>
                     <span>{formatInvoiceDate(request.invoiceDate)}</span>
                     <span>{formatTimeLeft(request, now)}</span>
                   </div>
                   <div className="ledger-actions">
                     <button className="text-button" type="button" onClick={() => onCopy(requestUrl)}>
-                      Copy
+                      {t("copy")}
                     </button>
                     <a className="text-button" href={requestUrl}>
-                      Pay page
+                      {t("payPage")}
                     </a>
                     {receipt && (
                       <a className="text-button" href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-                        Receipt
+                        {t("receipt")}
                       </a>
                     )}
                   </div>
@@ -2204,7 +2723,7 @@ function QrPaymentsPage({
             })}
           </div>
         ) : (
-          <EmptyState title="QR ledger is empty" text="Generated QR payment requests appear here." />
+          <EmptyState title={t("qrLedgerEmpty")} text={t("qrLedgerEmptyText")} />
         )}
       </section>
     </>
@@ -2284,6 +2803,7 @@ function PayRequestPage({
   attestation?: SettlementAttestation;
   onCopy: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const hasSubmittedTransaction = Boolean(request?.txHash && request.status !== "paid");
   const submittedTxHash = request?.txHash;
   const submittedTxUrl =
@@ -2293,25 +2813,25 @@ function PayRequestPage({
         ? toExplorerTxUrl(submittedTxHash)
         : undefined;
   const approvalTxUrl = approvalHash ? getCrossChainExplorerTxUrl(sourceChainId, approvalHash) : undefined;
-  const payButtonLabel = getPayButtonLabel(isPaying, lifecycle);
+  const payButtonLabel = getPayButtonLabel(isPaying, lifecycle, t);
 
   return (
     <>
-      <RouteHero eyebrow="Pay QR request" title="Review the locked request, connect wallet, and pay." />
+      <RouteHero eyebrow={t("payQrRequest")} title={t("payHero")} />
 
       <section className="workbench pay-request-shell" aria-labelledby="pay-request-heading">
         <header className="section-header">
-          <h2 id="pay-request-heading">Payment request</h2>
-          <p>The payer cannot change the amount, recipient, label, note, or invoice date from this scanned QR page.</p>
+          <h2 id="pay-request-heading">{t("paymentRequestTitle")}</h2>
+          <p>{t("paymentRequestNote")}</p>
         </header>
 
         {request ? (
           <div className="desk-grid">
             <section className="desk-pane create-pane" aria-labelledby="locked-details-heading">
-              <PaneTitle id="locked-details-heading" label="Locked details" />
+              <PaneTitle id="locked-details-heading" label={t("lockedDetails")} />
               <PaymentPreview
                 title={request.label}
-                note={request.note ?? "No note"}
+                note={request.note ?? t("noNote")}
                 amount={request.amount}
                 token={request.token}
                 recipient={request.recipient}
@@ -2320,32 +2840,32 @@ function PayRequestPage({
               />
               {isCrossChainPaymentRequest(request) && (
                 <div className="route-summary">
-                  <Metric label="settles on" value="Arc Testnet" />
-                  <Metric label="selected source" value={getCrossChainLabel(sourceChainId)} />
+                  <Metric label={t("settlesOn")} value="Arc Testnet" />
+                  <Metric label={t("selectedSource")} value={getCrossChainLabel(sourceChainId)} />
                 </div>
               )}
               <div className="expiry-grid">
-                <Metric label="time left" value={formatTimeLeft(request, now)} />
-                <Metric label="valid until" value={formatDateTime(request.expiresAt ?? request.dueAt)} />
+                <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
+                <Metric label={t("validUntil")} value={formatDateTime(request.expiresAt ?? request.dueAt)} />
               </div>
             </section>
 
             <section className="desk-pane pay-pane" aria-labelledby="pay-actions-heading">
-              <PaneTitle id="pay-actions-heading" label="Pay with wallet" />
+              <PaneTitle id="pay-actions-heading" label={t("payWithWallet")} />
               {walletNotice && <NoticeBar notice={walletNotice} compact />}
               {!account && !hasWalletProvider && (
                 <NoticeBar
                   compact
                   notice={{
                     tone: "info",
-                    text: "No injected wallet found. Open this request in a wallet browser or install a supported desktop wallet."
+                    text: t("noWalletRequest")
                   }}
                 />
               )}
               {isExpired && !isPayable && (
                 <NoticeBar
                   compact
-                  notice={{ tone: "error", text: "This QR request expired. Ask the requester for a fresh QR code." }}
+                  notice={{ tone: "error", text: t("qrExpiredNotice") }}
                 />
               )}
               {hasSubmittedTransaction && (
@@ -2353,12 +2873,12 @@ function PayRequestPage({
                   compact
                   notice={{
                     tone: "info",
-                    text: "A transaction hash is already saved for this request. Verify it before sending another payment."
+                    text: t("txSavedNotice")
                   }}
                 />
               )}
               {isCrossChainPaymentRequest(request) && (
-                <Field label="Pay from">
+                <Field label={t("payFrom")}>
                   <select
                     value={sourceChainId}
                     onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
@@ -2381,7 +2901,7 @@ function PayRequestPage({
                 walletNotice={undefined}
                 onConnect={onConnect}
                 onSwitch={onSwitch}
-                switchLabel={`Switch to ${getCrossChainLabel(sourceChainId)}`}
+                switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
               />
 
               {account && !wrongChain && (
@@ -2398,7 +2918,7 @@ function PayRequestPage({
 
               {lifecycle !== "idle" && (
                 <div className="estimate-line">
-                  <Metric label="payer stage" value={formatPayLifecycle(lifecycle)} />
+                  <Metric label={t("payerStage")} value={formatPayLifecycle(lifecycle, t)} />
                 </div>
               )}
 
@@ -2409,7 +2929,7 @@ function PayRequestPage({
                   onClick={onEstimate}
                   disabled={!account || wrongChain || !isPayable || isEstimating}
                 >
-                  {isEstimating ? "Estimating..." : "Estimate"}
+                  {isEstimating ? t("estimating") : t("estimate")}
                 </button>
                 <button
                   className="primary-button"
@@ -2429,7 +2949,7 @@ function PayRequestPage({
                   {payButtonLabel}
                 </button>
                 <button className="secondary-button" type="button" onClick={onVerify} disabled={isVerifying}>
-                  {isVerifying ? "Verifying..." : "Verify"}
+                  {isVerifying ? t("verifying") : t("verify")}
                 </button>
               </div>
 
@@ -2439,15 +2959,15 @@ function PayRequestPage({
               {approvalHash && !receipt && (
                 <div className="receipt-line">
                   <div>
-                    <span>USDC approval</span>
+                    <span>{t("usdcApproval")}</span>
                     <strong>{shortAddress(approvalHash, 10, 8)}</strong>
                   </div>
                   <div className="receipt-actions">
                     <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
-                      Copy tx
+                      {t("copyTx")}
                     </button>
                     <a href={approvalTxUrl} target="_blank" rel="noreferrer">
-                      Open tx
+                      {t("openTx")}
                     </a>
                   </div>
                 </div>
@@ -2456,15 +2976,15 @@ function PayRequestPage({
               {submittedTxHash && !receipt && (
                 <div className="receipt-line">
                   <div>
-                    <span>Submitted transaction</span>
+                    <span>{t("submittedTransaction")}</span>
                     <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
                   </div>
                   <div className="receipt-actions">
                     <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
-                      Copy tx
+                      {t("copyTx")}
                     </button>
                     <a href={submittedTxUrl} target="_blank" rel="noreferrer">
-                      Open tx
+                      {t("openTx")}
                     </a>
                   </div>
                 </div>
@@ -2474,18 +2994,18 @@ function PayRequestPage({
                 <>
                   <div className="receipt-line">
                     <div>
-                      <span>Receipt</span>
+                      <span>{t("receipt")}</span>
                       <strong>{shortAddress(receipt.txHash, 10, 8)}</strong>
                     </div>
                     <div className="receipt-actions">
                       <button className="text-button" type="button" onClick={() => onCopy(receipt.explorerUrl)}>
-                        Copy tx
+                        {t("copyTx")}
                       </button>
                       <button className="text-button" type="button" onClick={onInvoice} disabled={isGeneratingInvoice}>
-                        {isGeneratingInvoice ? "Preparing PDF" : "Download invoice"}
+                        {isGeneratingInvoice ? t("preparingPdf") : t("downloadInvoice")}
                       </button>
                       <a href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-                        Open tx
+                        {t("openTx")}
                       </a>
                     </div>
                   </div>
@@ -2493,7 +3013,7 @@ function PayRequestPage({
                   {/* Compliance Export Actions */}
                   <div className="compliance-actions">
                     <div className="compliance-header">
-                      <span className="compliance-label">Settlement Exports</span>
+                      <span className="compliance-label">{t("settlementExports")}</span>
                       {attestation && (
                         <span className="attestation-badge">
                           VSR: {attestation.uid}
@@ -2506,7 +3026,7 @@ function PayRequestPage({
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                           </svg>
-                          Create Attestation
+                          {t("createAttestation")}
                         </button>
                       )}
                       {attestation && (
@@ -2514,7 +3034,7 @@ function PayRequestPage({
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
-                          Attested
+                          {t("attested")}
                         </button>
                       )}
                       {onSettlementProof && (
@@ -2522,7 +3042,7 @@ function PayRequestPage({
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
                           </svg>
-                          Settlement Proof
+                          {t("settlementProof")}
                         </button>
                       )}
                       {onUBLExport && (
@@ -2530,7 +3050,7 @@ function PayRequestPage({
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
                           </svg>
-                          UBL Invoice (XML)
+                          {t("ublInvoiceXml")}
                         </button>
                       )}
                     </div>
@@ -2540,7 +3060,7 @@ function PayRequestPage({
             </section>
           </div>
         ) : (
-          <EmptyState title="No QR request loaded" text="Scan a QR payment code or open a valid /pay request URL." />
+          <EmptyState title={t("noQrRequestLoaded")} text={t("noQrRequestLoadedText")} />
         )}
       </section>
     </>
@@ -2573,6 +3093,7 @@ function PaymentPreview({
   invoiceDate?: string;
   status?: PaymentStatus;
 }) {
+  const { t } = useI18n();
   return (
     <div className="request-summary">
       <div>
@@ -2584,11 +3105,11 @@ function PaymentPreview({
         <strong>
           {amount || "0"} {token}
         </strong>
-        <span>{recipient ? shortAddress(recipient) : "recipient not set"}</span>
+        <span>{recipient ? shortAddress(recipient) : t("recipientNotSet")}</span>
       </div>
       {invoiceDate && (
         <div className="expiry-grid">
-          <Metric label="invoice date" value={formatInvoiceDate(invoiceDate)} />
+          <Metric label={t("invoiceDate")} value={formatInvoiceDate(invoiceDate)} />
         </div>
       )}
     </div>
@@ -2596,20 +3117,21 @@ function PaymentPreview({
 }
 
 function QrFinalState({ request, receipt }: { request: PaymentRequest; receipt?: Receipt }) {
+  const { t } = useI18n();
   const copy =
     request.status === "paid"
       ? {
-          title: "Payment confirmed",
-          text: "The requester has the confirmation. This QR code is now closed."
+          title: t("paymentConfirmed"),
+          text: t("paymentConfirmedText")
         }
       : request.status === "failed"
         ? {
-            title: "Payment failed",
-            text: "This QR code is no longer payable. Generate a fresh request before trying again."
+            title: t("paymentFailed"),
+            text: t("paymentFailedText")
           }
         : {
-            title: "QR expired",
-            text: "The payment window has closed. Generate a fresh QR code for this request."
+            title: t("qrExpired"),
+            text: t("qrExpiredText")
           };
 
   return (
@@ -2620,7 +3142,7 @@ function QrFinalState({ request, receipt }: { request: PaymentRequest; receipt?:
         <p>{copy.text}</p>
         {receipt && (
           <a href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-            Open receipt
+            {t("openReceipt")}
           </a>
         )}
       </div>
@@ -2647,6 +3169,7 @@ function WalletActionBlock({
   onSwitch: () => void;
   switchLabel?: string;
 }) {
+  const { t } = useI18n();
   return (
     <>
       {walletNotice && <NoticeBar notice={walletNotice} compact />}
@@ -2655,13 +3178,13 @@ function WalletActionBlock({
           compact
           notice={{
             tone: "info",
-            text: "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
+            text: t("noWalletPage")
           }}
         />
       )}
       {!account && (
         <button className="primary-button" type="button" onClick={onConnect} disabled={isConnecting}>
-          {isConnecting ? "Connecting..." : "Connect wallet"}
+          {isConnecting ? t("connecting") : t("connectWallet")}
         </button>
       )}
       {account && wrongChain && (
@@ -2690,15 +3213,16 @@ function TransferState({
   networkLabel?: string;
   nativeSymbol?: string;
 }) {
+  const { t } = useI18n();
   return (
     <>
       <div className="wallet-table">
-        <Metric label="wallet" value={shortAddress(account)} />
-        <Metric label={`${token} balance`} value={balances ? `${trimDisplay(balances.tokenBalance, 6)} ${token}` : "loading"} />
-        <Metric label="gas balance" value={balances ? `${trimDisplay(balances.nativeGas, 8)} ${nativeSymbol}` : "loading"} />
-        <Metric label="network" value={networkLabel} />
+        <Metric label={t("wallet")} value={shortAddress(account)} />
+        <Metric label={t("tokenBalance", { token })} value={balances ? `${trimDisplay(balances.tokenBalance, 6)} ${token}` : t("loading")} />
+        <Metric label={t("gasBalance")} value={balances ? `${trimDisplay(balances.nativeGas, 8)} ${nativeSymbol}` : t("loading")} />
+        <Metric label={t("network")} value={networkLabel} />
       </div>
-      {insufficientToken && <NoticeBar compact notice={{ tone: "error", text: `Insufficient ${token} balance.` }} />}
+      {insufficientToken && <NoticeBar compact notice={{ tone: "error", text: t("insufficientTokenBalance", { token }) }} />}
       {(insufficientToken || missingGas) && (
         <RecoveryPanel
           account={account}
@@ -2714,13 +3238,14 @@ function TransferState({
 }
 
 function EstimateGrid({ estimate }: { estimate: TransferEstimate }) {
+  const { t } = useI18n();
   const symbol = estimate.nativeSymbol ?? "USDC";
-  const gasLabel = estimate.needsApproval && estimate.approvalGas ? "approval + payment gas" : "estimated gas";
+  const gasLabel = estimate.needsApproval && estimate.approvalGas ? t("approvalPaymentGas") : t("estimatedGas");
   return (
     <div className="estimate-line">
       <Metric label={gasLabel} value={estimate.gas.toString()} />
-      <Metric label="gas price" value={`${trimDisplay(formatUnits(estimate.gasPrice, 18), 8)} ${symbol}`} />
-      <Metric label="estimated fee" value={`${trimDisplay(estimate.fee, 8)} ${symbol}`} />
+      <Metric label={t("gasPrice")} value={`${trimDisplay(formatUnits(estimate.gasPrice, 18), 8)} ${symbol}`} />
+      <Metric label={t("estimatedFee")} value={`${trimDisplay(estimate.fee, 8)} ${symbol}`} />
     </div>
   );
 }
@@ -2732,6 +3257,7 @@ function DocsTopNav({
   theme: Theme;
   onToggleTheme: () => void;
 }) {
+  const { t } = useI18n();
   const appHref = `https://app.disburse.online`;
   const homeHref = `https://disburse.online`;
   return (
@@ -2746,7 +3272,7 @@ function DocsTopNav({
             Disburse
           </span>
           <span className="ml-1 rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-            Docs
+            {t("docsTitle")}
           </span>
         </a>
         <div className="flex items-center gap-1.5">
@@ -2754,7 +3280,7 @@ function DocsTopNav({
             type="button"
             onClick={onToggleTheme}
             className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)]"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={theme === "dark" ? t("switchToLight") : t("switchToDark")}
           >
             {theme === "dark" ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -2771,7 +3297,7 @@ function DocsTopNav({
             href={appHref}
             className="group inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90"
           >
-            Launch console
+            {t("launchConsole")}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-0.5">
               <path d="M5 12h14" />
               <path d="m12 5 7 7-7 7" />
@@ -2784,11 +3310,19 @@ function DocsTopNav({
 }
 
 function DocsPage() {
-  const [activeSlug, setActiveSlug] = useState<string>(() => slugify(docsSections[0]?.title ?? ""));
+  const { lang, t } = useI18n();
+  const sections = useMemo(() => getDocsSections(lang), [lang]);
+  const summaryItems = useMemo(() => getDocsSummaryItems(lang), [lang]);
+  const initialDocSlug = slugify(sections[0]?.title ?? "");
+  const [activeSlug, setActiveSlug] = useState<string>(initialDocSlug);
+
+  useEffect(() => {
+    setActiveSlug(initialDocSlug);
+  }, [initialDocSlug]);
 
   // Scrollspy. highlights the TOC entry for the section nearest the top.
   useEffect(() => {
-    const slugs = docsSections.map((s) => slugify(s.title));
+    const slugs = sections.map((s) => slugify(s.title));
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -2805,7 +3339,7 @@ function DocsPage() {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
-  }, []);
+  }, [sections]);
 
   function scrollToSlug(slug: string) {
     const el = document.getElementById(slug);
@@ -2820,19 +3354,17 @@ function DocsPage() {
       {/* Hero */}
       <section className="border-b border-[var(--line)] pb-10">
         <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
-          Documentation
+          {t("documentation")}
         </p>
         <h1 className="max-w-[24ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
-          How Disburse settles, verifies, and exports a payment.
+          {t("docsHeroTitle")}
         </h1>
         <p className="mt-5 max-w-[66ch] text-[15px] leading-relaxed text-[var(--muted)]">
-          A concise technical reference for the Arc Testnet payment console: what
-          the product does, how requests move from QR code to wallet transaction,
-          and where the current release draws its boundaries.
+          {t("docsHeroText")}
         </p>
 
         <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[var(--line-soft)] pt-6 sm:grid-cols-4">
-          {docsSummaryItems.map((item) => (
+          {summaryItems.map((item) => (
             <div key={item.label} className="min-w-0">
               <dt className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
                 {item.label}
@@ -2850,10 +3382,10 @@ function DocsPage() {
         {/* TOC */}
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-            On this page
+            {t("onThisPage")}
           </p>
           <nav className="flex flex-col gap-0.5">
-            {docsSections.map((section) => {
+            {sections.map((section) => {
               const slug = slugify(section.title);
               const active = slug === activeSlug;
               return (
@@ -2888,7 +3420,7 @@ function DocsPage() {
 
         {/* Content */}
         <div className="min-w-0">
-          {docsSections.map((section, index) => (
+          {sections.map((section, index) => (
             <article
               key={section.title}
               id={slugify(section.title)}
@@ -3047,6 +3579,7 @@ function Field({
   helper?: string;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <label className="field">
       <span>{label}</span>
@@ -3088,27 +3621,28 @@ function RecoveryPanel({
   networkLabel?: string;
   nativeSymbol?: string;
 }) {
+  const { t } = useI18n();
   const showArcLinks = networkLabel === "Arc Testnet";
-  const extraToken = insufficientToken && token !== "USDC" ? ` and ${token}` : "";
+  const extraToken = insufficientToken && token !== "USDC" ? t("andToken", { token }) : "";
   const message = missingGas
     ? token === "USDC"
-      ? `Fund enough ${networkLabel} ${token} plus ${nativeSymbol} gas.`
-      : `Fund ${networkLabel} ${nativeSymbol} for gas${extraToken}.`
-    : `Fund more ${token} on ${networkLabel}.`;
+      ? t("fundUsdcGas", { network: networkLabel, token, native: nativeSymbol })
+      : t("fundGasToken", { network: networkLabel, native: nativeSymbol, extra: extraToken })
+    : t("fundMoreToken", { token, network: networkLabel });
 
   return (
     <div className="recovery-panel">
       <div>
-        <strong>Balance recovery</strong>
+        <strong>{t("balanceRecovery")}</strong>
         <span>{message}</span>
       </div>
       {showArcLinks && (
         <div className="tool-actions">
           <a className="secondary-button" href={ARC_FAUCET_URL} target="_blank" rel="noreferrer">
-            Faucet
+            {t("faucet")}
           </a>
           <a className="secondary-button" href={toExplorerAddressUrl(account)} target="_blank" rel="noreferrer">
-            Arcscan wallet
+            {t("arcscanWallet")}
           </a>
         </div>
       )}
@@ -3117,15 +3651,23 @@ function RecoveryPanel({
 }
 
 function StatusBadge({ status }: { status: PaymentStatus }) {
-  return <span className={`status-badge ${status}`}>{status.replace("_", " ")}</span>;
+  const { t } = useI18n();
+  const keyByStatus: Record<PaymentStatus, string> = {
+    open: "open",
+    paid: "paid",
+    expired: "expired",
+    failed: "failed",
+    possible_match: "review",
+  };
+  return <span className={`status-badge ${status}`}>{t(keyByStatus[status])}</span>;
 }
 
-function formatPayLifecycle(lifecycle: PayLifecycle): string {
+function formatPayLifecycle(lifecycle: PayLifecycle, t?: (key: string, params?: Record<string, string | number>) => string): string {
   switch (lifecycle) {
     case "awaiting_wallet":
-      return "awaiting wallet";
+      return t ? t("awaitingWallet") : "awaiting wallet";
     case "proving":
-      return "generating proof";
+      return t ? t("generatingProof") : "generating proof";
     default:
       return lifecycle.replace("_", " ");
   }
@@ -3160,30 +3702,34 @@ function remoteConfirmationToNotice(confirmation: QrConfirmationPayload): Notice
   };
 }
 
-function getPayButtonLabel(isPaying: boolean, lifecycle: PayLifecycle): string {
+function getPayButtonLabel(
+  isPaying: boolean,
+  lifecycle: PayLifecycle,
+  t: (key: string, params?: Record<string, string | number>) => string
+): string {
   if (!isPaying) {
-    return "Pay request";
+    return t("payRequestAction");
   }
 
   switch (lifecycle) {
     case "preparing":
-      return "Preparing...";
+      return t("preparing");
     case "awaiting_wallet":
-      return "Approve in wallet";
+      return t("approveWallet");
     case "submitted":
     case "confirming":
-      return "Confirming...";
+      return t("confirming");
     case "proving":
-      return "Generating proof...";
+      return t("generatingProofProgress");
     case "settling":
-      return "Settling...";
+      return t("settling");
     case "verified":
-      return "Verified";
+      return t("verified");
     case "failed":
-      return "Retry payment";
+      return t("retryPayment");
     case "idle":
     default:
-      return "Pay request";
+      return t("payRequestAction");
   }
 }
 
@@ -3430,6 +3976,7 @@ function DashboardPage({
   onNavigate: (target: string) => void;
   onExport: () => void;
 }) {
+  const { t } = useI18n();
   const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
   const verifiedVolume = requests
     .filter((request) => refreshDerivedStatus(request, now).status === "paid")
@@ -3465,10 +4012,10 @@ function DashboardPage({
 
   const hasActivity = requests.length > 0;
   const onboardingSteps: { label: string; done: boolean; href: string }[] = [
-    { label: "Connect a wallet", done: Boolean(account), href: "/" },
-    { label: "Fund it from the Circle faucet", done: Boolean(account), href: ARC_FAUCET_URL },
-    { label: "Create your first QR request", done: hasActivity, href: "/qr-payments" },
-    { label: "Verify a payment and export a receipt", done: receipts.length > 0, href: "/qr-payments" }
+    { label: t("connectWalletStep"), done: Boolean(account), href: "/" },
+    { label: t("fundFaucetStep"), done: Boolean(account), href: ARC_FAUCET_URL },
+    { label: t("createFirstQrStep"), done: hasActivity, href: "/qr-payments" },
+    { label: t("verifyExportStep"), done: receipts.length > 0, href: "/qr-payments" }
   ];
   const completedSteps = onboardingSteps.filter((s) => s.done).length;
   const progressPct = Math.round((completedSteps / onboardingSteps.length) * 100);
@@ -3478,9 +4025,9 @@ function DashboardPage({
       {/* Main column */}
       <div className="space-y-4 xl:col-span-8">
         <BalanceCard
-          totalVolume={totalVolume.toFixed(2)}
-          verifiedVolume={verifiedVolume.toFixed(2)}
-          pendingVolume={pendingVolume.toFixed(2)}
+          totalVolume={totalVolume}
+          verifiedVolume={verifiedVolume}
+          pendingVolume={pendingVolume}
           requestCount={requests.length}
           receiptCount={receipts.length}
           account={account}
@@ -3545,15 +4092,16 @@ function QuickActionsCard({
   faucetUrl: string;
   hasData: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
         <div>
           <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Actions
+            {t("actions")}
           </p>
           <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            Quick actions
+            {t("quickActions")}
           </h3>
         </div>
       </div>
@@ -3561,24 +4109,24 @@ function QuickActionsCard({
         <QuickActionTile
           onClick={() => onNavigate("/qr-payments")}
           icon={<QrCode size={15} strokeWidth={1.6} />}
-          label="Create QR request"
+          label={t("createQrRequest")}
           tone="accent"
         />
         <QuickActionTile
           onClick={() => onNavigate("/payments")}
           icon={<Send size={15} strokeWidth={1.6} />}
-          label="Direct send"
+          label={t("directSend")}
         />
         <QuickActionTile
           onClick={hasData ? onExport : () => onNavigate("/import-export")}
           icon={<Download size={15} strokeWidth={1.6} />}
-          label={hasData ? "Export ledger" : "Import ledger"}
+          label={hasData ? t("exportLedger") : t("importLedger")}
         />
         <QuickActionTile
           href={faucetUrl}
           external
           icon={<ExternalLink size={15} strokeWidth={1.6} />}
-          label="USDC faucet"
+          label={t("usdcFaucet")}
         />
       </div>
     </div>
@@ -3648,16 +4196,17 @@ function GettingStartedCard({
   total: number;
   progressPct: number;
 }) {
+  const { t } = useI18n();
   const allDone = completed === total;
   return (
     <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
         <div>
           <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Onboarding
+            {t("onboarding")}
           </p>
           <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            {allDone ? "All steps complete" : "Getting started"}
+            {allDone ? t("allStepsComplete") : t("gettingStarted")}
           </h3>
         </div>
         <span className="font-mono text-[10px] tabular-nums text-[var(--muted)]">
@@ -3723,15 +4272,16 @@ function StatusDigestCard({
   expiredCount: number;
   rpcHealthy?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
         <div>
           <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Status
+            {t("status")}
           </p>
           <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            At a glance
+            {t("atGlance")}
           </h3>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -3741,13 +4291,13 @@ function StatusDigestCard({
               rpcHealthy ? "bg-[var(--green-text)]" : "bg-[var(--yellow-text)]"
             )}
           />
-          {rpcHealthy ? "Operational" : "Initializing"}
+          {rpcHealthy ? t("operational") : t("initializing")}
         </span>
       </div>
       <div className="grid grid-cols-3 divide-x divide-[var(--line-soft)]">
-        <DigestCell label="Paid"    value={paidCount}    tone="accent" />
-        <DigestCell label="Open"    value={openCount}    tone="info" />
-        <DigestCell label="Expired" value={expiredCount} tone="muted" />
+        <DigestCell label={t("paid")}    value={paidCount}    tone="accent" />
+        <DigestCell label={t("open")}    value={openCount}    tone="info" />
+        <DigestCell label={t("expired")} value={expiredCount} tone="muted" />
       </div>
     </div>
   );
@@ -3779,20 +4329,21 @@ function DigestCell({
 }
 
 function ResourcesCard() {
+  const { t } = useI18n();
   const links = [
-    { label: "Documentation", href: getDocsHref(), external: false, icon: BookOpen },
-    { label: "USDC faucet",   href: ARC_FAUCET_URL, external: true,  icon: ExternalLink },
+    { label: t("documentation"), href: getDocsHref(), external: false, icon: BookOpen },
+    { label: t("usdcFaucet"),   href: ARC_FAUCET_URL, external: true,  icon: ExternalLink },
     { label: "Arcscan",       href: ARC_EXPLORER_URL, external: true, icon: ExternalLink },
-    { label: "Source on GitHub", href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
+    { label: t("sourceGithub"), href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
   ];
   return (
     <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       <div className="border-b border-[var(--line)] px-5 py-3.5">
         <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-          Reference
+          {t("referenceSection")}
         </p>
         <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          Resources
+          {t("resources")}
         </h3>
       </div>
       <ul>
@@ -3829,22 +4380,24 @@ function ImportExportPage({
   onExport: () => void;
   onImport: (file: File | undefined) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <>
       <section className="workbench" >
         <div className="ie-page">
           <div className="ie-card">
-            <h3>Export payment history</h3>
-            <p>Download all {requests.length} payment requests and {receipts.length} receipts as a JSON file. This file can be imported on another device or browser.</p>
+            <h3>{t("exportHistory")}</h3>
+            <p>{t("exportHistoryText", { requests: requests.length, receipts: receipts.length })}</p>
             <button className="primary-button" type="button" onClick={onExport} disabled={!requests.length}>
-              Export JSON
+              {t("exportJson")}
             </button>
           </div>
           <div className="ie-card">
-            <h3>Import payment data</h3>
-            <p>Upload a previously exported JSON file to merge payment requests and receipts into your local data.</p>
+            <h3>{t("importPaymentData")}</h3>
+            <p>{t("importPaymentDataText")}</p>
             <button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>
-              Choose file
+              {t("chooseFile")}
             </button>
             <input
               ref={importInputRef}
@@ -3855,8 +4408,8 @@ function ImportExportPage({
             />
           </div>
           <div className="onboarding-card">
-            <strong>Data stays local</strong>
-            All payment request and receipt data is stored in your browser's localStorage. Exporting creates a portable backup that does not leave your device until you choose to share it.
+            <strong>{t("dataStaysLocal")}</strong>
+            {t("dataStaysLocalText")}
           </div>
         </div>
       </section>

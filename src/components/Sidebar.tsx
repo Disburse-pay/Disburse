@@ -7,6 +7,7 @@ import {
   QrCode,
   Send,
 } from "lucide-react";
+import { useI18n } from "../lib/i18n";
 import { cn } from "../lib/utils";
 
 export type Page =
@@ -20,7 +21,7 @@ export type Page =
 
 type NavItem = {
   page: Page;
-  label: string;
+  labelKey: string;
   href: string;
   icon: LucideIcon;
   group: "operate" | "manage" | "reference";
@@ -34,17 +35,17 @@ type Props = {
 };
 
 const navItems: NavItem[] = [
-  { page: "dashboard",     label: "Overview",       href: "/",               icon: LayoutGrid, group: "operate" },
-  { page: "payments",      label: "Direct send",    href: "/payments",       icon: Send,       group: "operate" },
-  { page: "qr-payments",   label: "QR requests",    href: "/qr-payments",    icon: QrCode,     group: "operate" },
-  { page: "import-export", label: "Backup",         href: "/import-export",  icon: Database,   group: "manage"  },
-  { page: "docs",          label: "Documentation",  href: "/docs",           icon: BookOpen,   group: "reference" },
+  { page: "dashboard",     labelKey: "overview",      href: "/",               icon: LayoutGrid, group: "operate" },
+  { page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send,       group: "operate" },
+  { page: "qr-payments",   labelKey: "qrPayments",    href: "/qr-payments",    icon: QrCode,     group: "operate" },
+  { page: "import-export", labelKey: "backup",        href: "/import-export",  icon: Database,   group: "manage"  },
+  { page: "docs",          labelKey: "documentation", href: "/docs",           icon: BookOpen,   group: "reference" },
 ];
 
 const GROUP_LABEL: Record<NavItem["group"], string> = {
-  operate: "Operate",
-  manage: "Manage",
-  reference: "Reference",
+  operate: "operate",
+  manage: "manage",
+  reference: "referenceSection",
 };
 
 /**
@@ -53,6 +54,7 @@ const GROUP_LABEL: Record<NavItem["group"], string> = {
  * arbitrary.
  */
 export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate }: Props) {
+  const { t } = useI18n();
   const groups: NavItem["group"][] = ["operate", "manage", "reference"];
 
   return (
@@ -98,7 +100,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
             <div key={group} className={cn("py-1.5", group !== "operate" && "border-t border-[var(--line-soft)] mt-1.5 pt-3")}>
               {!isCollapsed && (
                 <p className="mb-1.5 px-5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--muted-soft)]">
-                  {GROUP_LABEL[group]}
+                  {t(GROUP_LABEL[group])}
                 </p>
               )}
               {items.map((item) => {
@@ -106,13 +108,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
                 const isActive =
                   page === item.page ||
                   (item.page === "qr-payments" && page === "pay");
+                const itemLabel = t(item.labelKey);
 
                 return (
                   <a
                     key={item.page}
                     href={item.href}
                     onClick={(e) => onNavigate(e, item.href)}
-                    title={isCollapsed ? item.label : undefined}
+                    title={isCollapsed ? itemLabel : undefined}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "relative mx-2 flex items-center gap-3 rounded-[var(--btn-radius)] px-3 py-[7px] text-[12.5px] transition-colors",
@@ -130,7 +133,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
                       aria-hidden="true"
                     />
                     <Icon size={15} strokeWidth={1.6} className="flex-shrink-0" />
-                    {!isCollapsed && <span className="font-medium">{item.label}</span>}
+                    {!isCollapsed && <span className="font-medium">{itemLabel}</span>}
                   </a>
                 );
               })}
@@ -144,7 +147,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
         {!isCollapsed && (
           <div className="mb-1 px-3 py-1.5">
             <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--muted-soft)]">
-              Network
+              {t("network")}
             </p>
             <p className="mt-0.5 text-[11px] text-[var(--muted)]">
               Arc Testnet
@@ -157,14 +160,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate 
           type="button"
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="flex w-full items-center justify-center gap-2 rounded-[var(--btn-radius)] py-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
-          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={isCollapsed ? t("expandSidebar") : t("collapseSidebar")}
         >
           <ChevronsLeft
             size={13}
             strokeWidth={1.6}
             className={cn("transition-transform duration-300", isCollapsed && "rotate-180")}
           />
-          {!isCollapsed && <span className="text-[10.5px] font-medium">Collapse</span>}
+          {!isCollapsed && <span className="text-[10.5px] font-medium">{t("collapse")}</span>}
         </button>
       </div>
     </nav>

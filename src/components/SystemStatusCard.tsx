@@ -6,6 +6,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useI18n } from "../lib/i18n";
 
 type MonthlyDatum = {
   month: string;
@@ -32,15 +33,16 @@ export default function SystemStatusCard({
   rpcBlockLabel,
   rpcHealthy,
 }: Props) {
+  const { t, formatCurrency } = useI18n();
   return (
     <section className="flex h-full flex-col rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
       <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-3.5">
         <div>
           <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Network
+            {t("network")}
           </p>
           <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-            Live Arc Testnet telemetry
+            {t("liveTelemetry")}
           </p>
         </div>
         <span
@@ -58,21 +60,21 @@ export default function SystemStatusCard({
             ].join(" ")}
             aria-hidden="true"
           />
-          {rpcHealthy ? "Operational" : "Degraded"}
+          {rpcHealthy ? t("operational") : t("degraded")}
         </span>
       </header>
 
       {/* Key-value rows */}
       <dl className="divide-y divide-[var(--line-soft)] border-b border-[var(--line)] px-5">
-        <StatusRow label="Chain" value="Arc Testnet 5042002" />
-        <StatusRow label="RPC" value={rpcStatusLabel} mono />
-        <StatusRow label="Block" value={rpcBlockLabel} mono />
+        <StatusRow label={t("chain")} value="Arc Testnet 5042002" />
+        <StatusRow label={t("rpc")} value={rpcStatusLabel} mono />
+        <StatusRow label={t("block")} value={rpcBlockLabel} mono />
       </dl>
 
       {/* Monthly volume */}
       <div className="flex min-h-[100px] flex-1 flex-col px-5 py-4">
         <p className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-          6-month volume
+          {t("sixMonthVolume")}
         </p>
         <div className="flex-1">
           <ResponsiveContainer width="100%" height="100%">
@@ -97,6 +99,7 @@ export default function SystemStatusCard({
                 }}
                 labelStyle={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)", marginBottom: 2 }}
                 itemStyle={{ color: "var(--ink)", padding: 0 }}
+                formatter={(value) => [formatCurrency(Number(value)), t("settledVolume")]}
                 cursor={{ fill: "var(--line-soft)" }}
               />
               <Bar
@@ -104,7 +107,7 @@ export default function SystemStatusCard({
                 fill="var(--primary-bg)"
                 fillOpacity={0.85}
                 radius={[1, 1, 0, 0]}
-                name="Volume (USDC)"
+                name={t("settledVolume")}
                 maxBarSize={20}
               />
             </BarChart>

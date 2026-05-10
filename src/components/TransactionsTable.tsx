@@ -8,6 +8,7 @@ import {
   shortAddress,
 } from "../lib/payments";
 import { formatInvoiceDate } from "../lib/invoice";
+import { useI18n } from "../lib/i18n";
 
 type Props = {
   requests: PaymentRequest[];
@@ -18,22 +19,22 @@ type Props = {
 
 const STATUS_CONFIG: Record<
   PaymentStatus,
-  { label: string; dot: string; text: string }
+  { labelKey: string; dot: string; text: string }
 > = {
-  open:           { label: "Open",    dot: "bg-[var(--blue-text)]",   text: "text-[var(--blue-text)]" },
-  paid:           { label: "Paid",    dot: "bg-[var(--green-text)]",  text: "text-[var(--green-text)]" },
-  expired:        { label: "Expired", dot: "bg-[var(--muted)]",       text: "text-[var(--muted)]" },
-  failed:         { label: "Failed",  dot: "bg-[var(--red-text)]",    text: "text-[var(--red-text)]" },
-  possible_match: { label: "Review",  dot: "bg-[var(--yellow-text)]", text: "text-[var(--yellow-text)]" },
+  open:           { labelKey: "open",    dot: "bg-[var(--blue-text)]",   text: "text-[var(--blue-text)]" },
+  paid:           { labelKey: "paid",    dot: "bg-[var(--green-text)]",  text: "text-[var(--green-text)]" },
+  expired:        { labelKey: "expired", dot: "bg-[var(--muted)]",       text: "text-[var(--muted)]" },
+  failed:         { labelKey: "failed",  dot: "bg-[var(--red-text)]",    text: "text-[var(--red-text)]" },
+  possible_match: { labelKey: "review",  dot: "bg-[var(--yellow-text)]", text: "text-[var(--yellow-text)]" },
 };
 
 const FILTERS = ["all", "open", "paid", "expired", "failed"] as const;
 const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = {
-  all: "All",
-  open: "Open",
-  paid: "Paid",
-  expired: "Expired",
-  failed: "Failed",
+  all: "all",
+  open: "open",
+  paid: "paid",
+  expired: "expired",
+  failed: "failed",
 };
 
 /**
@@ -49,6 +50,7 @@ export default function TransactionsTable({
   now,
   onNavigate,
 }: Props) {
+  const { t } = useI18n();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
 
   const displayRequests = useMemo(() => {
@@ -76,15 +78,15 @@ export default function TransactionsTable({
         <div className="flex items-baseline gap-3">
           <div>
             <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-              Ledger
+              {t("ledger")}
             </p>
             <h3 className="mt-0.5 text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-              Recent requests
+              {t("recentRequestsLower")}
             </h3>
           </div>
           {requests.length > 0 && (
             <span className="font-mono text-[10px] text-[var(--muted)]">
-              {requests.length} {requests.length === 1 ? "record" : "records"}
+              {requests.length} {requests.length === 1 ? t("record") : t("records")}
             </span>
           )}
         </div>
@@ -106,7 +108,7 @@ export default function TransactionsTable({
                     : "text-[var(--muted)] hover:text-[var(--ink)]",
                 ].join(" ")}
               >
-                {FILTER_LABEL[f]}
+                {t(FILTER_LABEL[f])}
                 {count > 0 && f !== "all" && (
                   <span
                     className={[
@@ -128,12 +130,12 @@ export default function TransactionsTable({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--line)] bg-[var(--paper-2)]/50">
-                <Th>Status</Th>
-                <Th>Reference</Th>
-                <Th>Recipient</Th>
-                <Th>Route</Th>
-                <Th align="right">Amount</Th>
-                <Th align="right">Issued</Th>
+                <Th>{t("status")}</Th>
+                <Th>{t("reference")}</Th>
+                <Th>{t("recipient")}</Th>
+                <Th>{t("route")}</Th>
+                <Th align="right">{t("amount")}</Th>
+                <Th align="right">{t("issued")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -156,7 +158,7 @@ export default function TransactionsTable({
                           aria-hidden="true"
                         />
                         <span className={`text-[11.5px] font-medium ${cfg.text}`}>
-                          {cfg.label}
+                          {t(cfg.labelKey)}
                         </span>
                       </div>
                     </Td>
@@ -172,7 +174,7 @@ export default function TransactionsTable({
                     </Td>
                     <Td>
                       <span className="text-[11.5px] text-[var(--muted)]">
-                        {isCrossChainPaymentRequest(r) ? "Cross-chain" : "Arc direct"}
+                        {isCrossChainPaymentRequest(r) ? t("crossChain") : t("arcDirect")}
                       </span>
                     </Td>
                     <Td align="right">
@@ -246,6 +248,7 @@ function EmptyState({
   filter: (typeof FILTERS)[number];
   onCreate: () => void;
 }) {
+  const { t } = useI18n();
   const isFiltered = filter !== "all";
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
@@ -253,12 +256,12 @@ function EmptyState({
         <QrCode size={18} strokeWidth={1.5} />
       </div>
       <p className="mb-1 text-[13px] font-medium text-[var(--ink)]">
-        {isFiltered ? `No ${filter} requests` : "No requests yet"}
+        {isFiltered ? t("noFilteredRequests", { filter: t(FILTER_LABEL[filter]).toLowerCase() }) : t("noRequests")}
       </p>
       <p className="mb-4 max-w-[32ch] text-[11.5px] leading-relaxed text-[var(--muted)]">
         {isFiltered
-          ? "Change the filter to see all records."
-          : "Create a QR request to start collecting payments."}
+          ? t("changeFilter")
+          : t("createQrStartCollecting")}
       </p>
       {!isFiltered && (
         <button
@@ -266,7 +269,7 @@ function EmptyState({
           onClick={onCreate}
           className="rounded-[var(--btn-radius)] border border-[var(--line)] px-3 py-1.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
         >
-          Create your first request
+          {t("createFirstRequest")}
         </button>
       )}
     </div>
