@@ -20,7 +20,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -28,7 +28,8 @@ const ROOT = resolve(__dirname, "..");
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const ARC_CHAIN_ID = 5_042_002;
-const ARC_RPC_URL = process.env.ARC_RPC_URL || "https://rpc-testnet.arc.gel.network";
+const ARC_RPC_URL = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network";
+const RPC_TIMEOUT_MS = 30_000;
 
 const deployerKey = process.env.QR_DEPLOYER_PRIVATE_KEY;
 const issuerKey = process.env.DISBURSE_PSP_SIGNING_KEY;
@@ -68,11 +69,29 @@ const solcInput = JSON.stringify({
   }
 });
 
-const solcOutput = JSON.parse(execSync(`echo '${solcInput.replace(/'/g, "\\'")}' | npx solc --standard-json`, {
+const solcProcess = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["solc", "--standard-json"], {
   cwd: ROOT,
+  input: solcInput,
   encoding: "utf-8",
   maxBuffer: 10 * 1024 * 1024
-}));
+});
+
+if (solcProcess.error) {
+  throw solcProcess.error;
+}
+
+if (solcProcess.status !== 0) {
+  console.error(solcProcess.stderr || solcProcess.stdout);
+  process.exit(solcProcess.status ?? 1);
+}
+
+const jsonStart = solcProcess.stdout.indexOf("{");
+if (jsonStart === -1) {
+  console.error(solcProcess.stdout || solcProcess.stderr);
+  throw new Error("solc did not return JSON output.");
+}
+
+const solcOutput = JSON.parse(solcProcess.stdout.slice(jsonStart));
 
 if (solcOutput.errors?.some(e => e.severity === "error")) {
   console.error("Compilation errors:");
@@ -99,13 +118,13 @@ const arcChain = {
 
 const publicClient = createPublicClient({
   chain: arcChain,
-  transport: http(ARC_RPC_URL)
+  transport: http(ARC_RPC_URL, { timeout: RPC_TIMEOUT_MS })
 });
 
 const walletClient = createWalletClient({
   account: deployerAccount,
   chain: arcChain,
-  transport: http(ARC_RPC_URL)
+  transport: http(ARC_RPC_URL, { timeout: RPC_TIMEOUT_MS })
 });
 
 console.log("Deploying PspVerifier...");

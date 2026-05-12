@@ -1,0 +1,255 @@
+{
+  "name": "PspVerifier",
+  "address": "0xc8dc0f60ba609ac37dca40b7a9ad9f1bb83d13c4",
+  "deployer": "0xDFfac1E2149B547DC71C081ea32b78595e6153A4",
+  "issuer": "0x6046b7Af1DF3979828f0Da96091c85aE46a0646b",
+  "settlementContract": "0x8c535227ed2b2963a3c1176510bc59e7a7fef07d",
+  "chainId": 5042002,
+  "txHash": "0x2878398d29dbf89b2b221953e16404a181ca03f55a956549a12dae4879fc2dee",
+  "blockNumber": 41872651,
+  "deployedAt": "2026-05-12T18:27:09.501Z",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "settlementContract",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "initialIssuer",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "previousIssuer",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newIssuer",
+          "type": "address"
+        }
+      ],
+      "name": "IssuerUpdated",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "DOMAIN_PREFIX",
+      "outputs": [
+        {
+          "internalType": "bytes",
+          "name": "",
+          "type": "bytes"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "settlementId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "isSettled",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "issuer",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newIssuer",
+          "type": "address"
+        }
+      ],
+      "name": "setIssuer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "settlement",
+      "outputs": [
+        {
+          "internalType": "contract IQrPaymentSettlement",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newOwner",
+          "type": "address"
+        }
+      ],
+      "name": "transferOwnership",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "digest",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        },
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "networkMode",
+              "type": "string"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "settlementId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "invoicePayer",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "invoiceRecipient",
+              "type": "address"
+            },
+            {
+              "internalType": "string",
+              "name": "invoiceToken",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "invoiceAmount",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "requestId",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "settlementChainId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "settlementTxHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct PspVerifier.PspFields",
+          "name": "fields",
+          "type": "tuple"
+        }
+      ],
+      "name": "verify",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "ok",
+          "type": "bool"
+        },
+        {
+          "internalType": "address",
+          "name": "recoveredSigner",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "digest",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        }
+      ],
+      "name": "verifySignatureOnly",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "ok",
+          "type": "bool"
+        },
+        {
+          "internalType": "address",
+          "name": "recoveredSigner",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ]
+}
