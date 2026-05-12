@@ -1,4 +1,4 @@
-import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightLeft,
@@ -92,6 +92,7 @@ import {
   verifyPayment,
   waitForTransactionConfirmation,
   type Balances,
+  type EthereumProvider,
   type SpendableTransfer,
   type TokenTransfer,
   type TransferEstimate
@@ -143,6 +144,7 @@ import {
 } from "./lib/qrApi";
 import { applyQrRealtimeEvent, shouldHideQrForStatus, type QrRealtimeEvent, type QrStatusPayload } from "./lib/realtime";
 import { getSupabaseBrowserClient } from "./lib/supabaseClient";
+import { useDisburseDynamicWallet } from "./lib/dynamic";
 import LandingPage from "./LandingPage";
 
 type DirectFormState = {
@@ -1083,6 +1085,7 @@ function App() {
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
   const [appSettings] = useState<AppSettings>(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const dynamicWallet = useDisburseDynamicWallet();
 
   const selectedRequest = useMemo(
     () => requests.find((request) => request.id === selectedId) ?? requests[0],
@@ -1107,7 +1110,7 @@ function App() {
   const wrongChain = Boolean(account && chainId !== undefined && chainId !== ARC_CHAIN_ID);
   const payRequiredChainId = isCrossChainPaymentRequest(payRequest) ? paySourceChainId : ARC_CHAIN_ID;
   const payWrongChain = Boolean(account && chainId !== undefined && chainId !== payRequiredChainId);
-  const hasWalletProvider = Boolean(getInjectedProvider());
+  const hasWalletProvider = dynamicWallet.enabled || Boolean(getInjectedProvider());
   const payDisplayStatus = payRequest ? refreshDerivedStatus(payRequest, now).status : "open";
   const payIsExpired = payRequest ? isPaymentExpired(payRequest, now) : false;
   const payIsPayable = payRequest ? isPaymentPayable(payRequest, now) : false;
@@ -1128,6 +1131,13 @@ function App() {
   const rpcBlockLabel = rpcHealth?.healthy && rpcHealth.blockNumber ? `block ${rpcHealth.blockNumber}` : rpcStatusLabel;
   const rpcGasLabel =
     rpcHealth?.healthy && rpcHealth.safeGasPrice ? `${trimDisplay(rpcHealth.safeGasPrice, 8)} USDC` : "pending";
+
+  const getWalletProvider = useCallback(async (): Promise<EthereumProvider | undefined> => {
+    if (dynamicWallet.enabled) {
+      return dynamicWallet.getEthereumProvider();
+    }
+    return getInjectedProvider();
+  }, [dynamicWallet.enabled, dynamicWallet.primaryWallet]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -1350,6 +1360,56 @@ function App() {
   }, [page, routeKey]);
 
   useEffect(() => {
+    if (!dynamicWallet.enabled) {
+      return;
+    }
+
+    let isActive = true;
+    const syncDynamicWallet = async () => {
+      if (!dynamicWallet.primaryWallet) {
+        setAccount(undefined);
+        setChainId(undefined);
+        setDirectBalances(undefined);
+        setPayBalances(undefined);
+        setDirectEstimate(undefined);
+        setPayEstimate(undefined);
+        setPayApprovalHash(undefined);
+        return;
+      }
+
+      const nextAccount = dynamicWallet.getAccount();
+      if (!nextAccount) {
+        setAccount(undefined);
+        setChainId(undefined);
+        setWalletNotice({ tone: "error", text: "Dynamic connected wallet is not an EVM wallet." });
+        return;
+      }
+
+      const nextChainId = await dynamicWallet.getChainId();
+      if (!isActive) {
+        return;
+      }
+
+      setAccount(nextAccount);
+      setChainId(nextChainId);
+      setDirectBalances(undefined);
+      setPayBalances(undefined);
+      setDirectEstimate(undefined);
+      setPayEstimate(undefined);
+      setPayApprovalHash(undefined);
+    };
+
+    void syncDynamicWallet();
+
+    return () => {
+      isActive = false;
+    };
+  }, [dynamicWallet.enabled, dynamicWallet.primaryWallet]);
+
+  useEffect(() => {
+    if (dynamicWallet.enabled) {
+      return;
+    }
     const provider = getInjectedProvider();
     if (!provider?.on) {
       return;
@@ -1381,7 +1441,7 @@ function App() {
       provider.removeListener?.("accountsChanged", handleAccounts);
       provider.removeListener?.("chainChanged", handleChain);
     };
-  }, []);
+  }, [dynamicWallet.enabled]);
 
   useEffect(() => {
     if (!account) {
@@ -1434,11 +1494,23 @@ function App() {
   }, [account, wrongChain, payWrongChain, page, payRequest?.id, payRequest?.token, payRequest?.amount, paySourceChainId]);
 
   async function handleConnectWallet() {
-    const provider = getInjectedProvider();
+    if (dynamicWallet.enabled && !dynamicWallet.sdkHasLoaded) {
+      setWalletNotice({ tone: "info", text: "Dynamic wallet login is still initializing." });
+      return;
+    }
+    if (dynamicWallet.enabled && !dynamicWallet.primaryWallet) {
+      dynamicWallet.openAuthFlow();
+      setWalletNotice({ tone: "info", text: "Choose or create a wallet with Dynamic." });
+      return;
+    }
+
+    const provider = await getWalletProvider();
     if (!provider) {
       setWalletNotice({
         tone: "error",
-        text: "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
+        text: dynamicWallet.enabled
+          ? "Connect a Dynamic EVM wallet before continuing."
+          : "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
       });
       return;
     }
@@ -1460,11 +1532,13 @@ function App() {
   }
 
   async function handleSwitchNetwork() {
-    const provider = getInjectedProvider();
+    const provider = await getWalletProvider();
     if (!provider) {
       setWalletNotice({
         tone: "error",
-        text: "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
+        text: dynamicWallet.enabled
+          ? "Connect a Dynamic EVM wallet before switching networks."
+          : "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
       });
       return;
     }
@@ -1490,11 +1564,13 @@ function App() {
       return;
     }
 
-    const provider = getInjectedProvider();
+    const provider = await getWalletProvider();
     if (!provider) {
       setWalletNotice({
         tone: "error",
-        text: "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
+        text: dynamicWallet.enabled
+          ? "Connect a Dynamic EVM wallet before switching networks."
+          : "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
       });
       return;
     }
@@ -1541,7 +1617,7 @@ function App() {
   }
 
   async function handleDirectSend() {
-    const provider = getInjectedProvider();
+    const provider = await getWalletProvider();
     if (!provider || !account) {
       setDirectNotice({ tone: "error", text: "Connect a wallet before sending." });
       return;
@@ -1652,7 +1728,7 @@ function App() {
   }
 
   async function handlePayQrRequest() {
-    const provider = getInjectedProvider();
+    const provider = await getWalletProvider();
     const request = payRequest;
     if (!request || !provider || !account) {
       setPayNotice({ tone: "error", text: "Connect a wallet and load a QR request." });

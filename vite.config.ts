@@ -8,6 +8,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // Dynamic's embedded-wallet dependencies reference missing ESM files in this SDK line.
+      "@msgpack/msgpack": path.resolve(__dirname, "node_modules/@msgpack/msgpack/dist.cjs/index.cjs"),
+      "@turnkey/http": path.resolve(__dirname, "node_modules/@turnkey/http/dist/index.js"),
     },
   },
   server: {
