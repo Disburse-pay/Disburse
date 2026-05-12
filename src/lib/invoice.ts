@@ -5,6 +5,8 @@ import { shortAddress, type PaymentRequest, type Receipt } from "./payments";
 export type InvoiceInput = {
   request: PaymentRequest;
   receipt: Receipt;
+  pspDigest?: string;
+  pspVerifierUrl?: string;
 };
 
 type InvoiceRow = {
@@ -129,13 +131,39 @@ export async function generateInvoicePdf(input: InvoiceInput): Promise<Uint8Arra
     thickness: 1,
     color: rgb(0.83, 0.82, 0.78)
   });
-  page.drawText("Generated locally after on-chain verification. Disburse does not custody funds.", {
-    x: MARGIN,
-    y: 62,
-    size: 8,
-    font: regular,
-    color: rgb(0.45, 0.44, 0.4)
-  });
+
+  // PSP digest in footer when available
+  if (input.pspDigest) {
+    page.drawText(`PSP Digest: ${input.pspDigest}`, {
+      x: MARGIN,
+      y: 72,
+      size: 7,
+      font: mono,
+      color: rgb(0.45, 0.44, 0.4)
+    });
+    page.drawText(`Verify: npx @disburse/psp-verify proof.json | ${input.pspVerifierUrl || "https://disburse.app"}/api/psp-viewer`, {
+      x: MARGIN,
+      y: 60,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.45, 0.44, 0.4)
+    });
+    page.drawText("Generated locally after on-chain verification. Disburse does not custody funds.", {
+      x: MARGIN,
+      y: 48,
+      size: 8,
+      font: regular,
+      color: rgb(0.45, 0.44, 0.4)
+    });
+  } else {
+    page.drawText("Generated locally after on-chain verification. Disburse does not custody funds.", {
+      x: MARGIN,
+      y: 62,
+      size: 8,
+      font: regular,
+      color: rgb(0.45, 0.44, 0.4)
+    });
+  }
 
   return document.save();
 }

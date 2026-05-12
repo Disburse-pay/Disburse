@@ -1,0 +1,37 @@
+{
+  "name": "@disburse/psp-verify",
+  "version": "1.0.0",
+  "description": "Verify Disburse Portable Settlement Proofs (PSP) — zero runtime dependencies beyond viem",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "psp-verify": "./bin/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "psp",
+    "portable-settlement-proof",
+    "disburse",
+    "arc",
+    "stablecoin",
+    "receipt",
+    "verification",
+    "crypto"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.48.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
