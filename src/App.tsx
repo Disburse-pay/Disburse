@@ -166,7 +166,7 @@ type Notice = {
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
 type Theme = "light" | "dark";
-type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "docs";
+type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "milestones" | "statements" | "docs";
 type PayLifecycle =
   | "idle"
   | "preparing"
@@ -906,6 +906,8 @@ function getInitialPage(): Page {
     if (p === "/qr-payments") return "qr-payments";
     if (p === "/pay") return "pay";
     if (p === "/import-export") return "import-export";
+    if (p === "/milestones") return "milestones";
+    if (p === "/statements") return "statements";
     // /docs inside the app shell renders the docs page as a regular route
     // (sidebar navigation, header, the whole console chrome). The dedicated
     // docs subdomain is served by the branch above.
@@ -2366,6 +2368,8 @@ function App() {
               onImport={handleImport}
             />
           )}
+          {page === "milestones" && <MilestonesPage />}
+          {page === "statements" && <StatementsPage />}
         </div>
       </main>
     </div>
@@ -4528,5 +4532,364 @@ function RiskCheckPanel({ request, account, wrongChain, isExpired, requests }: {
     </div>
   );
 }
+
+// ---------- Milestones Page ----------
+
+function MilestonesPage() {
+  const [chains, setChains] = useState<MilestoneChainView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [formTitle, setFormTitle] = useState("");
+  const [formRecipient, setFormRecipient] = useState("");
+  const [formCounterparty, setFormCounterparty] = useState("");
+  const [formSteps, setFormSteps] = useState<{ label: string; amount: string }[]>([
+    { label: "", amount: "" }
+  ]);
+  const [notice, setNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    fetchChains();
+  }, []);
+
+  async function fetchChains() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/milestones");
+      if (res.ok) {
+        const data = await res.json();
+        setChains(data.chains || []);
+      }
+    } catch { /* silent */ }
+    setLoading(false);
+  }
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/milestones", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: formTitle,
+          recipient: formRecipient,
+          counterparty: formCounterparty || undefined,
+          token: "USDC",
+          steps: formSteps.filter((s) => s.label && s.amount)
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create");
+      }
+      setNotice({ tone: "success", text: "Milestone chain created." });
+      setShowForm(false);
+      setFormTitle("");
+      setFormRecipient("");
+      setFormCounterparty("");
+      setFormSteps([{ label: "", amount: "" }]);
+      await fetchChains();
+    } catch (err) {
+      setNotice({ tone: "error", text: err instanceof Error ? err.message : "Error" });
+    }
+    setCreating(false);
+  }
+
+  function addStep() {
+    setFormSteps([...formSteps, { label: "", amount: "" }]);
+  }
+
+  function updateStep(index: number, field: "label" | "amount", value: string) {
+    const next = [...formSteps];
+    next[index] = { ...next[index], [field]: value };
+    setFormSteps(next);
+  }
+
+  function removeStep(index: number) {
+    if (formSteps.length <= 1) return;
+    setFormSteps(formSteps.filter((_, i) => i !== index));
+  }
+
+  return (
+    <>
+      <section className="hero route-hero">
+        <p className="eyebrow">Conditional Payments</p>
+        <h1>Milestone Invoices</h1>
+      </section>
+
+      <section className="content-section">
+        <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
+            Multi-step payment chains where each step unlocks only when the previous payment is verified with a Portable Settlement Proof.
+          </p>
+          <button className="button button-primary" type="button" onClick={() => setShowForm(!showForm)}>
+            {showForm ? "Cancel" : "+ New Chain"}
+          </button>
+        </div>
+
+        {notice && (
+          <div className={`notice ${notice.tone === "success" ? "notice-success" : "notice-error"}`} style={{ marginBottom: "1rem" }}>
+            {notice.text}
+          </div>
+        )}
+
+        {showForm && (
+          <form onSubmit={handleCreate} className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <input className="input" placeholder="Project title (e.g. Website Redesign)" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} required />
+              <input className="input" placeholder="Recipient address (0x...)" value={formRecipient} onChange={(e) => setFormRecipient(e.target.value)} required />
+              <input className="input" placeholder="Counterparty / payer address (optional)" value={formCounterparty} onChange={(e) => setFormCounterparty(e.target.value)} />
+
+              <div style={{ marginTop: "0.5rem" }}>
+                <label style={{ fontWeight: 600, fontSize: "0.8125rem", color: "var(--muted)" }}>Steps</label>
+                {formSteps.map((step, i) => (
+                  <div key={i} style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "center" }}>
+                    <span style={{ color: "var(--muted)", fontSize: "0.75rem", width: "1.5rem" }}>{i + 1}.</span>
+                    <input className="input" style={{ flex: 2 }} placeholder="Step label" value={step.label} onChange={(e) => updateStep(i, "label", e.target.value)} required />
+                    <input className="input" style={{ flex: 1 }} placeholder="Amount" type="number" step="0.01" value={step.amount} onChange={(e) => updateStep(i, "amount", e.target.value)} required />
+                    <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>USDC</span>
+                    {formSteps.length > 1 && (
+                      <button type="button" onClick={() => removeStep(i)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer" }}>x</button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" onClick={addStep} className="button button-ghost" style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>
+                  + Add Step
+                </button>
+              </div>
+
+              <button className="button button-primary" type="submit" disabled={creating} style={{ marginTop: "0.75rem" }}>
+                {creating ? "Creating..." : "Create Milestone Chain"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {loading ? (
+          <p style={{ color: "var(--muted)" }}>Loading...</p>
+        ) : chains.length === 0 ? (
+          <div className="empty-state">
+            <p>No milestone chains yet. Create your first conditional payment flow.</p>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: "1rem" }}>
+            {chains.map((chain) => (
+              <div key={chain.id} className="card" style={{ padding: "1.25rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>{chain.title}</h3>
+                  <span className={`badge badge-${chain.status === "completed" ? "success" : chain.status === "cancelled" ? "error" : "info"}`}>
+                    {chain.status}
+                  </span>
+                </div>
+                <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.25rem 0 0.75rem" }}>
+                  {chain.totalAmount} USDC across {chain.steps?.length || 0} steps
+                </p>
+                <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                  {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
+                    <div key={i} style={{
+                      flex: 1,
+                      height: "6px",
+                      borderRadius: "3px",
+                      background: step.status === "completed" ? "var(--success)" :
+                                  step.status === "unlocked" || step.status === "payment_pending" ? "var(--primary)" :
+                                  "var(--border)"
+                    }} title={`${step.label}: ${step.status}`} />
+                  ))}
+                </div>
+                <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.25rem" }}>
+                  {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem" }}>
+                      <span style={{ width: "1.25rem", textAlign: "center", color: step.status === "completed" ? "var(--success)" : "var(--muted)" }}>
+                        {step.status === "completed" ? "\u2713" : step.status === "locked" ? "\u{1F512}" : "\u25CB"}
+                      </span>
+                      <span style={{ flex: 1 }}>{step.label}</span>
+                      <span style={{ color: "var(--muted)" }}>{step.amount} USDC</span>
+                      <span className={`badge badge-${step.status === "completed" ? "success" : step.status === "locked" ? "muted" : "info"}`} style={{ fontSize: "0.6875rem" }}>
+                        {step.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+type MilestoneChainView = {
+  id: string;
+  title: string;
+  totalAmount: string;
+  status: string;
+  steps: MilestoneStepView[];
+};
+type MilestoneStepView = {
+  label: string;
+  amount: string;
+  status: string;
+  pspUid?: string;
+};
+
+// ---------- Statements Page ----------
+
+function StatementsPage() {
+  const [recipient, setRecipient] = useState("");
+  const [payer, setPayer] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [bundle, setBundle] = useState<StatementBundleView | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleGenerate(e: FormEvent) {
+    e.preventDefault();
+    if (!recipient && !payer) {
+      setError("Provide at least a recipient or payer address.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setBundle(null);
+
+    try {
+      const res = await fetch("/api/statements", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recipient: recipient || undefined,
+          payer: payer || undefined,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+          token: "USDC",
+          network_mode: "testnet"
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to generate statement");
+      }
+      const data = await res.json();
+      setBundle(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error");
+    }
+    setLoading(false);
+  }
+
+  function handleDownloadJson() {
+    if (!bundle) return;
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `disburse-statement-${bundle.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <section className="hero route-hero">
+        <p className="eyebrow">Reconciliation</p>
+        <h1>Settlement Statements</h1>
+      </section>
+
+      <section className="content-section">
+        <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "1.25rem" }}>
+          Generate a verified statement bundle — all settlement proofs between you and a counterparty over any time period.
+          Export as JSON for accounting, audits, or tax reporting.
+        </p>
+
+        <form onSubmit={handleGenerate} className="card" style={{ padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "grid", gap: "0.75rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <input className="input" placeholder="Recipient address (0x...)" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+              <input className="input" placeholder="Payer / counterparty (0x...)" value={payer} onChange={(e) => setPayer(e.target.value)} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <input className="input" type="date" placeholder="From" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <input className="input" type="date" placeholder="To" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <button className="button button-primary" type="submit" disabled={loading}>
+              {loading ? "Generating..." : "Generate Statement"}
+            </button>
+          </div>
+        </form>
+
+        {error && <div className="notice notice-error" style={{ marginBottom: "1rem" }}>{error}</div>}
+
+        {bundle && (
+          <div className="card" style={{ padding: "1.25rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1rem" }}>
+              <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>Statement Summary</h3>
+              <button className="button button-ghost" type="button" onClick={handleDownloadJson} style={{ fontSize: "0.75rem" }}>
+                Download JSON
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+              <div>
+                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Total Amount</div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{bundle.summary.totalAmount} {bundle.summary.token}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Proofs</div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{bundle.summary.totalProofs}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Period</div>
+                <div style={{ fontSize: "0.8125rem" }}>
+                  {new Date(bundle.summary.period.from).toLocaleDateString()} — {new Date(bundle.summary.period.to).toLocaleDateString()}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Network</div>
+                <div style={{ fontSize: "0.8125rem" }}>{bundle.summary.networkMode}</div>
+              </div>
+            </div>
+
+            {bundle.proofs.length > 0 && (
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>Individual Proofs</div>
+                <div style={{ display: "grid", gap: "0.5rem", maxHeight: "300px", overflowY: "auto" }}>
+                  {bundle.proofs.map((psp: StatementPspView) => (
+                    <div key={psp.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem 0.75rem", background: "var(--surface)", borderRadius: "0.5rem", fontSize: "0.8125rem" }}>
+                      <div>
+                        <span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{psp.uid}</span>
+                        <span style={{ marginLeft: "0.75rem", color: "var(--muted)" }}>{psp.invoice?.label || "—"}</span>
+                      </div>
+                      <span style={{ fontWeight: 600 }}>{psp.invoice?.amount} {psp.invoice?.token}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+type StatementBundleView = {
+  id: string;
+  summary: {
+    totalProofs: number;
+    totalAmount: string;
+    token: string;
+    period: { from: string; to: string };
+    networkMode: string;
+  };
+  proofs: StatementPspView[];
+};
+type StatementPspView = {
+  uid: string;
+  invoice?: { label?: string; amount?: string; token?: string };
+};
 
 export default App;

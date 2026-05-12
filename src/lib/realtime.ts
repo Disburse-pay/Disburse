@@ -73,6 +73,7 @@ export type QrStatusPayload = {
   receipt?: Receipt;
   event?: QrRealtimeEvent;
   message?: string;
+  psp_uid?: string;
 };
 
 export type AppliedQrEvent = {

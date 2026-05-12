@@ -2,8 +2,10 @@ import {
   BookOpen,
   ChevronsLeft,
   Database,
+  FileText,
   LayoutGrid,
   type LucideIcon,
+  Milestone,
   QrCode,
   Send,
 } from "lucide-react";
@@ -17,6 +19,8 @@ export type Page =
   | "qr-payments"
   | "pay"
   | "import-export"
+  | "milestones"
+  | "statements"
   | "docs";
 
 type NavItem = {
@@ -38,6 +42,8 @@ const navItems: NavItem[] = [
   { page: "dashboard",     labelKey: "overview",      href: "/",               icon: LayoutGrid, group: "operate" },
   { page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send,       group: "operate" },
   { page: "qr-payments",   labelKey: "qrPayments",    href: "/qr-payments",    icon: QrCode,     group: "operate" },
+  { page: "milestones",    labelKey: "milestones",    href: "/milestones",     icon: Milestone,  group: "operate" },
+  { page: "statements",    labelKey: "statements",    href: "/statements",     icon: FileText,   group: "manage"  },
   { page: "import-export", labelKey: "backup",        href: "/import-export",  icon: Database,   group: "manage"  },
   { page: "docs",          labelKey: "documentation", href: "/docs",           icon: BookOpen,   group: "reference" },
 ];
