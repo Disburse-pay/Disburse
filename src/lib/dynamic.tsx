@@ -41,7 +41,10 @@ export const dynamicPaymentNetworks: EvmNetwork[] = PAYMENT_SOURCE_CHAIN_IDS.map
   return {
     blockExplorerUrls: [config.explorerUrl],
     chainId,
+    chainName: config.label,
     iconUrls: ["/favicon.png"],
+    isTestnet: config.chain.testnet,
+    key: config.key,
     name: config.label,
     nativeCurrency: config.chain.nativeCurrency,
     networkId: chainId,
@@ -79,9 +82,10 @@ export function DisburseDynamicProvider({ children }: { children: ReactNode }) {
         appName: "Disburse",
         enableConnectOnlyFallback: true,
         environmentId: DYNAMIC_ENVIRONMENT_ID,
+        initialAuthenticationMode: "connect-only",
         networkValidationMode: "never",
         overrides: {
-          evmNetworks: (dashboardNetworks) => mergeNetworks(dynamicPaymentNetworks, dashboardNetworks)
+          evmNetworks: (dashboardNetworks) => mergeNetworks(dashboardNetworks, dynamicPaymentNetworks)
         },
         useMetamaskSdk: false,
         walletConnectors: [EthereumWalletConnectors],
