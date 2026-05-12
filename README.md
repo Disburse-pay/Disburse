@@ -151,6 +151,43 @@ QR payment source choices currently target:
 
 QR Payments are USDC-only and always settle on Arc Testnet. Arc source payments use the existing Arc ERC-20 transfer path. Base Sepolia and Monad source payments use a configured 6-decimal ERC-20 source token, `QrPaymentSource` escrow, Polymer proof, and a prefunded Arc `QrPaymentSettlement` contract. Polymer proves the source escrow event; it does not supply liquidity by itself. Monad payers need Monad Testnet `MON` for gas and Monad Testnet USDC from Circle's faucet.
 
+## Portable Settlement Proofs (PSP)
+
+Every settled payment can produce a **Portable Settlement Proof** — a signed, content-addressed JSON document verifiable three ways:
+
+1. **Offline** — `verify(psp)` in the `@disburse/psp-verify` npm package
+2. **CLI** — `npx @disburse/psp-verify proof.json --issuer 0x…`
+3. **On-chain** — `PspVerifier.verify(digest, signature, fields)` on Arc
+
+No trust in Disburse infrastructure required. The open spec lives at [`spec/psp-v1.md`](./spec/psp-v1.md).
+
+### PSP environment
+
+```bash
+ENABLE_PSP=1
+DISBURSE_PSP_SIGNING_KEY=0x...   # secp256k1 key (signs proofs, does NOT hold funds)
+PSP_NETWORK_MODE=testnet
+ARC_SETTLEMENT_CONTRACT=0x8c535227ed2b2963a3c1176510bc59e7a7fef07d
+```
+
+### PSP verifier deployment
+
+```bash
+node scripts/deploy-psp-verifier.mjs
+```
+
+Requires `QR_DEPLOYER_PRIVATE_KEY`, `DISBURSE_PSP_SIGNING_KEY`, and `ARC_SETTLEMENT_CONTRACT`.
+
+### Verify a PSP
+
+```bash
+# Offline
+npx @disburse/psp-verify proof.json --issuer 0xYourIssuerAddress
+
+# From the API
+curl -s https://disburse.app/api/psp?uid=psp:abc123def456abcd | npx @disburse/psp-verify --stdin
+```
+
 ## Wallet flow
 
 The app expects an injected EIP-1193 wallet.

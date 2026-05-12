@@ -17,6 +17,7 @@
 export { buildDomainSeparator, canonicalBytes, computeDigest, deterministicStringify, extractCore } from "./canonical.js";
 export { verify, verifyJson } from "./verify.js";
 export { verifyPspSignature } from "./sign.js";
+export { verifyOnline, type VerifyOnlineOptions, type VerifyOnlineResult } from "./online.js";
 export type {
   NetworkMode,
   PspCore,
