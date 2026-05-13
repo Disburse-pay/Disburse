@@ -20,10 +20,10 @@ import {
   requestIdToBytes32,
   type PaymentSourceChainId,
   type RemotePaymentSourceChainId
-} from "./crosschain";
-import { requireCrossChainBrowserRoute } from "./crosschainConfig";
-import { getWalletChainId, type Balances, type EthereumProvider, type TransferEstimate } from "./onchain";
-import { createExpiry, parseTokenAmount, type PaymentRequest } from "./payments";
+} from "./crosschain.js";
+import { requireCrossChainBrowserRoute } from "./crosschainConfig.js";
+import { getWalletChainId, type Balances, type EthereumProvider, type TransferEstimate } from "./onchain.js";
+import { createExpiry, parseTokenAmount, type PaymentRequest } from "./payments.js";
 
 const WALLET_APPROVAL_TIMEOUT_MS = 5 * 60_000;
 const RECEIPT_WAIT_TIMEOUT_MS = 120_000;

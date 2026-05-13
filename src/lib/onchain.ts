@@ -22,7 +22,7 @@ import {
   publicClient,
   transferEvent,
   type ArcRpcEndpoint
-} from "./arc";
+} from "./arc.js";
 import {
   decodeTransferLog,
   makeReceipt,
@@ -32,7 +32,7 @@ import {
   type PaymentRequest,
   type PaymentToken,
   type Receipt
-} from "./payments";
+} from "./payments.js";
 
 export type EthereumProvider = EIP1193Provider & {
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
@@ -133,7 +133,7 @@ export function getInjectedProvider(): EthereumProvider | undefined {
 }
 
 export async function connectWallet(provider: EthereumProvider): Promise<Address> {
-  const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
+  const accounts = (await provider.request({ method: "eth_requestAccounts" } as any)) as string[];
   if (!accounts?.[0]) {
     throw new Error("Wallet did not return an account.");
   }
@@ -141,7 +141,7 @@ export async function connectWallet(provider: EthereumProvider): Promise<Address
 }
 
 export async function getWalletChainId(provider: EthereumProvider): Promise<number> {
-  const chainId = (await provider.request({ method: "eth_chainId" })) as string;
+  const chainId = (await provider.request({ method: "eth_chainId" } as any)) as string;
   return Number.parseInt(chainId, 16);
 }
 

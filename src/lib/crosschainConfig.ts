@@ -4,11 +4,11 @@ import {
   MONAD_TESTNET_CHAIN_ID,
   type RemotePaymentSourceChainId,
   type CrossChainRouteConfig
-} from "./crosschain";
+} from "./crosschain.js";
 
 type ViteEnv = Record<string, string | boolean | undefined>;
 
-const env = import.meta.env as ViteEnv;
+const env = (import.meta as any).env as ViteEnv;
 
 export function getCrossChainBrowserRoute(chainId: RemotePaymentSourceChainId): CrossChainRouteConfig {
   const prefix =

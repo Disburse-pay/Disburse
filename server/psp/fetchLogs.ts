@@ -104,7 +104,7 @@ export async function readDirectSettlementLog(
   const transferLog = txReceipt.logs.find(
     (log) =>
       log.address.toLowerCase() === tokenAddress &&
-      log.topics[0]?.toLowerCase() === TRANSFER_SELECTOR.toLowerCase()
+      (log as any).topics[0]?.toLowerCase() === TRANSFER_SELECTOR.toLowerCase()
   );
 
   if (!transferLog) {
@@ -150,7 +150,7 @@ export async function readCrossChainSettlementLog(
   const settledLog = txReceipt.logs.find(
     (log) =>
       log.address.toLowerCase() === settlementContract.toLowerCase() &&
-      log.topics[0]?.toLowerCase() === QR_PAYMENT_SETTLED_SELECTOR.toLowerCase()
+      (log as any).topics[0]?.toLowerCase() === QR_PAYMENT_SETTLED_SELECTOR.toLowerCase()
   );
 
   if (!settledLog) {
@@ -162,7 +162,7 @@ export async function readCrossChainSettlementLog(
   const decoded = decodeEventLog({
     abi: [QR_PAYMENT_SETTLED_EVENT],
     data: settledLog.data,
-    topics: settledLog.topics as [Hex, ...Hex[]],
+    topics: (settledLog as any).topics as [Hex, ...Hex[]],
   });
 
   const block = await publicClient.getBlock({
@@ -177,7 +177,7 @@ export async function readCrossChainSettlementLog(
       settledAt: new Date(Number(block.timestamp) * 1000).toISOString(),
       settlementEvent: {
         contract: getAddress(settlementContract),
-        settlementId: decoded.args.settlementId as Hex,
+        settlementId: (decoded as any).args.settlementId as Hex,
         eventTopic: QR_PAYMENT_SETTLED_SELECTOR,
         logIndex: settledLog.logIndex ?? 0,
       },
@@ -201,7 +201,7 @@ export async function readSourcePaymentLog(
   const initiatedLog = txReceipt.logs.find(
     (log) =>
       log.address.toLowerCase() === sourceContract.toLowerCase() &&
-      log.topics[0]?.toLowerCase() ===
+      (log as any).topics[0]?.toLowerCase() ===
         keccak256(
           toBytes(
             "QrPaymentInitiated(bytes32,address,address,address,uint256,uint256,uint256)"
@@ -218,7 +218,7 @@ export async function readSourcePaymentLog(
   const decoded = decodeEventLog({
     abi: [qrPaymentInitiatedEvent],
     data: initiatedLog.data,
-    topics: initiatedLog.topics as [Hex, ...Hex[]],
+    topics: (initiatedLog as any).topics as [Hex, ...Hex[]],
   });
 
   return {
@@ -226,9 +226,9 @@ export async function readSourcePaymentLog(
       chainId: sourceChainId,
       txHash: sourceTxHash,
       blockNumber: String(txReceipt.blockNumber),
-      payer: decoded.args.payer as Address,
-      token: decoded.args.token as Address,
-      amount: String(decoded.args.amount),
+      payer: (decoded as any).args.payer as Address,
+      token: (decoded as any).args.token as Address,
+      amount: String((decoded as any).args.amount),
     },
   };
 }
