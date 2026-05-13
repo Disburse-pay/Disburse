@@ -27,6 +27,9 @@ import TransactionsTable from "@/src/components/TransactionsTable";
 import MonthlyStats from "@/src/components/MonthlyStats";
 import SystemStatusCard from "@/src/components/SystemStatusCard";
 import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/SettlementTimeline";
+import QrShareCard from "@/src/components/QrShareCard";
+import ReceiptDocument from "@/src/components/ReceiptDocument";
+import SettlementPipeline from "@/src/components/SettlementPipeline";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
 import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice, generateReceiptFingerprint } from "./lib/compliance";
@@ -2706,36 +2709,37 @@ function QrPaymentsPage({
                 {qrIsFinal ? (
                   <QrFinalState request={displayRequest} receipt={selectedReceipt} />
                 ) : (
-                  <div className={`qr-share ${displayRequest.txHash ? "submitted" : "watching"}`}>
-                    {qrDataUrl ? (
-                      <img src={qrDataUrl} alt={t("qrPaymentAlt")} />
-                    ) : (
-                      <div className="qr-placeholder">{t("generatingQr")}</div>
-                    )}
-                    <div>
-                      <span>{t("payUrl")}</span>
-                      <code>{shareUrl}</code>
-                      <div className="qr-live-line" aria-live="polite">
-                        <span className="qr-live-dot" aria-hidden="true" />
-                        {formatQrLiveStatus(displayRequest)}
-                      </div>
-                      <button className="secondary-button" type="button" onClick={() => onCopy(shareUrl)}>
-                        {t("copyLink")}
-                      </button>
-                    </div>
-                  </div>
+                  <QrShareCard
+                    request={displayRequest}
+                    qrDataUrl={qrDataUrl || undefined}
+                    shareUrl={shareUrl}
+                    liveStatusLabel={formatQrLiveStatus(displayRequest)}
+                    onCopy={onCopy}
+                    onDownload={
+                      qrDataUrl
+                        ? () => {
+                            const a = document.createElement("a");
+                            a.href = qrDataUrl;
+                            a.download = `${displayRequest.label || "qr"}.png`;
+                            a.click();
+                          }
+                        : undefined
+                    }
+                  />
                 )}
 
-                {selectedReceipt && !qrIsFinal && (
-                  <div className="receipt-line">
-                    <div>
-                      <span>{t("receipt")}</span>
-                      <strong>{shortAddress(selectedReceipt.txHash, 10, 8)}</strong>
-                    </div>
-                    <a href={selectedReceipt.explorerUrl} target="_blank" rel="noreferrer">
-                      {t("openTx")}
-                    </a>
-                  </div>
+                {isCrossChainPaymentRequest(displayRequest) && (
+                  <SettlementPipeline request={displayRequest} receipt={selectedReceipt} />
+                )}
+
+                {selectedReceipt && (
+                  <ReceiptDocument
+                    receipt={selectedReceipt}
+                    request={displayRequest}
+                    attestationUid={selectedReceipt.attestationUid}
+                    attestationFingerprint={selectedReceipt.attestationFingerprint}
+                    onCopyFingerprint={onCopy}
+                  />
                 )}
               </>
             ) : (
@@ -3007,6 +3011,10 @@ function PayRequestPage({
                 </div>
               )}
 
+              {(request.txHash || receipt) && (
+                <SettlementPipeline request={request} receipt={receipt} />
+              )}
+
               <div className="action-row">
                 <button
                   className="secondary-button"
@@ -3077,23 +3085,15 @@ function PayRequestPage({
 
               {receipt && (
                 <>
-                  <div className="receipt-line">
-                    <div>
-                      <span>{t("receipt")}</span>
-                      <strong>{shortAddress(receipt.txHash, 10, 8)}</strong>
-                    </div>
-                    <div className="receipt-actions">
-                      <button className="text-button" type="button" onClick={() => onCopy(receipt.explorerUrl)}>
-                        {t("copyTx")}
-                      </button>
-                      <button className="text-button" type="button" onClick={onInvoice} disabled={isGeneratingInvoice}>
-                        {isGeneratingInvoice ? t("preparingPdf") : t("downloadInvoice")}
-                      </button>
-                      <a href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-                        {t("openTx")}
-                      </a>
-                    </div>
-                  </div>
+                  <ReceiptDocument
+                    receipt={receipt}
+                    request={request}
+                    attestationUid={attestation?.uid ?? receipt.attestationUid}
+                    attestationFingerprint={attestation?.fingerprint ?? receipt.attestationFingerprint}
+                    onCopyFingerprint={onCopy}
+                    onExportPdf={isGeneratingInvoice ? undefined : onInvoice}
+                    onExportUbl={onUBLExport}
+                  />
 
                   {/* Compliance Export Actions */}
                   <div className="compliance-actions">
