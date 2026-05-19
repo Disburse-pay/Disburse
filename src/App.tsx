@@ -1,11 +1,13 @@
-import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightLeft,
   BookOpen,
+  Check,
   ChevronsLeftRight,
   Download,
   ExternalLink,
+  FileText,
   Home,
   LifeBuoy,
   Moon,
@@ -30,6 +32,7 @@ import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/Settl
 import QrShareCard from "@/src/components/QrShareCard";
 import ReceiptDocument from "@/src/components/ReceiptDocument";
 import SettlementPipeline from "@/src/components/SettlementPipeline";
+import { PspProofPanel } from "@/src/components/PspProofPanel";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
 import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice, generateReceiptFingerprint } from "./lib/compliance";
@@ -150,6 +153,68 @@ import { getSupabaseBrowserClient } from "./lib/supabaseClient";
 import { useDisburseDynamicWallet } from "./lib/dynamic";
 import LandingPage from "./LandingPage";
 
+// Route-level code splitting. Docs content + multilingual sections are heavy
+// and rarely on the user's initial path, so they ship in a separate chunk.
+const DocsPage = lazy(() => import("./pages/DocsPage"));
+
+// The bet subdomain (bet.disburse.online) renders an entirely separate shell.
+// Loaded lazily so it never ships to users who only use the payments app.
+const BetApp = lazy(() => import("./BetApp"));
+
+function DocsFallback() {
+  // Quiet placeholder that matches the docs page rhythm so the layout
+  // does not jump when the chunk arrives. Renders for ~tens of ms in
+  // most cases — no spinner.
+  return (
+    <div className="mx-auto max-w-[1180px] pb-16">
+      <div className="border-b border-[var(--line)] pb-10">
+        <div className="h-3 w-32 bg-[var(--line-soft)]" aria-hidden="true" />
+        <div className="mt-4 h-9 w-3/4 bg-[var(--line-soft)]" aria-hidden="true" />
+        <div className="mt-3 h-4 w-2/3 bg-[var(--line-soft)]" aria-hidden="true" />
+      </div>
+      <span className="sr-only">Loading documentation…</span>
+    </div>
+  );
+}
+
+import { cx } from "./lib/cx";
+import {
+  THEME_KEY,
+  LEGACY_THEME_KEY,
+  getInitialTheme,
+  type Theme
+} from "./lib/theme";
+import {
+  LEGACY_DOCS_PATH,
+  PRODUCTION_DOCS_HOSTNAME,
+  PRODUCTION_APP_HOSTNAME,
+  getInitialPage,
+  isLocalHostname,
+  isLocalAppPreview,
+  isLocalDocsPreview,
+  isDocsHostname,
+  stripPublicSubdomain,
+  getDocsHostname,
+  getAppHostname,
+  getOriginForHostname,
+  getDocsHref,
+  getBetHref,
+  getAppHref,
+  getInternalTargetPath,
+  shouldRedirectLegacyBetRoute,
+  shouldRedirectLegacyDocsRoute,
+  getCurrentRouteKey,
+  type Page,
+  type NavigateHandler
+} from "./lib/routing";
+import { faqItems } from "./content/faq";
+import {
+  getDocsSections,
+  getDocsSummaryItems,
+  type DocsSection,
+  type DocsSummaryItem
+} from "./content/docs";
+
 type DirectFormState = {
   recipient: string;
   token: PaymentToken;
@@ -168,8 +233,6 @@ type Notice = {
 };
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
-type Theme = "light" | "dark";
-type Page = "landing" | "dashboard" | "payments" | "qr-payments" | "pay" | "import-export" | "milestones" | "statements" | "docs";
 type PayLifecycle =
   | "idle"
   | "preparing"
@@ -180,27 +243,6 @@ type PayLifecycle =
   | "settling"
   | "verified"
   | "failed";
-type NavigateHandler = (event: MouseEvent<HTMLAnchorElement>, target: string) => void;
-type DocsSection = {
-  title: string;
-  body: string[];
-  points?: string[];
-  code?: string;
-};
-type DocsSummaryItem = {
-  label: string;
-  value: string;
-};
-
-const THEME_KEY = "disburse.theme";
-const LEGACY_THEME_KEY = "arc-pay-desk.theme";
-const LEGACY_DOCS_PATH = "/docs";
-const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
-const PRODUCTION_APP_HOSTNAME = "app.disburse.online";
-
-function cx(...values: Array<string | false | undefined>): string {
-  return values.filter(Boolean).join(" ");
-}
 
 const emptyDirectForm: DirectFormState = {
   recipient: "",
@@ -216,838 +258,6 @@ const emptyQrForm: QrFormState = {
   note: "",
   invoiceDate: todayInputValue()
 };
-
-const faqItems = [
-  {
-    question: "What is the difference between Payments and QR Payments?",
-    answer:
-      "Payments is for a wallet owner sending funds to another address. QR Payments is for creating a fixed request that another wallet scans and pays."
-  },
-  {
-    question: "Does this app custody funds?",
-    answer:
-      "No. Payments are submitted from the connected wallet directly to the recipient address. The app does not hold private keys or stablecoin balances."
-  },
-  {
-    question: "Which network does Disburse use?",
-    answer:
-      "Disburse is configured for Arc Testnet, chain ID 5042002, using Arc RPC failover and Arcscan for transaction review."
-  },
-  {
-    question: "What is stored in the browser?",
-    answer:
-      "QR requests and verified receipts are stored in localStorage. Direct Payments only keep their latest transaction hash in the current browser session."
-  },
-  {
-    question: "Which payment rails are available?",
-    answer:
-      "The current build uses wallet-signed ERC-20 transfers only. MPP and backend-enforced 402 payment flows are not active in this release."
-  }
-];
-
-const docsSections: DocsSection[] = [
-  {
-    title: "Project scope",
-    body: [
-      "Disburse is a non-custodial payment console for Arc Testnet. It is built for two practical tasks: sending a stablecoin transfer from an injected wallet, and issuing a QR payment request that another wallet can open and pay.",
-      "The current build is intentionally narrow. It does not hold balances, collect private keys, or operate a custodial account. The browser prepares the request, the wallet signs the transaction, and payment status is verified against Arc Testnet data."
-    ],
-    points: [
-      "Primary app routes: /payments, /qr-payments, and /pay.",
-      `Documentation is served from ${PRODUCTION_DOCS_HOSTNAME}.`,
-      "Supported actions: wallet connection, Arc Testnet switching, gas estimation, ERC-20 transfers, QR request creation, transfer verification, import/export, and invoice download.",
-      "Out of scope for this release: custodial balances, Permit2, backend-enforced 402 flows, MPP rails, and server-side replay protection."
-    ]
-  },
-  {
-    title: "Payment flows",
-    body: [
-      "Disburse separates immediate transfers from request-based payments. Direct Payments are used when the sender already knows the recipient, token, and amount. QR Payments are used when a requester wants to publish a fixed request for someone else to pay.",
-      "A scanned QR request opens the payer page with the request details locked. The payer can connect a wallet, estimate the transfer, submit the transaction, verify the result, and download the invoice after confirmation."
-    ],
-    points: [
-      "Payments: the sender enters recipient, token, and amount, then signs a wallet transfer.",
-      "QR Payments: the requester enters recipient, token, amount, label, note, and invoice date, then shares a request URL as a QR code.",
-      "Direct Payments do not create QR request records in the local ledger."
-    ]
-  },
-  {
-    title: "Network and assets",
-    body: [
-      "The app is pinned to Arc Testnet. Native gas is represented as USDC with 18 decimals, while supported ERC-20 payment amounts use 6 decimals.",
-      "RPC access is handled through a small failover list. The interface reports the active endpoint, latest block, safe gas price, chain id, and token decimal checks so a user can see whether the network path is healthy before signing."
-    ],
-    points: [
-      `Chain ID: ${ARC_CHAIN_ID}`,
-      `RPC: ${new URL(ARC_RPC_URL).host}`,
-      `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
-      `USDC: ${TOKENS.USDC.address}`,
-      `EURC: ${TOKENS.EURC.address}`
-    ]
-  },
-  {
-    title: "QR request payload",
-    body: [
-      "A QR code contains a /pay URL with a base64url JSON payload in the r query parameter. The payload is only a portable request description; it never contains a private key, wallet approval, token balance, or signed transaction.",
-      "The request records the token, amount, recipient, label, creation time, and start block. That start block limits verification to transfers that happened after the request was created."
-    ],
-    points: [
-      "Required fields: version, id, recipient, token, amount, label, createdAt, and startBlock.",
-      "Optional fields: note, invoiceDate, expiresAt, and dueAt.",
-      `Default expiry: ${PAYMENT_VALIDITY_MINUTES} minutes after creation. A submitted payment attempt that started before expiry can still be verified.`
-    ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
-  },
-  {
-    title: "Wallet execution",
-    body: [
-      "Payments are standard ERC-20 transfer calls signed by the connected wallet. The app estimates gas with viem, applies Arc's configured gas-price floor, saves the wallet transaction hash as soon as it is submitted, and then waits for confirmation.",
-      "The wallet remains the authority for signing. Disburse prepares calldata and displays checks, but the final approval happens inside the wallet."
-    ],
-    points: [
-      "Connect: eth_requestAccounts.",
-      "Network: wallet_switchEthereumChain, with wallet_addEthereumChain fallback for Arc Testnet.",
-      "Transfer: eth_sendTransaction with ERC-20 transfer(recipient, parsedAmount) calldata on the selected USDC or EURC contract.",
-      "Gas: estimates are used for display and balance checks; the wallet finalizes transaction gas at signing."
-    ]
-  },
-  {
-    title: "Local ledger and realtime",
-    body: [
-      "QR requests and receipts are stored in browser localStorage so the requester can manage work without creating an account. The ledger supports JSON export and import for backup or migration.",
-      "When Supabase is configured, QR requests can also be written through Vercel API functions. Realtime events allow the requester view to close a QR code when the payer submits, confirms, fails, or expires a request."
-    ],
-    points: [
-      "Storage keys: disburse.requests and disburse.receipts.",
-      "Legacy keys are still read: arc-pay-desk.requests and arc-pay-desk.receipts.",
-      "Requests are keyed by request id. Receipts are upserted by request id or transaction hash.",
-      "Imported explorer URLs are regenerated from the verified Arcscan transaction hash."
-    ]
-  },
-  {
-    title: "Invoice output",
-    body: [
-      "After the payer confirms and the transfer is verified from Arc Testnet data, the pay page can generate a local PDF invoice.",
-      "Invoices are produced in the browser. They are not uploaded by the app and are not emailed by the server in this build."
-    ],
-    points: [
-      "Invoice includes tx hash, block, amount, label, note, invoice date, payer, recipient, confirmation time, and Arcscan link.",
-      "Invoice date is display metadata, not the payment expiry.",
-      "No server stores or emails invoice files in this build."
-    ]
-  },
-  {
-    title: "Verification",
-    body: [
-      "Verification first checks a known transaction hash. If no hash is present, it scans ERC-20 Transfer logs in 10,000-block windows from the request start block to latest and compares recipient plus exact token amount.",
-      "A request is marked paid only when the token contract, recipient, and amount match. Transfers to the right recipient with a different amount are surfaced separately so the user can review them without treating them as settled."
-    ],
-    points: [
-      "Paid: exact transfer to the recipient for the requested token amount.",
-      "Possible match: transfer to the recipient exists, but the amount differs.",
-      "Open: no matching transfer was found from the request start block."
-    ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
-  }
-];
-
-const docsSummaryItems: DocsSummaryItem[] = [
-  {
-    label: "Network",
-    value: `Arc Testnet ${ARC_CHAIN_ID}`
-  },
-  {
-    label: "Assets",
-    value: "USDC and EURC"
-  },
-  {
-    label: "Custody",
-    value: "Wallet signed, non-custodial"
-  },
-  {
-    label: "Receipts",
-    value: "Verified from Arc Testnet logs"
-  }
-];
-
-const docsSectionsId: DocsSection[] = [
-  {
-    title: "Ruang lingkup proyek",
-    body: [
-      "Disburse adalah konsol pembayaran non-kustodial untuk Arc Testnet. Aplikasi ini dibuat untuk dua tugas praktis: mengirim transfer stablecoin dari wallet yang terhubung, dan membuat permintaan pembayaran QR yang bisa dibuka dan dibayar oleh wallet lain.",
-      "Build saat ini sengaja dibuat fokus. Aplikasi tidak menyimpan saldo, mengambil private key, atau menjalankan akun kustodial. Browser menyiapkan permintaan, wallet menandatangani transaksi, dan status pembayaran diverifikasi dari data Arc Testnet."
-    ],
-    points: [
-      "Route aplikasi utama: /payments, /qr-payments, dan /pay.",
-      `Dokumentasi disajikan dari ${PRODUCTION_DOCS_HOSTNAME}.`,
-      "Aksi yang didukung: koneksi wallet, perpindahan ke Arc Testnet, estimasi gas, transfer ERC-20, pembuatan permintaan QR, verifikasi transfer, import/export, dan unduhan invoice.",
-      "Di luar cakupan release ini: saldo kustodial, Permit2, alur 402 yang ditegakkan backend, rail MPP, dan perlindungan replay di server."
-    ]
-  },
-  {
-    title: "Alur pembayaran",
-    body: [
-      "Disburse memisahkan transfer langsung dari pembayaran berbasis permintaan. Pembayaran Langsung dipakai saat pengirim sudah tahu penerima, token, dan jumlah. Pembayaran QR dipakai saat requester ingin menerbitkan permintaan tetap untuk dibayar orang lain.",
-      "Permintaan QR yang dipindai membuka halaman payer dengan detail yang terkunci. Payer dapat menghubungkan wallet, memperkirakan transfer, mengirim transaksi, memverifikasi hasil, dan mengunduh invoice setelah konfirmasi."
-    ],
-    points: [
-      "Payments: pengirim mengisi penerima, token, dan jumlah, lalu menandatangani transfer wallet.",
-      "QR Payments: requester mengisi penerima, token, jumlah, label, catatan, dan tanggal invoice, lalu membagikan URL permintaan sebagai QR code.",
-      "Pembayaran Langsung tidak membuat record permintaan QR di ledger lokal."
-    ]
-  },
-  {
-    title: "Jaringan dan aset",
-    body: [
-      "Aplikasi dipasang untuk Arc Testnet. Gas native direpresentasikan sebagai USDC dengan 18 desimal, sedangkan jumlah pembayaran ERC-20 yang didukung memakai 6 desimal.",
-      "Akses RPC ditangani lewat daftar failover kecil. Antarmuka menampilkan endpoint aktif, blok terbaru, harga gas aman, chain id, dan pemeriksaan desimal token agar pengguna bisa melihat apakah jalur jaringan sehat sebelum menandatangani."
-    ],
-    points: [
-      `Chain ID: ${ARC_CHAIN_ID}`,
-      `RPC: ${new URL(ARC_RPC_URL).host}`,
-      `Endpoint failover: ${ARC_RPC_ENDPOINTS.length}`,
-      `USDC: ${TOKENS.USDC.address}`,
-      `EURC: ${TOKENS.EURC.address}`
-    ]
-  },
-  {
-    title: "Payload permintaan QR",
-    body: [
-      "QR code berisi URL /pay dengan payload JSON base64url pada parameter query r. Payload hanya deskripsi permintaan portabel; tidak pernah berisi private key, approval wallet, saldo token, atau transaksi yang sudah ditandatangani.",
-      "Permintaan menyimpan token, jumlah, penerima, label, waktu pembuatan, dan blok awal. Blok awal itu membatasi verifikasi ke transfer yang terjadi setelah permintaan dibuat."
-    ],
-    points: [
-      "Field wajib: version, id, recipient, token, amount, label, createdAt, dan startBlock.",
-      "Field opsional: note, invoiceDate, expiresAt, dan dueAt.",
-      `Kedaluwarsa default: ${PAYMENT_VALIDITY_MINUTES} menit setelah dibuat. Percobaan pembayaran yang dimulai sebelum kedaluwarsa tetap bisa diverifikasi.`
-    ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
-  },
-  {
-    title: "Eksekusi wallet",
-    body: [
-      "Pembayaran adalah pemanggilan transfer ERC-20 standar yang ditandatangani oleh wallet terhubung. Aplikasi memperkirakan gas dengan viem, menerapkan batas bawah harga gas Arc, menyimpan hash transaksi wallet segera setelah dikirim, lalu menunggu konfirmasi.",
-      "Wallet tetap menjadi otoritas untuk tanda tangan. Disburse menyiapkan calldata dan menampilkan pemeriksaan, tetapi approval akhir terjadi di dalam wallet."
-    ],
-    points: [
-      "Connect: eth_requestAccounts.",
-      "Jaringan: wallet_switchEthereumChain, dengan fallback wallet_addEthereumChain untuk Arc Testnet.",
-      "Transfer: eth_sendTransaction dengan calldata ERC-20 transfer(recipient, parsedAmount) pada kontrak USDC atau EURC yang dipilih.",
-      "Gas: estimasi dipakai untuk tampilan dan pemeriksaan saldo; wallet menentukan gas transaksi akhir saat signing."
-    ]
-  },
-  {
-    title: "Ledger lokal dan realtime",
-    body: [
-      "Permintaan QR dan receipt disimpan di localStorage browser agar requester bisa mengelola pekerjaan tanpa membuat akun. Ledger mendukung export dan import JSON untuk backup atau migrasi.",
-      "Saat Supabase dikonfigurasi, permintaan QR juga bisa ditulis melalui fungsi API Vercel. Event realtime membuat tampilan requester dapat menutup QR code ketika payer mengirim, mengonfirmasi, menggagalkan, atau membuat permintaan kedaluwarsa."
-    ],
-    points: [
-      "Storage key: disburse.requests dan disburse.receipts.",
-      "Key lama tetap dibaca: arc-pay-desk.requests dan arc-pay-desk.receipts.",
-      "Permintaan diindeks memakai request id. Receipt di-upsert memakai request id atau transaction hash.",
-      "URL explorer hasil import dibuat ulang dari hash transaksi Arcscan yang sudah diverifikasi."
-    ]
-  },
-  {
-    title: "Output invoice",
-    body: [
-      "Setelah payer mengonfirmasi dan transfer diverifikasi dari data Arc Testnet, halaman bayar dapat membuat invoice PDF lokal.",
-      "Invoice dibuat di browser. File tidak diunggah oleh aplikasi dan tidak dikirim lewat email oleh server pada build ini."
-    ],
-    points: [
-      "Invoice berisi tx hash, blok, jumlah, label, catatan, tanggal invoice, payer, penerima, waktu konfirmasi, dan link Arcscan.",
-      "Tanggal invoice adalah metadata tampilan, bukan waktu kedaluwarsa pembayaran.",
-      "Tidak ada server yang menyimpan atau mengirim file invoice lewat email pada build ini."
-    ]
-  },
-  {
-    title: "Verifikasi",
-    body: [
-      "Verifikasi pertama memeriksa hash transaksi yang diketahui. Jika tidak ada hash, aplikasi memindai log Transfer ERC-20 dalam jendela 10.000 blok dari blok awal permintaan sampai blok terbaru dan membandingkan penerima serta jumlah token yang tepat.",
-      "Permintaan ditandai lunas hanya ketika kontrak token, penerima, dan jumlah cocok. Transfer ke penerima yang benar dengan jumlah berbeda ditampilkan terpisah agar pengguna bisa meninjaunya tanpa memperlakukannya sebagai settled."
-    ],
-    points: [
-      "Lunas: transfer tepat ke penerima untuk jumlah token yang diminta.",
-      "Kemungkinan cocok: transfer ke penerima ada, tetapi jumlah berbeda.",
-      "Terbuka: tidak ditemukan transfer yang cocok dari blok awal permintaan."
-    ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
-  }
-];
-
-const docsSectionsDe: DocsSection[] = [
-  {
-    title: "Projektumfang",
-    body: [
-      "Disburse ist eine nicht-kustodiale Zahlungskonsole für Arc Testnet. Sie deckt zwei praktische Aufgaben ab: eine Stablecoin-Überweisung aus einer injected Wallet senden und eine QR-Zahlungsanfrage erstellen, die eine andere Wallet öffnen und bezahlen kann.",
-      "Der aktuelle Build ist bewusst eng gehalten. Die App hält keine Guthaben, sammelt keine Private Keys und betreibt kein Verwahrkonto. Der Browser bereitet die Anfrage vor, die Wallet signiert die Transaktion, und der Zahlungsstatus wird gegen Arc-Testnet-Daten verifiziert."
-    ],
-    points: [
-      "Primäre App-Routen: /payments, /qr-payments und /pay.",
-      `Dokumentation wird von ${PRODUCTION_DOCS_HOSTNAME} ausgeliefert.`,
-      "Unterstützt werden Wallet-Verbindung, Wechsel zu Arc Testnet, Gas-Schätzung, ERC-20-Transfers, QR-Anfragen, Transferverifizierung, Import/Export und Rechnungsdownload.",
-      "Nicht enthalten in diesem Release: kustodiale Guthaben, Permit2, backend-erzwungene 402-Flows, MPP-Rails und serverseitiger Replay-Schutz."
-    ]
-  },
-  {
-    title: "Zahlungsabläufe",
-    body: [
-      "Disburse trennt direkte Überweisungen von anfragebasierten Zahlungen. Direkte Zahlungen werden genutzt, wenn Sender, Empfänger, Token und Betrag bereits bekannt sind. QR-Zahlungen werden genutzt, wenn ein Anforderer eine feste Anfrage veröffentlichen will.",
-      "Eine gescannte QR-Anfrage öffnet die Zahlerseite mit gesperrten Details. Der Zahler kann eine Wallet verbinden, den Transfer schätzen, die Transaktion senden, das Ergebnis verifizieren und nach der Bestätigung die Rechnung herunterladen."
-    ],
-    points: [
-      "Payments: Der Sender gibt Empfänger, Token und Betrag ein und signiert eine Wallet-Überweisung.",
-      "QR Payments: Der Anforderer gibt Empfänger, Token, Betrag, Label, Notiz und Rechnungsdatum ein und teilt die Anfrage-URL als QR-Code.",
-      "Direkte Zahlungen erzeugen keine QR-Anfragedatensätze im lokalen Ledger."
-    ]
-  },
-  {
-    title: "Netzwerk und Assets",
-    body: [
-      "Die App ist auf Arc Testnet festgelegt. Native Gas wird als USDC mit 18 Dezimalstellen dargestellt, während unterstützte ERC-20-Zahlungsbeträge 6 Dezimalstellen verwenden.",
-      "RPC-Zugriff läuft über eine kleine Failover-Liste. Die Oberfläche zeigt aktiven Endpoint, neuesten Block, sicheren Gaspreis, Chain-ID und Token-Dezimalprüfungen, damit der Nutzer den Netzwerkpfad vor dem Signieren prüfen kann."
-    ],
-    points: [
-      `Chain ID: ${ARC_CHAIN_ID}`,
-      `RPC: ${new URL(ARC_RPC_URL).host}`,
-      `Failover-Endpunkte: ${ARC_RPC_ENDPOINTS.length}`,
-      `USDC: ${TOKENS.USDC.address}`,
-      `EURC: ${TOKENS.EURC.address}`
-    ]
-  },
-  {
-    title: "QR-Anfrage-Payload",
-    body: [
-      "Ein QR-Code enthält eine /pay-URL mit einem base64url-JSON-Payload im Query-Parameter r. Der Payload ist nur eine portable Anfragebeschreibung; er enthält niemals Private Keys, Wallet-Freigaben, Token-Guthaben oder signierte Transaktionen.",
-      "Die Anfrage speichert Token, Betrag, Empfänger, Label, Erstellungszeit und Startblock. Dieser Startblock begrenzt die Verifizierung auf Transfers, die nach der Erstellung passiert sind."
-    ],
-    points: [
-      "Pflichtfelder: version, id, recipient, token, amount, label, createdAt und startBlock.",
-      "Optionale Felder: note, invoiceDate, expiresAt und dueAt.",
-      `Standardablauf: ${PAYMENT_VALIDITY_MINUTES} Minuten nach Erstellung. Ein vor Ablauf gestarteter Zahlungsversuch kann weiterhin verifiziert werden.`
-    ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
-  },
-  {
-    title: "Wallet-Ausführung",
-    body: [
-      "Zahlungen sind standardmäßige ERC-20-transfer-Aufrufe, die von der verbundenen Wallet signiert werden. Die App schätzt Gas mit viem, wendet den Arc-Gaspreis-Floor an, speichert den Transaktionshash sofort nach dem Senden und wartet dann auf Bestätigung.",
-      "Die Wallet bleibt die Autorität für Signaturen. Disburse bereitet Calldata vor und zeigt Prüfungen an, aber die finale Freigabe passiert in der Wallet."
-    ],
-    points: [
-      "Connect: eth_requestAccounts.",
-      "Netzwerk: wallet_switchEthereumChain, mit wallet_addEthereumChain als Fallback für Arc Testnet.",
-      "Transfer: eth_sendTransaction mit ERC-20 transfer(recipient, parsedAmount) calldata auf dem gewählten USDC- oder EURC-Kontrakt.",
-      "Gas: Schätzungen werden für Anzeige und Saldo-Prüfungen genutzt; die Wallet finalisiert das Transaktionsgas beim Signieren."
-    ]
-  },
-  {
-    title: "Lokales Ledger und Realtime",
-    body: [
-      "QR-Anfragen und Belege werden im localStorage des Browsers gespeichert, damit der Anforderer ohne Konto arbeiten kann. Das Ledger unterstützt JSON-Export und -Import für Backup oder Migration.",
-      "Wenn Supabase konfiguriert ist, können QR-Anfragen auch über Vercel-API-Funktionen geschrieben werden. Realtime-Events schließen den QR-Code in der Anfordereransicht, wenn der Zahler sendet, bestätigt, fehlschlägt oder eine Anfrage abläuft."
-    ],
-    points: [
-      "Storage-Keys: disburse.requests und disburse.receipts.",
-      "Legacy-Keys werden weiter gelesen: arc-pay-desk.requests und arc-pay-desk.receipts.",
-      "Anfragen werden nach request id gespeichert. Belege werden nach request id oder transaction hash upserted.",
-      "Importierte Explorer-URLs werden aus dem verifizierten Arcscan-Transaktionshash neu erzeugt."
-    ]
-  },
-  {
-    title: "Rechnungsausgabe",
-    body: [
-      "Nachdem der Zahler bestätigt und der Transfer aus Arc-Testnet-Daten verifiziert wurde, kann die Zahlungsseite eine lokale PDF-Rechnung erstellen.",
-      "Rechnungen werden im Browser erzeugt. Sie werden in diesem Build weder von der App hochgeladen noch vom Server per E-Mail versendet."
-    ],
-    points: [
-      "Die Rechnung enthält Tx-Hash, Block, Betrag, Label, Notiz, Rechnungsdatum, Zahler, Empfänger, Bestätigungszeit und Arcscan-Link.",
-      "Das Rechnungsdatum ist Anzeige-Metadatum, nicht der Ablauf der Zahlung.",
-      "Kein Server speichert oder versendet Rechnungsdateien in diesem Build."
-    ]
-  },
-  {
-    title: "Verifizierung",
-    body: [
-      "Die Verifizierung prüft zuerst einen bekannten Transaktionshash. Wenn kein Hash vorliegt, scannt sie ERC-20-Transfer-Logs in 10.000-Block-Fenstern vom Startblock bis zum neuesten Block und vergleicht Empfänger plus exakten Tokenbetrag.",
-      "Eine Anfrage wird nur dann als bezahlt markiert, wenn Token-Kontrakt, Empfänger und Betrag übereinstimmen. Transfers an den richtigen Empfänger mit anderem Betrag werden separat angezeigt."
-    ],
-    points: [
-      "Bezahlt: exakter Transfer an den Empfänger für den angeforderten Tokenbetrag.",
-      "Möglicher Treffer: Transfer an den Empfänger existiert, aber der Betrag ist anders.",
-      "Offen: kein passender Transfer ab dem Startblock gefunden."
-    ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
-  }
-];
-
-const docsSectionsHi: DocsSection[] = [
-  {
-    title: "प्रोजेक्ट का दायरा",
-    body: [
-      "Disburse Arc Testnet के लिए non-custodial भुगतान कंसोल है. यह दो कामों के लिए बनाया गया है: injected wallet से stablecoin transfer भेजना, और QR भुगतान अनुरोध बनाना जिसे दूसरा wallet खोलकर भुगतान कर सके.",
-      "मौजूदा build जानबूझकर सीमित है. यह balance नहीं रखता, private key नहीं लेता, और custodial account नहीं चलाता. Browser अनुरोध तैयार करता है, wallet transaction sign करता है, और payment status Arc Testnet data से verify होता है."
-    ],
-    points: [
-      "मुख्य app routes: /payments, /qr-payments, और /pay.",
-      `Documentation ${PRODUCTION_DOCS_HOSTNAME} से serve होती है.`,
-      "Supported actions: wallet connection, Arc Testnet switching, gas estimation, ERC-20 transfers, QR request creation, transfer verification, import/export, और invoice download.",
-      "इस release के बाहर: custodial balances, Permit2, backend-enforced 402 flows, MPP rails, और server-side replay protection."
-    ]
-  },
-  {
-    title: "भुगतान flow",
-    body: [
-      "Disburse immediate transfers और request-based payments को अलग रखता है. Direct Payments तब उपयोग होते हैं जब sender recipient, token और amount पहले से जानता है. QR Payments तब उपयोग होते हैं जब requester किसी और से भुगतान लेने के लिए fixed request publish करना चाहता है.",
-      "Scanned QR request payer page खोलता है जहां request details locked रहती हैं. Payer wallet connect कर सकता है, transfer estimate कर सकता है, transaction submit कर सकता है, result verify कर सकता है, और confirmation के बाद invoice download कर सकता है."
-    ],
-    points: [
-      "Payments: sender recipient, token और amount भरता है, फिर wallet transfer sign करता है.",
-      "QR Payments: requester recipient, token, amount, label, note और invoice date भरता है, फिर request URL को QR code के रूप में share करता है.",
-      "Direct Payments local ledger में QR request records नहीं बनाते."
-    ]
-  },
-  {
-    title: "नेटवर्क और asset",
-    body: [
-      "App Arc Testnet पर pinned है. Native gas को 18 decimals वाले USDC की तरह दिखाया जाता है, जबकि supported ERC-20 payment amounts 6 decimals उपयोग करते हैं.",
-      "RPC access एक छोटी failover list से संभाला जाता है. Interface active endpoint, latest block, safe gas price, chain id और token decimal checks दिखाता है ताकि user signing से पहले network path की health देख सके."
-    ],
-    points: [
-      `Chain ID: ${ARC_CHAIN_ID}`,
-      `RPC: ${new URL(ARC_RPC_URL).host}`,
-      `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
-      `USDC: ${TOKENS.USDC.address}`,
-      `EURC: ${TOKENS.EURC.address}`
-    ]
-  },
-  {
-    title: "QR अनुरोध payload",
-    body: [
-      "QR code में /pay URL होता है जिसमें r query parameter पर base64url JSON payload रहता है. Payload सिर्फ portable request description है; इसमें private key, wallet approval, token balance या signed transaction कभी नहीं होता.",
-      "Request token, amount, recipient, label, creation time और start block रिकॉर्ड करता है. Start block verification को उन transfers तक सीमित करता है जो request बनने के बाद हुए."
-    ],
-    points: [
-      "Required fields: version, id, recipient, token, amount, label, createdAt, और startBlock.",
-      "Optional fields: note, invoiceDate, expiresAt, और dueAt.",
-      `Default expiry: creation के ${PAYMENT_VALIDITY_MINUTES} मिनट बाद. Expiry से पहले शुरू हुआ submitted payment attempt बाद में भी verify हो सकता है.`
-    ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
-  },
-  {
-    title: "Wallet execution",
-    body: [
-      "Payments connected wallet द्वारा signed standard ERC-20 transfer calls हैं. App viem से gas estimate करता है, Arc gas-price floor लागू करता है, wallet transaction hash submit होते ही save करता है, और confirmation का wait करता है.",
-      "Signing की authority wallet के पास रहती है. Disburse calldata तैयार करता है और checks दिखाता है, लेकिन final approval wallet के अंदर होता है."
-    ],
-    points: [
-      "Connect: eth_requestAccounts.",
-      "Network: wallet_switchEthereumChain, Arc Testnet के लिए wallet_addEthereumChain fallback के साथ.",
-      "Transfer: selected USDC या EURC contract पर ERC-20 transfer(recipient, parsedAmount) calldata के साथ eth_sendTransaction.",
-      "Gas: estimates display और balance checks के लिए इस्तेमाल होते हैं; wallet signing के समय final transaction gas तय करता है."
-    ]
-  },
-  {
-    title: "Local ledger और realtime",
-    body: [
-      "QR requests और receipts browser localStorage में stored हैं ताकि requester account बनाए बिना काम manage कर सके. Ledger backup या migration के लिए JSON export और import support करता है.",
-      "Supabase configured होने पर QR requests Vercel API functions के जरिए भी लिखे जा सकते हैं. Realtime events requester view में QR code को close कर सकते हैं जब payer request submit, confirm, fail या expire करता है."
-    ],
-    points: [
-      "Storage keys: disburse.requests और disburse.receipts.",
-      "Legacy keys अभी भी read होते हैं: arc-pay-desk.requests और arc-pay-desk.receipts.",
-      "Requests request id से keyed होते हैं. Receipts request id या transaction hash से upsert होते हैं.",
-      "Imported explorer URLs verified Arcscan transaction hash से regenerate होते हैं."
-    ]
-  },
-  {
-    title: "Invoice output",
-    body: [
-      "Payer confirmation और Arc Testnet data से transfer verification के बाद pay page local PDF invoice generate कर सकता है.",
-      "Invoices browser में बनते हैं. इस build में app उन्हें upload नहीं करता और server email नहीं भेजता."
-    ],
-    points: [
-      "Invoice में tx hash, block, amount, label, note, invoice date, payer, recipient, confirmation time और Arcscan link शामिल हैं.",
-      "Invoice date display metadata है, payment expiry नहीं.",
-      "इस build में कोई server invoice files store या email नहीं करता."
-    ]
-  },
-  {
-    title: "Verification",
-    body: [
-      "Verification पहले known transaction hash check करता है. अगर hash नहीं है, तो request start block से latest तक 10,000-block windows में ERC-20 Transfer logs scan करता है और recipient plus exact token amount compare करता है.",
-      "Request सिर्फ तब paid mark होती है जब token contract, recipient और amount match करते हैं. सही recipient को अलग amount वाले transfers अलग दिखाए जाते हैं ताकि user review कर सके."
-    ],
-    points: [
-      "Paid: requested token amount के लिए recipient को exact transfer.",
-      "Possible match: recipient को transfer मिला, लेकिन amount अलग है.",
-      "Open: request start block से कोई matching transfer नहीं मिला."
-    ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
-  }
-];
-
-const docsSectionsZh: DocsSection[] = [
-  {
-    title: "项目范围",
-    body: [
-      "Disburse 是 Arc Testnet 的非托管付款控制台。它面向两个实际任务：从注入式钱包发送稳定币转账，以及创建可由其他钱包打开并支付的 QR 付款请求。",
-      "当前版本刻意保持聚焦。它不持有余额、不收集私钥，也不运营托管账户。浏览器准备请求，钱包签署交易，付款状态从 Arc Testnet 数据中验证。"
-    ],
-    points: [
-      "主要应用路由：/payments、/qr-payments 和 /pay。",
-      `文档由 ${PRODUCTION_DOCS_HOSTNAME} 提供。`,
-      "支持的钱包连接、Arc Testnet 切换、gas 估算、ERC-20 转账、QR 请求创建、转账验证、导入/导出和发票下载。",
-      "本版本不包含：托管余额、Permit2、后端强制的 402 流程、MPP rails 和服务端 replay 防护。"
-    ]
-  },
-  {
-    title: "付款流程",
-    body: [
-      "Disburse 将即时转账和基于请求的付款分开。直接付款用于发送方已知道收款人、token 和金额的场景。QR 付款用于请求方发布固定请求，让他人付款。",
-      "扫描 QR 请求会打开付款页面，并锁定请求详情。付款人可以连接钱包、估算转账、提交交易、验证结果，并在确认后下载发票。"
-    ],
-    points: [
-      "Payments：发送方输入收款人、token 和金额，然后签署钱包转账。",
-      "QR Payments：请求方输入收款人、token、金额、标签、备注和发票日期，然后将请求 URL 作为 QR 码分享。",
-      "直接付款不会在本地账本中创建 QR 请求记录。"
-    ]
-  },
-  {
-    title: "网络和资产",
-    body: [
-      "应用固定在 Arc Testnet。Native gas 显示为 18 位小数的 USDC，受支持的 ERC-20 付款金额使用 6 位小数。",
-      "RPC 访问通过小型 failover 列表处理。界面展示当前 endpoint、最新区块、安全 gas 价格、chain id 和 token decimal 检查，便于用户签名前判断网络路径是否正常。"
-    ],
-    points: [
-      `Chain ID: ${ARC_CHAIN_ID}`,
-      `RPC: ${new URL(ARC_RPC_URL).host}`,
-      `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
-      `USDC: ${TOKENS.USDC.address}`,
-      `EURC: ${TOKENS.EURC.address}`
-    ]
-  },
-  {
-    title: "QR 请求 payload",
-    body: [
-      "QR 码包含 /pay URL，并在 r 查询参数中放入 base64url JSON payload。payload 只是可携带的请求描述；它不会包含私钥、钱包授权、token 余额或已签名交易。",
-      "请求记录 token、金额、收款人、标签、创建时间和起始区块。起始区块将验证范围限制在请求创建之后发生的转账。"
-    ],
-    points: [
-      "必填字段：version、id、recipient、token、amount、label、createdAt 和 startBlock。",
-      "可选字段：note、invoiceDate、expiresAt 和 dueAt。",
-      `默认过期时间：创建后 ${PAYMENT_VALIDITY_MINUTES} 分钟。过期前已开始的付款尝试仍可验证。`
-    ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
-  },
-  {
-    title: "钱包执行",
-    body: [
-      "付款是由已连接钱包签署的标准 ERC-20 transfer 调用。应用使用 viem 估算 gas，应用 Arc 的 gas-price floor，提交后立即保存钱包交易哈希，然后等待确认。",
-      "钱包仍然是签名的最终授权方。Disburse 准备 calldata 并展示检查结果，但最终 approval 发生在钱包内。"
-    ],
-    points: [
-      "Connect: eth_requestAccounts.",
-      "Network: wallet_switchEthereumChain，并使用 wallet_addEthereumChain 作为 Arc Testnet fallback。",
-      "Transfer: 在所选 USDC 或 EURC 合约上使用 ERC-20 transfer(recipient, parsedAmount) calldata 调用 eth_sendTransaction。",
-      "Gas: 估算用于展示和余额检查；钱包在签名时最终确定交易 gas。"
-    ]
-  },
-  {
-    title: "本地账本和 realtime",
-    body: [
-      "QR 请求和收据存储在浏览器 localStorage 中，请求方无需创建账户即可管理工作。账本支持 JSON 导出和导入，用于备份或迁移。",
-      "配置 Supabase 后，QR 请求也可以通过 Vercel API 函数写入。Realtime 事件可在付款人提交、确认、失败或请求过期时关闭请求方视图中的 QR 码。"
-    ],
-    points: [
-      "Storage keys: disburse.requests 和 disburse.receipts。",
-      "仍会读取旧 key: arc-pay-desk.requests 和 arc-pay-desk.receipts。",
-      "请求按 request id 存储。收据按 request id 或 transaction hash upsert。",
-      "导入的 explorer URL 会从已验证的 Arcscan transaction hash 重新生成。"
-    ]
-  },
-  {
-    title: "发票输出",
-    body: [
-      "付款人确认且转账从 Arc Testnet 数据验证后，付款页面可以生成本地 PDF 发票。",
-      "发票在浏览器中生成。本版本不会由应用上传，也不会由服务器通过邮件发送。"
-    ],
-    points: [
-      "发票包含 tx hash、区块、金额、标签、备注、发票日期、付款人、收款人、确认时间和 Arcscan 链接。",
-      "发票日期是展示元数据，不是付款过期时间。",
-      "本版本没有服务器存储或发送发票文件。"
-    ]
-  },
-  {
-    title: "验证",
-    body: [
-      "验证会先检查已知交易哈希。如果没有哈希，它会从请求起始区块到最新区块按 10,000 区块窗口扫描 ERC-20 Transfer logs，并比较收款人和精确 token 金额。",
-      "只有 token 合约、收款人和金额全部匹配时，请求才会标记为已支付。发送到正确收款人但金额不同的转账会单独显示，供用户复核。"
-    ],
-    points: [
-      "已支付：向收款人转入请求的精确 token 金额。",
-      "可能匹配：存在转给收款人的转账，但金额不同。",
-      "未完成：从请求起始区块起未找到匹配转账。"
-    ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
-  }
-];
-
-const docsSummaryItemsId: DocsSummaryItem[] = [
-  {
-    label: "Jaringan",
-    value: `Arc Testnet ${ARC_CHAIN_ID}`
-  },
-  {
-    label: "Aset",
-    value: "USDC dan EURC"
-  },
-  {
-    label: "Kustodi",
-    value: "Ditandatangani wallet, non-kustodial"
-  },
-  {
-    label: "Receipt",
-    value: "Diverifikasi dari log Arc Testnet"
-  }
-];
-
-const docsSummaryItemsDe: DocsSummaryItem[] = [
-  {
-    label: "Netzwerk",
-    value: `Arc Testnet ${ARC_CHAIN_ID}`
-  },
-  {
-    label: "Assets",
-    value: "USDC und EURC"
-  },
-  {
-    label: "Verwahrung",
-    value: "Wallet-signiert, nicht-kustodial"
-  },
-  {
-    label: "Belege",
-    value: "Aus Arc-Testnet-Logs verifiziert"
-  }
-];
-
-const docsSummaryItemsHi: DocsSummaryItem[] = [
-  {
-    label: "नेटवर्क",
-    value: `Arc Testnet ${ARC_CHAIN_ID}`
-  },
-  {
-    label: "एसेट",
-    value: "USDC और EURC"
-  },
-  {
-    label: "कस्टडी",
-    value: "वॉलेट-signed, non-custodial"
-  },
-  {
-    label: "रसीदें",
-    value: "Arc Testnet logs से verified"
-  }
-];
-
-const docsSummaryItemsZh: DocsSummaryItem[] = [
-  {
-    label: "网络",
-    value: `Arc Testnet ${ARC_CHAIN_ID}`
-  },
-  {
-    label: "资产",
-    value: "USDC 和 EURC"
-  },
-  {
-    label: "托管",
-    value: "钱包签名，非托管"
-  },
-  {
-    label: "收据",
-    value: "从 Arc Testnet logs 验证"
-  }
-];
-
-function getDocsSections(lang: LanguageCode): DocsSection[] {
-  if (lang === "de") return docsSectionsDe;
-  if (lang === "id") return docsSectionsId;
-  if (lang === "hi") return docsSectionsHi;
-  if (lang === "zh") return docsSectionsZh;
-  return docsSections;
-}
-
-function getDocsSummaryItems(lang: LanguageCode): DocsSummaryItem[] {
-  if (lang === "de") return docsSummaryItemsDe;
-  if (lang === "id") return docsSummaryItemsId;
-  if (lang === "hi") return docsSummaryItemsHi;
-  if (lang === "zh") return docsSummaryItemsZh;
-  return docsSummaryItems;
-}
-
-function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(THEME_KEY) ?? localStorage.getItem(LEGACY_THEME_KEY);
-  const nextTheme = stored === "light" || stored === "dark" ? stored : "dark";
-  document.documentElement.dataset.theme = nextTheme;
-  return nextTheme;
-}
-
-function getInitialPage(): Page {
-  const hostname = window.location.hostname;
-  const p = window.location.pathname;
-
-  // Dedicated docs subdomain: render the standalone docs layout.
-  if (isDocsHostname(hostname)) {
-    return "docs";
-  }
-
-  const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
-
-  if (isApp) {
-    if (p === "/payments") return "payments";
-    if (p === "/qr-payments") return "qr-payments";
-    if (p === "/pay") return "pay";
-    if (p === "/import-export") return "import-export";
-    if (p === "/milestones") return "milestones";
-    if (p === "/statements") return "statements";
-    // /docs inside the app shell renders the docs page as a regular route
-    // (sidebar navigation, header, the whole console chrome). The dedicated
-    // docs subdomain is served by the branch above.
-    if (p === LEGACY_DOCS_PATH) return "docs";
-    // /settings was a dedicated page; it is now a dialog that opens from the header.
-    // Keep the URL working by falling through to the dashboard. The dialog
-    // auto-opens via an effect in the App component.
-    return "dashboard";
-  }
-
-  // Naked localhost / other local preview: allow /docs to render docs in-shell.
-  if (isLocalDocsPreview(hostname, p)) {
-    return "docs";
-  }
-
-  return "landing";
-}
-
-function isLocalHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0";
-}
-
-function isLocalAppPreview(hostname: string, pathname: string): boolean {
-  if (!isLocalHostname(hostname)) {
-    return false;
-  }
-
-  const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
-  return (
-    appPreview ||
-    ["/payments", "/qr-payments", "/pay", "/import-export", "/settings", "/docs"].includes(pathname)
-  );
-}
-
-function isLocalDocsPreview(hostname: string, pathname: string): boolean {
-  return (isLocalHostname(hostname) || hostname.endsWith(".localhost")) && pathname === LEGACY_DOCS_PATH;
-}
-
-function isDocsHostname(hostname = window.location.hostname): boolean {
-  return hostname === "docs.localhost" || hostname === PRODUCTION_DOCS_HOSTNAME;
-}
-
-function stripPublicSubdomain(hostname: string): string {
-  if (hostname.startsWith("docs.")) {
-    return hostname.slice("docs.".length);
-  }
-  if (hostname.startsWith("www.")) {
-    return hostname.slice("www.".length);
-  }
-  return hostname;
-}
-
-function getDocsHostname(hostname: string): string {
-  if (isDocsHostname(hostname)) {
-    return hostname;
-  }
-  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
-    return "docs.localhost";
-  }
-  return PRODUCTION_DOCS_HOSTNAME;
-}
-
-function getAppHostname(hostname: string): string {
-  if (hostname.startsWith("app.")) {
-    return hostname;
-  }
-  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
-    return "app.localhost";
-  }
-  return PRODUCTION_APP_HOSTNAME;
-}
-
-function getOriginForHostname(hostname: string): string {
-  const port = window.location.port ? `:${window.location.port}` : "";
-  return `${window.location.protocol}//${hostname}${port}`;
-}
-
-function getDocsHref(): string {
-  const hostname = window.location.hostname;
-  if (isDocsHostname(hostname)) {
-    return "/";
-  }
-  // Local dev and app subdomain both render the in-app docs at /docs.
-  if (
-    isLocalHostname(hostname) ||
-    hostname.endsWith(".localhost") ||
-    hostname.startsWith("app.")
-  ) {
-    return LEGACY_DOCS_PATH;
-  }
-  return `${getOriginForHostname(getDocsHostname(hostname))}/`;
-}
-
-function getAppHref(path: string): string {
-  const hostname = window.location.hostname;
-  
-  // If we are already on an app subdomain, we can use relative paths
-  if (hostname.startsWith("app.")) {
-    return path;
-  }
-
-  // If we are on localhost but not the app version, use the query param hack
-  if (isLocalHostname(hostname) && !hostname.startsWith("app.")) {
-    if (path === "/") return "/?app=1";
-    return `${path}${path.includes("?") ? "&" : "?"}app=1`;
-  }
-
-  // Otherwise, use the full origin for the app subdomain
-  return `${getOriginForHostname(getAppHostname(hostname))}${path}`;
-}
-
-function getInternalTargetPath(target: string): string | undefined {
-  const url = new URL(target, window.location.href);
-  if (url.origin !== window.location.origin) {
-    return undefined;
-  }
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
-function shouldRedirectLegacyDocsRoute(): boolean {
-  const hostname = window.location.hostname;
-  // Already on the docs subdomain, a local preview, or inside the app shell:
-  // /docs is a valid route, do not redirect.
-  if (
-    isDocsHostname() ||
-    isLocalHostname(hostname) ||
-    hostname.endsWith(".localhost") ||
-    hostname.startsWith("app.")
-  ) {
-    return false;
-  }
-  return window.location.pathname === LEGACY_DOCS_PATH;
-}
-
-function getCurrentRouteKey(): string {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
 
 function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -1156,6 +366,9 @@ function App() {
     if (shouldRedirectLegacyDocsRoute()) {
       window.location.replace(getDocsHref());
     }
+    if (shouldRedirectLegacyBetRoute()) {
+      window.location.replace(getBetHref(window.location.pathname));
+    }
   }, []);
 
   // Legacy: /settings is now a dialog, not a page. Open it and tidy the URL.
@@ -1167,7 +380,9 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    const titles: Record<Page, string> = {
+    // Bet-subdomain pages are handled by BetApp and never reach this code,
+    // so the title map is keyed only on the app-shell pages.
+    const titles: Partial<Record<Page, string>> = {
       landing: "Disburse - Settlement-grade stablecoin payments",
       dashboard: "Overview · Disburse",
       payments: "Direct send · Disburse",
@@ -1536,6 +751,20 @@ function App() {
     } finally {
       setIsConnecting(false);
     }
+  }
+
+  async function handleDisconnectWallet() {
+    try {
+      if (dynamicWallet.enabled) {
+        await dynamicWallet.disconnect();
+      }
+    } catch (error) {
+      setWalletNotice({ tone: "error", text: errorToMessage(error) });
+      return;
+    }
+    setAccount(undefined);
+    setChainId(undefined);
+    setWalletNotice({ tone: "info", text: "Wallet disconnected." });
   }
 
   async function handleSwitchNetwork() {
@@ -2191,6 +1420,22 @@ function App() {
     );
   }
 
+  // bet.disburse.online (and local bet preview) renders a separate shell with
+  // its own header, nav, and routing. It still inherits the wallet provider
+  // from main.tsx, but it does not use the main app's sidebar or header.
+  if (
+    page === "markets" ||
+    page === "market-detail" ||
+    page === "market-positions" ||
+    page === "market-history"
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <BetApp />
+      </Suspense>
+    );
+  }
+
   // On the docs.* subdomain, skip the app shell and render a docs-only layout
   // with a slim top nav and a link back to the console. On `app.*`, the docs
   // page still renders inside the regular app shell so it behaves like any
@@ -2202,14 +1447,22 @@ function App() {
         <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
           <DocsTopNav onToggleTheme={handleThemeToggle} theme={theme} />
           <main className="mx-auto max-w-[1180px] px-6 pt-10 md:px-10">
-            <DocsPage />
+            <Suspense fallback={<DocsFallback />}>
+              <DocsPage />
+            </Suspense>
           </main>
         </div>
       </I18nProvider>
     );
   }
 
-  const routeMeta: Record<Exclude<Page, "landing">, { title: string; subtitle: string }> = {
+  // Bet pages render through BetApp, not this shell, so routeMeta covers only
+  // the app-shell pages.
+  type AppShellPage = Exclude<
+    Page,
+    "landing" | "markets" | "market-detail" | "market-positions" | "market-history"
+  >;
+  const routeMeta: Record<AppShellPage, { title: string; subtitle: string }> = {
     dashboard:       { title: "Overview",       subtitle: "Requests, receipts and network health at a glance." },
     payments:        { title: "Direct send",    subtitle: "Pay a wallet address directly on Arc Testnet." },
     "qr-payments":   { title: "QR requests",    subtitle: "Create a QR invoice for someone else to scan and pay." },
@@ -2219,7 +1472,7 @@ function App() {
     statements:      { title: "Statements",     subtitle: "Generate settlement proof bundles for reconciliation." },
     docs:            { title: "Documentation",  subtitle: "How Disburse settles, verifies, and exports payments." },
   };
-  const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as Exclude<Page, "landing">] ?? routeMeta.dashboard;
+  const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as AppShellPage] ?? routeMeta.dashboard;
 
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
@@ -2242,6 +1495,7 @@ function App() {
           expectedChainLabel={commonShellProps.expectedChainLabel}
           isConnecting={isConnecting}
           onConnect={handleConnectWallet}
+          onDisconnect={handleDisconnectWallet}
           onSwitch={commonShellProps.onSwitch}
           onToggleTheme={handleThemeToggle}
           onOpenSettings={() => setIsSettingsOpen(true)}
@@ -2269,7 +1523,11 @@ function App() {
               onExport={handleExport}
             />
           )}
-          {page === "docs" && <DocsPage />}
+          {page === "docs" && (
+            <Suspense fallback={<DocsFallback />}>
+              <DocsPage />
+            </Suspense>
+          )}
           {page === "payments" && (
             <PaymentsPage
               account={account}
@@ -2557,6 +1815,114 @@ function PaymentsPage({
   );
 }
 
+function StageStrip({ stage, steps }: { stage: number; steps: string[] }) {
+  return (
+    <div className="stage-strip" role="list" aria-label={`${steps[0]} → ${steps[steps.length - 1]}`}>
+      {steps.map((label, idx) => {
+        const status = idx < stage ? "done" : idx === stage ? "active" : "";
+        const ariaCurrent = idx === stage ? "step" : undefined;
+        return (
+          <div
+            key={label}
+            role="listitem"
+            aria-current={ariaCurrent}
+            className={cx("stage-step", status || false)}
+          >
+            <span className="stage-step-dot" aria-hidden="true">
+              {idx < stage ? "✓" : String(idx + 1)}
+            </span>
+            <div className="stage-step-label">
+              <strong>{label}</strong>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function computePayStage(
+  account: `0x${string}` | undefined,
+  wrongChain: boolean,
+  request: PaymentRequest | undefined,
+  receipt: Receipt | undefined,
+  lifecycle: PayLifecycle
+): number {
+  if (receipt || request?.status === "paid") return 3;
+  if (
+    request?.txHash ||
+    lifecycle === "submitted" ||
+    lifecycle === "confirming" ||
+    lifecycle === "proving" ||
+    lifecycle === "settling"
+  )
+    return 2;
+  if (lifecycle === "awaiting_wallet" || lifecycle === "preparing") return 1;
+  if (!account || wrongChain) return 0;
+  return 1;
+}
+
+function LedgerRowCompact({
+  request,
+  receipt,
+  isSelected,
+  now,
+  onSelect,
+  onCopy
+}: {
+  request: PaymentRequest;
+  receipt?: Receipt;
+  isSelected: boolean;
+  now: Date;
+  onSelect: () => void;
+  onCopy: (value: string) => void;
+}) {
+  const { t } = useI18n();
+  const requestUrl = buildShareUrl(request, window.location.origin);
+  const displayRequest = refreshDerivedStatus(request, now);
+
+  return (
+    <article
+      className={cx("ledger-row-compact", isSelected && "selected")}
+      role="button"
+      tabIndex={0}
+      aria-label={`${request.label} — ${request.amount} ${request.token}`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <span className={cx("status-dot", displayRequest.status)} aria-hidden="true" />
+      <span className="ledger-row-compact-label">{request.label}</span>
+      <span className="ledger-row-compact-amount">
+        {request.amount} {request.token}
+      </span>
+      <span className="ledger-row-compact-meta">
+        {shortAddress(request.recipient)} · {formatInvoiceDate(request.invoiceDate)}
+      </span>
+      <div
+        className="ledger-row-compact-actions"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="text-button" type="button" onClick={() => onCopy(requestUrl)}>
+          {t("copy")}
+        </button>
+        <a className="text-button" href={requestUrl}>
+          {t("payPage")}
+        </a>
+        {receipt && (
+          <a className="text-button" href={receipt.explorerUrl} target="_blank" rel="noreferrer">
+            {t("receipt")}
+          </a>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function QrPaymentsPage({
   account,
   form,
@@ -2599,19 +1965,15 @@ function QrPaymentsPage({
   const { t } = useI18n();
   const displayRequest = selectedRequest ? refreshDerivedStatus(selectedRequest, now) : undefined;
   const qrIsFinal = displayRequest ? shouldHideQrForStatus(displayRequest.status) : false;
+  const hasFormInput = Boolean(form.recipient || form.amount || form.label || form.note);
 
   return (
     <>
-      <RouteHero eyebrow={t("qrPayments")} title={t("qrHero")} />
+      <RouteHero eyebrow={t("qrPayments") || "QR Payments"} title={t("generateQr") || "Generate a payment request"} />
 
-      <section className="workbench" aria-labelledby="qr-heading">
-        <header className="section-header">
-          <h2 id="qr-heading">{t("generateQr")}</h2>
-        </header>
-
+      <section className="workbench" aria-label={t("generateQr")}>
         <div className="desk-grid">
-          <section className="desk-pane create-pane" aria-labelledby="qr-form-heading">
-            <PaneTitle id="qr-form-heading" label={t("requestDetails")} />
+          <section className="desk-pane create-pane" aria-label={t("requestDetails")}>
             <form className="form-stack" onSubmit={onSubmit}>
               <Field label={t("recipient")}>
                 <div className="input-row">
@@ -2635,9 +1997,6 @@ function QrPaymentsPage({
               </Field>
 
               <div className="field-grid">
-                <Field label={t("token")}>
-                  <input value="USDC" readOnly aria-readonly="true" />
-                </Field>
                 <Field label={t("amount")}>
                   <input
                     value={form.amount}
@@ -2645,6 +2004,9 @@ function QrPaymentsPage({
                     inputMode="decimal"
                     placeholder="10"
                   />
+                </Field>
+                <Field label={t("token")}>
+                  <input value="USDC" readOnly aria-readonly="true" />
                 </Field>
               </div>
 
@@ -2673,7 +2035,7 @@ function QrPaymentsPage({
                 />
               </Field>
 
-              <button className="primary-button" type="submit" disabled={isCreating}>
+              <button className="primary-button primary-button--lg" type="submit" disabled={isCreating}>
                 {isCreating ? t("generating") : t("generateQr")}
               </button>
             </form>
@@ -2681,11 +2043,10 @@ function QrPaymentsPage({
             {notice && <NoticeBar notice={notice} />}
           </section>
 
-          <section className="desk-pane pay-pane" aria-labelledby="qr-output-heading">
-            <PaneTitle id="qr-output-heading" label={t("qrOutput")} />
+          <section className="desk-pane pay-pane" aria-label={t("qrOutput")}>
             {displayRequest && shareUrl ? (
               <>
-                {!selectedReceipt && (
+                {!(selectedReceipt || displayRequest.txHash) && (
                   <>
                     <PaymentPreview
                       title={displayRequest.label}
@@ -2702,6 +2063,7 @@ function QrPaymentsPage({
                         <Metric
                           label={t("payFrom")}
                           value={(displayRequest.allowedSourceChainIds ?? getAllowedSourceChainIds())
+                            .filter((id) => id !== ARC_DESTINATION_CHAIN_ID)
                             .map(getCrossChainLabel)
                             .join(", ")}
                         />
@@ -2737,33 +2099,56 @@ function QrPaymentsPage({
                 )}
 
                 {selectedReceipt && (
-                  <ReceiptDocument
-                    receipt={selectedReceipt}
-                    request={displayRequest}
-                    attestationUid={selectedReceipt.attestationUid}
-                    attestationFingerprint={selectedReceipt.attestationFingerprint}
-                    onCopyFingerprint={onCopy}
-                  />
+                  <>
+                    <ReceiptDocument
+                      receipt={selectedReceipt}
+                      request={displayRequest}
+                      attestationUid={selectedReceipt.attestationUid}
+                      attestationFingerprint={selectedReceipt.attestationFingerprint}
+                      onCopyFingerprint={onCopy}
+                    />
+                    <PspProofPanel requestId={displayRequest.id} onCopy={onCopy} />
+                  </>
                 )}
               </>
+            ) : hasFormInput ? (
+              <PaymentPreview
+                title={form.label || t("requestDetails")}
+                note={form.note || t("noNote")}
+                amount={form.amount || "0"}
+                token={form.token}
+                recipient={form.recipient || ""}
+                invoiceDate={form.invoiceDate}
+              />
             ) : (
-              <EmptyState title={t("noQrGenerated")} text={t("noQrGeneratedText")} />
+              <p className="pay-pane-hint">
+                <strong>{t("flowHintLead")}</strong>
+                {t("noQrGeneratedText")}
+              </p>
             )}
           </section>
         </div>
       </section>
 
-      <section id="qr-ledger" className="ledger-section">
-        <header className="section-header inline-header">
-          <div>
-            <h2>{t("qrLedger")}</h2>
-            <p>{t("qrRequestsStored", { count: requests.length })}</p>
-          </div>
+      <section id="qr-ledger" className="ledger-section" aria-label={t("qrLedger")}>
+        <div className="ledger-toolbar">
+          <span className="ledger-toolbar-label">
+            {t("qrRequestsStored", { count: requests.length })}
+          </span>
           <div className="tool-actions">
-            <button className="secondary-button" type="button" onClick={onExport} disabled={!requests.length}>
+            <button
+              className="text-button"
+              type="button"
+              onClick={onExport}
+              disabled={!requests.length}
+            >
               {t("export")}
             </button>
-            <button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+            >
               {t("import")}
             </button>
             <input
@@ -2774,44 +2159,22 @@ function QrPaymentsPage({
               onChange={(event) => onImport(event.target.files?.[0])}
             />
           </div>
-        </header>
+        </div>
 
         {requests.length ? (
           <div className="ledger-list">
             {requests.map((request) => {
               const receipt = receipts.find((item) => item.requestId === request.id);
-              const requestUrl = buildShareUrl(request, window.location.origin);
-              const displayRequest = refreshDerivedStatus(request, now);
               return (
-                <article className={`ledger-row ${request.id === selectedRequest?.id ? "selected" : ""}`} key={request.id}>
-                  <button type="button" className="ledger-main" onClick={() => onSelectRequest(request)}>
-                    <StatusBadge status={displayRequest.status} />
-                    <div>
-                      <strong>{request.label}</strong>
-                      <span>
-                        {request.amount} {request.token} {t("to")} {shortAddress(request.recipient)}
-                      </span>
-                    </div>
-                  </button>
-                  <div className="ledger-meta">
-                    <span>{isCrossChainPaymentRequest(request) ? t("settlesOnArc") : t("walletQr")}</span>
-                    <span>{formatInvoiceDate(request.invoiceDate)}</span>
-                    <span>{formatTimeLeft(request, now)}</span>
-                  </div>
-                  <div className="ledger-actions">
-                    <button className="text-button" type="button" onClick={() => onCopy(requestUrl)}>
-                      {t("copy")}
-                    </button>
-                    <a className="text-button" href={requestUrl}>
-                      {t("payPage")}
-                    </a>
-                    {receipt && (
-                      <a className="text-button" href={receipt.explorerUrl} target="_blank" rel="noreferrer">
-                        {t("receipt")}
-                      </a>
-                    )}
-                  </div>
-                </article>
+                <LedgerRowCompact
+                  key={request.id}
+                  request={request}
+                  receipt={receipt}
+                  isSelected={request.id === selectedRequest?.id}
+                  now={now}
+                  onSelect={() => onSelectRequest(request)}
+                  onCopy={onCopy}
+                />
               );
             })}
           </div>
@@ -2907,6 +2270,10 @@ function PayRequestPage({
         : undefined;
   const approvalTxUrl = approvalHash ? getCrossChainExplorerTxUrl(sourceChainId, approvalHash) : undefined;
   const payButtonLabel = getPayButtonLabel(isPaying, lifecycle, t);
+  const isFinal = status === "paid" || status === "expired" || status === "failed";
+  const showExpiryGrid = Boolean(request) && !isFinal;
+  const hasResultBlock = Boolean(approvalHash || submittedTxHash || receipt || request?.txHash);
+  const payStage = computePayStage(account, wrongChain, request, receipt, lifecycle);
 
   return (
     <>
@@ -2917,6 +2284,13 @@ function PayRequestPage({
           <h2 id="pay-request-heading">{t("paymentRequestTitle")}</h2>
           <p>{t("paymentRequestNote")}</p>
         </header>
+
+        {request && (
+          <StageStrip
+            stage={payStage}
+            steps={[t("connect"), t("paySign"), t("stageSettle"), t("verified")]}
+          />
+        )}
 
         {request ? (
           <div className="desk-grid">
@@ -2937,157 +2311,167 @@ function PayRequestPage({
                   <Metric label={t("selectedSource")} value={getCrossChainLabel(sourceChainId)} />
                 </div>
               )}
-              <div className="expiry-grid">
-                <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
-                <Metric label={t("validUntil")} value={formatDateTime(request.expiresAt ?? request.dueAt)} />
-              </div>
+              {showExpiryGrid && (
+                <div className="expiry-grid">
+                  <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
+                  <Metric label={t("validUntil")} value={formatDateTime(request.expiresAt ?? request.dueAt)} />
+                </div>
+              )}
             </section>
 
             <section className="desk-pane pay-pane" aria-labelledby="pay-actions-heading">
               <PaneTitle id="pay-actions-heading" label={t("payWithWallet")} />
-              {walletNotice && <NoticeBar notice={walletNotice} compact />}
-              {!account && !hasWalletProvider && (
-                <NoticeBar
-                  compact
-                  notice={{
-                    tone: "info",
-                    text: t("noWalletRequest")
-                  }}
-                />
-              )}
-              {isExpired && !isPayable && (
-                <NoticeBar
-                  compact
-                  notice={{ tone: "error", text: t("qrExpiredNotice") }}
-                />
-              )}
-              {hasSubmittedTransaction && (
-                <NoticeBar
-                  compact
-                  notice={{
-                    tone: "info",
-                    text: t("txSavedNotice")
-                  }}
-                />
-              )}
-              {isCrossChainPaymentRequest(request) && (
-                <Field label={t("payFrom")}>
-                  <select
-                    value={sourceChainId}
-                    onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
-                    disabled={Boolean(request.txHash)}
-                  >
-                    {(request.allowedSourceChainIds ?? getAllowedSourceChainIds()).map((chainId) => (
-                      <option value={chainId} key={chainId}>
-                        {getCrossChainLabel(chainId)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              )}
 
-              <WalletActionBlock
-                account={account}
-                wrongChain={wrongChain}
-                hasWalletProvider={hasWalletProvider}
-                isConnecting={isConnecting}
-                walletNotice={undefined}
-                onConnect={onConnect}
-                onSwitch={onSwitch}
-                switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
-              />
-
-              {account && !wrongChain && (
-                <TransferState
-                  account={account}
-                  token={request.token}
-                  balances={balances}
-                  insufficientToken={insufficientToken}
-                  missingGas={missingGas}
-                  networkLabel={getCrossChainLabel(sourceChainId)}
-                  nativeSymbol={getCrossChain(sourceChainId).nativeSymbol}
-                />
-              )}
-
-              {lifecycle !== "idle" && (
-                <div className="estimate-line">
-                  <Metric label={t("payerStage")} value={formatPayLifecycle(lifecycle, t)} />
+              {(walletNotice ||
+                (!account && !hasWalletProvider) ||
+                (isExpired && !isPayable) ||
+                hasSubmittedTransaction) && (
+                <div className="form-section">
+                  {walletNotice && <NoticeBar notice={walletNotice} compact />}
+                  {!account && !hasWalletProvider && (
+                    <NoticeBar
+                      compact
+                      notice={{ tone: "info", text: t("noWalletRequest") }}
+                    />
+                  )}
+                  {isExpired && !isPayable && (
+                    <NoticeBar compact notice={{ tone: "error", text: t("qrExpiredNotice") }} />
+                  )}
+                  {hasSubmittedTransaction && (
+                    <NoticeBar compact notice={{ tone: "info", text: t("txSavedNotice") }} />
+                  )}
                 </div>
               )}
 
-              {(request.txHash || receipt) && (
-                <SettlementPipeline request={request} receipt={receipt} />
-              )}
+              <div className="form-section">
+                {isCrossChainPaymentRequest(request) && (
+                  <Field label={t("payFrom")}>
+                    <select
+                      value={sourceChainId}
+                      onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
+                      disabled={Boolean(request.txHash)}
+                    >
+                      {(request.allowedSourceChainIds ?? getAllowedSourceChainIds())
+                        .filter((id) => id !== ARC_DESTINATION_CHAIN_ID)
+                        .map((chainId) => (
+                          <option value={chainId} key={chainId}>
+                            {getCrossChainLabel(chainId)}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                )}
 
-              <div className="action-row">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={onEstimate}
-                  disabled={!account || wrongChain || !isPayable || isEstimating}
-                >
-                  {isEstimating ? t("estimating") : t("estimate")}
-                </button>
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={onPay}
-                  disabled={
-                    !account ||
-                    wrongChain ||
-                    !isPayable ||
-                    insufficientToken ||
-                    missingGas ||
-                    isPaying ||
-                    hasSubmittedTransaction ||
-                    request.status === "paid"
-                  }
-                >
-                  {payButtonLabel}
-                </button>
-                <button className="secondary-button" type="button" onClick={onVerify} disabled={isVerifying}>
-                  {isVerifying ? t("verifying") : t("verify")}
-                </button>
+                <WalletActionBlock
+                  account={account}
+                  wrongChain={wrongChain}
+                  hasWalletProvider={hasWalletProvider}
+                  isConnecting={isConnecting}
+                  walletNotice={undefined}
+                  onConnect={onConnect}
+                  onSwitch={onSwitch}
+                  switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
+                />
+
+                {account && !wrongChain && (
+                  <TransferState
+                    account={account}
+                    token={request.token}
+                    balances={balances}
+                    insufficientToken={insufficientToken}
+                    missingGas={missingGas}
+                    networkLabel={getCrossChainLabel(sourceChainId)}
+                    nativeSymbol={getCrossChain(sourceChainId).nativeSymbol}
+                  />
+                )}
               </div>
 
-              {estimate && <EstimateGrid estimate={estimate} />}
-              {notice && <NoticeBar notice={notice} />}
-
-              {approvalHash && !receipt && (
-                <div className="receipt-line">
-                  <div>
-                    <span>{t("usdcApproval")}</span>
-                    <strong>{shortAddress(approvalHash, 10, 8)}</strong>
-                  </div>
-                  <div className="receipt-actions">
-                    <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
-                      {t("copyTx")}
+              <div className="form-section">
+                <div className="pay-action-block">
+                  <div className="pay-action-aux">
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={onEstimate}
+                      disabled={!account || wrongChain || !isPayable || isEstimating}
+                    >
+                      {isEstimating ? t("estimating") : t("calculateGas")}
                     </button>
-                    <a href={approvalTxUrl} target="_blank" rel="noreferrer">
-                      {t("openTx")}
-                    </a>
+                    {(submittedTxHash || receipt) && (
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={onVerify}
+                        disabled={isVerifying}
+                      >
+                        {isVerifying ? t("verifying") : t("verify")}
+                      </button>
+                    )}
                   </div>
+                  <button
+                    className="primary-button primary-button--lg"
+                    type="button"
+                    onClick={onPay}
+                    disabled={
+                      !account ||
+                      wrongChain ||
+                      !isPayable ||
+                      insufficientToken ||
+                      missingGas ||
+                      isPaying ||
+                      hasSubmittedTransaction ||
+                      request.status === "paid"
+                    }
+                  >
+                    {payButtonLabel}
+                  </button>
                 </div>
-              )}
 
-              {submittedTxHash && !receipt && (
-                <div className="receipt-line">
-                  <div>
-                    <span>{t("submittedTransaction")}</span>
-                    <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
-                  </div>
-                  <div className="receipt-actions">
-                    <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
-                      {t("copyTx")}
-                    </button>
-                    <a href={submittedTxUrl} target="_blank" rel="noreferrer">
-                      {t("openTx")}
-                    </a>
-                  </div>
-                </div>
-              )}
+                {estimate && <EstimateGrid estimate={estimate} />}
+                {notice && <NoticeBar notice={notice} />}
+              </div>
 
-              {receipt && (
+              {hasResultBlock && (
+                <div className="form-section">
+                  {(request.txHash || receipt) && (
+                    <SettlementPipeline request={request} receipt={receipt} />
+                  )}
+
+                  {approvalHash && !receipt && (
+                    <div className="receipt-line">
+                      <div>
+                        <span>{t("usdcApproval")}</span>
+                        <strong>{shortAddress(approvalHash, 10, 8)}</strong>
+                      </div>
+                      <div className="receipt-actions">
+                        <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
+                          {t("copyTx")}
+                        </button>
+                        <a href={approvalTxUrl} target="_blank" rel="noreferrer">
+                          {t("openTx")}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {submittedTxHash && !receipt && (
+                    <div className="receipt-line">
+                      <div>
+                        <span>{t("submittedTransaction")}</span>
+                        <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
+                      </div>
+                      <div className="receipt-actions">
+                        <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
+                          {t("copyTx")}
+                        </button>
+                        <a href={submittedTxUrl} target="_blank" rel="noreferrer">
+                          {t("openTx")}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {receipt && (
                 <>
                   <ReceiptDocument
                     receipt={receipt}
@@ -3098,6 +2482,7 @@ function PayRequestPage({
                     onExportPdf={isGeneratingInvoice ? undefined : onInvoice}
                     onExportUbl={onUBLExport}
                   />
+                  <PspProofPanel requestId={request.id} onCopy={onCopy} />
 
                   {/* Compliance Export Actions */}
                   <div className="compliance-actions">
@@ -3112,39 +2497,33 @@ function PayRequestPage({
                     <div className="compliance-buttons">
                       {!attestation && onAttest && (
                         <button className="compliance-button" type="button" onClick={onAttest}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                          </svg>
+                          <ShieldCheck size={14} strokeWidth={1.5} />
                           {t("createAttestation")}
                         </button>
                       )}
                       {attestation && (
                         <button className="compliance-button attested" type="button" disabled>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
+                          <Check size={14} strokeWidth={1.75} />
                           {t("attested")}
                         </button>
                       )}
                       {onSettlementProof && (
                         <button className="compliance-button" type="button" onClick={onSettlementProof}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                          </svg>
+                          <FileText size={14} strokeWidth={1.5} />
                           {t("settlementProof")}
                         </button>
                       )}
                       {onUBLExport && (
                         <button className="compliance-button" type="button" onClick={onUBLExport}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-                          </svg>
+                          <Download size={14} strokeWidth={1.5} />
                           {t("ublInvoiceXml")}
                         </button>
                       )}
                     </div>
                   </div>
                 </>
+              )}
+                </div>
               )}
             </section>
           </div>
@@ -3396,165 +2775,6 @@ function DocsTopNav({
       </div>
     </header>
   );
-}
-
-function DocsPage() {
-  const { lang, t } = useI18n();
-  const sections = useMemo(() => getDocsSections(lang), [lang]);
-  const summaryItems = useMemo(() => getDocsSummaryItems(lang), [lang]);
-  const initialDocSlug = slugify(sections[0]?.title ?? "");
-  const [activeSlug, setActiveSlug] = useState<string>(initialDocSlug);
-
-  useEffect(() => {
-    setActiveSlug(initialDocSlug);
-  }, [initialDocSlug]);
-
-  // Scrollspy. highlights the TOC entry for the section nearest the top.
-  useEffect(() => {
-    const slugs = sections.map((s) => slugify(s.title));
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (visible?.target.id) {
-          setActiveSlug(visible.target.id);
-        }
-      },
-      { rootMargin: "-20% 0px -70% 0px", threshold: [0, 1] },
-    );
-    for (const slug of slugs) {
-      const el = document.getElementById(slug);
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
-  }, [sections]);
-
-  function scrollToSlug(slug: string) {
-    const el = document.getElementById(slug);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      setActiveSlug(slug);
-    }
-  }
-
-  return (
-    <div className="mx-auto max-w-[1180px] pb-16">
-      {/* Hero */}
-      <section className="border-b border-[var(--line)] pb-10">
-        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
-          {t("documentation")}
-        </p>
-        <h1 className="max-w-[24ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
-          {t("docsHeroTitle")}
-        </h1>
-        <p className="mt-5 max-w-[66ch] text-[15px] leading-relaxed text-[var(--muted)]">
-          {t("docsHeroText")}
-        </p>
-
-        <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[var(--line-soft)] pt-6 sm:grid-cols-4">
-          {summaryItems.map((item) => (
-            <div key={item.label} className="min-w-0">
-              <dt className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-                {item.label}
-              </dt>
-              <dd className="truncate text-[13px] font-medium text-[var(--ink)]">
-                {item.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      {/* Manual */}
-      <section className="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-16">
-        {/* TOC */}
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-            {t("onThisPage")}
-          </p>
-          <nav className="flex flex-col gap-0.5">
-            {sections.map((section) => {
-              const slug = slugify(section.title);
-              const active = slug === activeSlug;
-              return (
-                <a
-                  key={slug}
-                  href={`#${slug}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    scrollToSlug(slug);
-                    window.history.replaceState(null, "", `#${slug}`);
-                  }}
-                  className={cx(
-                    "relative rounded-md py-1.5 pl-3 pr-2 text-[13px] transition-colors",
-                    active
-                      ? "text-[var(--ink)]"
-                      : "text-[var(--muted)] hover:text-[var(--ink)]",
-                  )}
-                >
-                  <span
-                    className={cx(
-                      "absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-r-full transition-all",
-                      active ? "bg-[var(--primary-bg)]" : "bg-transparent",
-                    )}
-                    aria-hidden="true"
-                  />
-                  {section.title}
-                </a>
-              );
-            })}
-          </nav>
-        </aside>
-
-        {/* Content */}
-        <div className="min-w-0">
-          {sections.map((section, index) => (
-            <article
-              key={section.title}
-              id={slugify(section.title)}
-              className="scroll-mt-20 border-b border-[var(--line-soft)] py-10 first:pt-0 last:border-b-0"
-            >
-              <p className="mb-3 font-mono text-[11px] text-[var(--muted)]">
-                § {String(index + 1).padStart(2, "0")}
-              </p>
-              <h2 className="mb-4 text-[22px] font-semibold tracking-tight text-[var(--ink)]">
-                {section.title}
-              </h2>
-              <div className="space-y-3 text-[15px] leading-[1.7] text-[var(--muted)]">
-                {section.body.map((paragraph) => (
-                  <p key={paragraph} className="max-w-[72ch]">
-                    {paragraph}
-                  </p>
-                ))}
-              </div>
-              {section.points && (
-                <ul className="mt-5 max-w-[72ch] space-y-2">
-                  {section.points.map((point) => (
-                    <li
-                      key={point}
-                      className="relative pl-5 text-[14px] leading-[1.65] text-[var(--muted)] before:absolute before:left-0 before:top-[0.65em] before:h-1.5 before:w-1.5 before:rounded-full before:border before:border-[var(--primary-bg)]/60"
-                    >
-                      {point}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {section.code && (
-                <pre className="mt-5 max-w-[72ch] overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--input-bg)] px-4 py-3 font-mono text-[12.5px] leading-relaxed text-[var(--ink)]">
-                  <code>{section.code}</code>
-                </pre>
-              )}
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function slugify(value: string): string {
-  return value.toLowerCase().replaceAll(" ", "-");
 }
 
 function FAQSection() {
@@ -4115,12 +3335,22 @@ function DashboardPage({
   const progressPct = Math.round((completedSteps / onboardingSteps.length) * 100);
 
   return (
-    <div className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-col gap-4 pb-12">
-      <DashboardIntro now={now} account={account} rpcHealthy={rpcHealth?.healthy} />
+    <div className="ql-dashboard relative z-10 mx-auto flex w-full max-w-[1240px] flex-col pb-16">
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-      {/* Main column */}
-      <div className="space-y-4 xl:col-span-8">
+      {/* HERO ─ date, greeting, headline counts, period selector */}
+      <DashboardHero
+        now={now}
+        account={account}
+        rpcHealthy={rpcHealth?.healthy}
+        requestCount={requests.length}
+        receiptCount={receipts.length}
+        paidCount={paidCount}
+        openCount={openCount}
+        expiredCount={expiredCount}
+      />
+
+      {/* HEADLINE BALANCE ─ full width, the day's main statement */}
+      <section className="ql-section">
         <BalanceCard
           totalVolume={totalVolume}
           verifiedVolume={verifiedVolume}
@@ -4132,63 +3362,95 @@ function DashboardPage({
           trend={trendSeries}
           trendDeltaPct={trendDeltaPct ?? undefined}
         />
+      </section>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <MonthlyStats activityData={activityData} />
-          <SystemStatusCard
-            monthlyData={monthlyData}
-            rpcStatusLabel={rpcStatusLabel}
-            rpcBlockLabel={rpcBlockLabel}
-            rpcHealthy={rpcHealth?.healthy}
-          />
-        </div>
-
-        <TransactionsTable
-          requests={requests}
-          receipts={receipts}
-          now={now}
-          onNavigate={onNavigate}
+      {/* ACTIVITY ─ two charts side by side */}
+      <SectionRule label={t("activity") || "Activity"} />
+      <section className="ql-section grid grid-cols-1 gap-4 md:grid-cols-2">
+        <MonthlyStats activityData={activityData} />
+        <SystemStatusCard
+          monthlyData={monthlyData}
+          rpcStatusLabel={rpcStatusLabel}
+          rpcBlockLabel={rpcBlockLabel}
+          rpcHealthy={rpcHealth?.healthy}
         />
-      </div>
+      </section>
 
-      {/* Right rail */}
-      <aside className="space-y-4 xl:col-span-4">
+      {/* OPERATIONS ─ quick actions, full-width grid */}
+      <SectionRule label={t("operations") || "Operations"} />
+      <section className="ql-section">
         <QuickActionsCard
           onNavigate={onNavigate}
           onExport={onExport}
           faucetUrl={ARC_FAUCET_URL}
           hasData={requests.length + receipts.length > 0}
         />
+      </section>
 
+      {/* LEDGER ─ recent transactions, full width */}
+      <SectionRule label={t("ledger") || "Ledger"} />
+      <section className="ql-section">
+        <TransactionsTable
+          requests={requests}
+          receipts={receipts}
+          now={now}
+          onNavigate={onNavigate}
+        />
+      </section>
+
+      {/* SIDE NOTES ─ getting started, proof inbox, resources */}
+      <SectionRule label={t("notes") || "Notes"} />
+      <section className="ql-section grid grid-cols-1 gap-4 md:grid-cols-3">
         <GettingStartedCard
           steps={onboardingSteps}
           completed={completedSteps}
           total={onboardingSteps.length}
           progressPct={progressPct}
         />
-
-        <StatusDigestCard
-          paidCount={paidCount}
-          openCount={openCount}
-          expiredCount={expiredCount}
-          rpcHealthy={rpcHealth?.healthy}
+        <ProofInboxCard
+          requests={requests}
+          receipts={receipts}
+          onNavigate={onNavigate}
         />
-
         <ResourcesCard />
-      </aside>
-      </div>
+      </section>
+
     </div>
   );
 }
 
-function DashboardIntro({
+/** Section divider — a hairline rule with a small-caps eyebrow label.
+ *  Visual rhythm cue between dashboard zones; quiet, not assertive. */
+function SectionRule({ label }: { label: string }) {
+  return (
+    <div className="ql-section-rule" role="presentation">
+      <span className="ql-section-rule-label">{label}</span>
+      <span className="ql-section-rule-line" />
+    </div>
+  );
+}
+
+/** Dashboard hero — top-of-page band.
+ *  Left: date eyebrow, serif greeting, lifetime ledger counts.
+ *  Right: period selector + RPC status pill. */
+function DashboardHero({
   now,
   account,
   rpcHealthy,
+  requestCount,
+  receiptCount,
+  paidCount,
+  openCount,
+  expiredCount,
 }: {
   now: Date;
   account?: `0x${string}`;
   rpcHealthy?: boolean;
+  requestCount: number;
+  receiptCount: number;
+  paidCount: number;
+  openCount: number;
+  expiredCount: number;
 }) {
   const greeting = getGreeting(now);
   const dateLabel = new Intl.DateTimeFormat(undefined, {
@@ -4199,25 +3461,35 @@ function DashboardIntro({
   }).format(now);
 
   return (
-    <section className="flex flex-wrap items-end justify-between gap-3 pb-1">
-      <div className="min-w-0">
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[var(--muted)]">
-          {dateLabel}
-        </p>
-        <h2 className="mt-1.5 truncate text-[18px] font-semibold leading-tight tracking-[-0.015em] text-[var(--ink)] sm:text-[20px]">
+    <section className="ql-hero">
+      <div className="ql-hero-main">
+        <p className="ql-hero-eyebrow">{dateLabel}</p>
+        <h1 className="ql-hero-title">
           {greeting}
           {account ? "." : ", connect a wallet to begin."}
-        </h2>
+        </h1>
+        <p className="ql-hero-meta">
+          <span><strong>{requestCount}</strong> requests</span>
+          <span className="ql-hero-meta-sep">·</span>
+          <span><strong>{receiptCount}</strong> receipts</span>
+          <span className="ql-hero-meta-sep">·</span>
+          <span><strong>{paidCount}</strong> settled</span>
+          <span className="ql-hero-meta-sep">·</span>
+          <span><strong>{openCount}</strong> open</span>
+          {expiredCount > 0 ? (
+            <>
+              <span className="ql-hero-meta-sep">·</span>
+              <span><strong>{expiredCount}</strong> expired</span>
+            </>
+          ) : null}
+        </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* Period selector. Visual only in this build; today's dashboard */}
-        {/* reports the lifetime figure — the chips let us ship a larger */}
-        {/* filter later without changing the shell. */}
+      <div className="ql-hero-aside">
         <div
           role="tablist"
           aria-label="Period"
-          className="flex items-center gap-0.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] p-0.5"
+          className="ql-period-tabs"
         >
           {(["7D", "30D", "90D", "All"] as const).map((p) => {
             const active = p === "All";
@@ -4229,13 +3501,7 @@ function DashboardIntro({
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 disabled={!active}
-                className={cn(
-                  "rounded-[3px] px-2.5 py-1 text-[10.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
-                  active
-                    ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]",
-                  !active && "cursor-not-allowed opacity-70",
-                )}
+                className={cn("ql-period-tab", active && "is-active")}
                 title={active ? undefined : "Coming soon"}
               >
                 {p}
@@ -4244,20 +3510,10 @@ function DashboardIntro({
           })}
         </div>
         <span
-          className={cn(
-            "hidden items-center gap-1.5 rounded-[var(--btn-radius)] border px-2 py-1 font-mono text-[9.5px] uppercase tracking-[0.14em] md:inline-flex",
-            rpcHealthy
-              ? "border-[var(--green-text)]/25 bg-[var(--green-bg)] text-[var(--green-text)]"
-              : "border-[var(--yellow-text)]/25 bg-[var(--yellow-bg)] text-[var(--yellow-text)]",
-          )}
+          className={cn("ql-rpc-pill", rpcHealthy ? "is-healthy" : "is-starting")}
           title="RPC health"
         >
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              rpcHealthy ? "bg-[var(--green-text)]" : "bg-[var(--yellow-text)]",
-            )}
-          />
+          <span className="ql-rpc-dot" />
           {rpcHealthy ? "Healthy" : "Starting"}
         </span>
       </div>
@@ -4385,6 +3641,108 @@ function QuickActionTile({
     <button type="button" className={className} onClick={onClick}>
       {body}
     </button>
+  );
+}
+
+function ProofInboxCard({
+  requests,
+  receipts,
+  onNavigate
+}: {
+  requests: PaymentRequest[];
+  receipts: Receipt[];
+  onNavigate: (target: string) => void;
+}) {
+  const paidReceipts = receipts
+    .map((receipt) => ({
+      receipt,
+      request: requests.find((item) => item.id === receipt.requestId)
+    }))
+    .filter((item) => Boolean(item.request))
+    .slice(0, 3);
+  return (
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+      <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
+        <div>
+          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            Proof inbox
+          </p>
+          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            Arc Testnet PSPs
+          </h3>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--green-text)]/25 bg-[var(--green-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--green-text)]">
+          <ShieldCheck size={11} strokeWidth={1.7} />
+          {receipts.length}
+        </span>
+      </div>
+
+      <div className="px-5 py-3">
+        <p className="text-[11.5px] leading-relaxed text-[var(--muted)]">
+          Settled receipts are ready for PSP lookup, CLI verification, statement bundles, and webhook delivery.
+        </p>
+        <dl className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-sm border border-[var(--line-soft)] bg-[var(--input-bg)] px-2.5 py-2">
+            <dt className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--muted)]">Webhook</dt>
+            <dd className="mt-1 font-mono text-[10px] text-[var(--ink)]">/api/webhooks</dd>
+          </div>
+          <div className="rounded-sm border border-[var(--line-soft)] bg-[var(--input-bg)] px-2.5 py-2">
+            <dt className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--muted)]">Failures</dt>
+            <dd className="mt-1 font-mono text-[10px] text-[var(--ink)]">events table</dd>
+          </div>
+        </dl>
+      </div>
+
+      {paidReceipts.length > 0 ? (
+        <ul className="divide-y divide-[var(--line-soft)] border-y border-[var(--line-soft)]">
+          {paidReceipts.map(({ receipt, request }) => (
+            <li key={receipt.txHash}>
+              <button
+                type="button"
+                onClick={() => request && onNavigate(`/pay?r=${encodeRequestPayload(request)}`)}
+                className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-[var(--line-soft)]/50"
+              >
+                <FileText size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] font-medium text-[var(--ink)]">
+                    {request?.label ?? receipt.requestId}
+                  </span>
+                  <span className="block font-mono text-[10px] text-[var(--muted)]">
+                    {shortAddress(receipt.txHash, 8, 6)}
+                  </span>
+                </span>
+                <span className="font-mono text-[10.5px] text-[var(--ink-soft)]">
+                  {receipt.amount} {receipt.token}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="border-y border-[var(--line-soft)] px-5 py-4">
+          <p className="text-[11.5px] text-[var(--muted)]">
+            Paid QR requests will appear here as proof-ready Arc Testnet receipts.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 divide-x divide-[var(--line-soft)]">
+        <button
+          type="button"
+          onClick={() => onNavigate("/statements")}
+          className="px-4 py-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)]/50"
+        >
+          Statements
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("/docs")}
+          className="px-4 py-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)]/50"
+        >
+          Verify docs
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -4587,19 +3945,40 @@ function ImportExportPage({
 
   return (
     <>
-      <section className="workbench" >
-        <div className="ie-page">
-          <div className="ie-card">
+      <RouteHero eyebrow={t("backup") || "Backup"} title={t("importExportTitle") || "Backup & Restore"} />
+
+      <section className="ql-page" aria-label="Backup">
+        <p className="ql-page-lede">
+          Your ledger lives locally in this browser. Export to JSON for safe-keeping, or import a previous
+          backup to restore everything in one click.
+        </p>
+
+        <div className="ql-ie-grid">
+          <article className="ql-ie-card">
+            <p className="form-section-label">Export</p>
             <h3>{t("exportHistory")}</h3>
-            <p>{t("exportHistoryText", { requests: requests.length, receipts: receipts.length })}</p>
-            <button className="primary-button" type="button" onClick={onExport} disabled={!requests.length}>
+            <p className="ql-ie-card-text">
+              {t("exportHistoryText", { requests: requests.length, receipts: receipts.length })}
+            </p>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={onExport}
+              disabled={!requests.length}
+            >
               {t("exportJson")}
             </button>
-          </div>
-          <div className="ie-card">
+          </article>
+
+          <article className="ql-ie-card">
+            <p className="form-section-label">Import</p>
             <h3>{t("importPaymentData")}</h3>
-            <p>{t("importPaymentDataText")}</p>
-            <button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>
+            <p className="ql-ie-card-text">{t("importPaymentDataText")}</p>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+            >
               {t("chooseFile")}
             </button>
             <input
@@ -4609,12 +3988,15 @@ function ImportExportPage({
               className="sr-only"
               onChange={(event) => onImport(event.target.files?.[0])}
             />
-          </div>
-          <div className="onboarding-card">
-            <strong>{t("dataStaysLocal")}</strong>
-            {t("dataStaysLocalText")}
-          </div>
+          </article>
         </div>
+
+        <aside className="ql-ie-note">
+          <p className="form-section-label">Privacy</p>
+          <p>
+            <strong>{t("dataStaysLocal")}</strong> {t("dataStaysLocalText")}
+          </p>
+        </aside>
       </section>
     </>
   );
@@ -4737,106 +4119,171 @@ function MilestonesPage() {
 
   return (
     <>
-      <section className="hero route-hero">
-        <p className="eyebrow">Conditional Payments</p>
-        <h1>Milestone Invoices</h1>
-      </section>
+      <RouteHero eyebrow="Conditional Payments" title="Milestone Invoices" />
 
-      <section className="content-section">
-        <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-            Multi-step payment chains where each step unlocks only when the previous payment is verified with a Portable Settlement Proof.
+      <section className="ql-page" aria-labelledby="milestones-heading">
+        <div className="ql-page-head">
+          <p className="ql-page-lede">
+            Multi-step payment chains where each step unlocks only when the previous payment is verified
+            with a Portable Settlement Proof.
           </p>
-          <button className="button button-primary" type="button" onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "+ New Chain"}
+          <button className="primary-button" type="button" onClick={() => setShowForm(!showForm)}>
+            {showForm ? "Cancel" : "New chain"}
           </button>
         </div>
 
         {notice && (
-          <div className={`notice ${notice.tone === "success" ? "notice-success" : "notice-error"}`} style={{ marginBottom: "1rem" }}>
+          <div className={`notice ${notice.tone === "success" ? "notice-success" : "notice-error"}`}>
             {notice.text}
           </div>
         )}
 
         {showForm && (
-          <form onSubmit={handleCreate} className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <input className="input" placeholder="Project title (e.g. Website Redesign)" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} required />
-              <input className="input" placeholder="Recipient address (0x...)" value={formRecipient} onChange={(e) => setFormRecipient(e.target.value)} required />
-              <input className="input" placeholder="Counterparty / payer address (optional)" value={formCounterparty} onChange={(e) => setFormCounterparty(e.target.value)} />
+          <form onSubmit={handleCreate} className="ql-form-card">
+            <div className="form-section">
+              <p className="form-section-label">Project</p>
+              <Field label="Title">
+                <input
+                  placeholder="Website redesign"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
 
-              <div style={{ marginTop: "0.5rem" }}>
-                <label style={{ fontWeight: 600, fontSize: "0.8125rem", color: "var(--muted)" }}>Steps</label>
+            <div className="form-section">
+              <p className="form-section-label">Parties</p>
+              <Field label="Recipient address">
+                <input
+                  placeholder="0x..."
+                  value={formRecipient}
+                  onChange={(e) => setFormRecipient(e.target.value)}
+                  required
+                  spellCheck={false}
+                />
+              </Field>
+              <Field label="Counterparty / payer (optional)">
+                <input
+                  placeholder="0x..."
+                  value={formCounterparty}
+                  onChange={(e) => setFormCounterparty(e.target.value)}
+                  spellCheck={false}
+                />
+              </Field>
+            </div>
+
+            <div className="form-section">
+              <p className="form-section-label">Steps</p>
+              <div className="ql-milestone-steps">
                 {formSteps.map((step, i) => (
-                  <div key={i} style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "center" }}>
-                    <span style={{ color: "var(--muted)", fontSize: "0.75rem", width: "1.5rem" }}>{i + 1}.</span>
-                    <input className="input" style={{ flex: 2 }} placeholder="Step label" value={step.label} onChange={(e) => updateStep(i, "label", e.target.value)} required />
-                    <input className="input" style={{ flex: 1 }} placeholder="Amount" type="number" step="0.01" value={step.amount} onChange={(e) => updateStep(i, "amount", e.target.value)} required />
-                    <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>USDC</span>
+                  <div key={i} className="ql-milestone-step-row">
+                    <span className="ql-milestone-step-index">{i + 1}.</span>
+                    <input
+                      className="ql-milestone-step-label"
+                      placeholder="Step label"
+                      value={step.label}
+                      onChange={(e) => updateStep(i, "label", e.target.value)}
+                      required
+                    />
+                    <input
+                      className="ql-milestone-step-amount"
+                      placeholder="0.00"
+                      type="number"
+                      step="0.01"
+                      value={step.amount}
+                      onChange={(e) => updateStep(i, "amount", e.target.value)}
+                      required
+                    />
+                    <span className="ql-milestone-step-unit">USDC</span>
                     {formSteps.length > 1 && (
-                      <button type="button" onClick={() => removeStep(i)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer" }}>x</button>
+                      <button
+                        type="button"
+                        onClick={() => removeStep(i)}
+                        className="ql-milestone-step-remove"
+                        aria-label="Remove step"
+                      >
+                        \u2715
+                      </button>
                     )}
                   </div>
                 ))}
-                <button type="button" onClick={addStep} className="button button-ghost" style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>
-                  + Add Step
+                <button type="button" onClick={addStep} className="text-button ql-milestone-add-step">
+                  + Add step
                 </button>
               </div>
+            </div>
 
-              <button className="button button-primary" type="submit" disabled={creating} style={{ marginTop: "0.75rem" }}>
-                {creating ? "Creating..." : "Create Milestone Chain"}
+            <div className="action-row">
+              <button className="primary-button" type="submit" disabled={creating}>
+                {creating ? "Creating\u2026" : "Create milestone chain"}
               </button>
             </div>
           </form>
         )}
 
         {loading ? (
-          <p style={{ color: "var(--muted)" }}>Loading...</p>
+          <p className="ql-loading">Loading\u2026</p>
         ) : chains.length === 0 ? (
-          <div className="empty-state">
-            <p>No milestone chains yet. Create your first conditional payment flow.</p>
+          <div className="ql-empty">
+            <p>No milestone chains yet.</p>
+            <p className="ql-empty-sub">Create your first conditional payment flow above.</p>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: "1rem" }}>
-            {chains.map((chain) => (
-              <div key={chain.id} className="card" style={{ padding: "1.25rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>{chain.title}</h3>
-                  <span className={`badge badge-${chain.status === "completed" ? "success" : chain.status === "cancelled" ? "error" : "info"}`}>
-                    {chain.status}
-                  </span>
-                </div>
-                <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.25rem 0 0.75rem" }}>
-                  {chain.totalAmount} USDC across {chain.steps?.length || 0} steps
-                </p>
-                <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
-                  {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
-                    <div key={i} style={{
-                      flex: 1,
-                      height: "6px",
-                      borderRadius: "3px",
-                      background: step.status === "completed" ? "var(--success)" :
-                                  step.status === "unlocked" || step.status === "payment_pending" ? "var(--primary)" :
-                                  "var(--border)"
-                    }} title={`${step.label}: ${step.status}`} />
-                  ))}
-                </div>
-                <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.25rem" }}>
-                  {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem" }}>
-                      <span style={{ width: "1.25rem", textAlign: "center", color: step.status === "completed" ? "var(--success)" : "var(--muted)" }}>
-                        {step.status === "completed" ? "\u2713" : step.status === "locked" ? "\u{1F512}" : "\u25CB"}
-                      </span>
-                      <span style={{ flex: 1 }}>{step.label}</span>
-                      <span style={{ color: "var(--muted)" }}>{step.amount} USDC</span>
-                      <span className={`badge badge-${step.status === "completed" ? "success" : step.status === "locked" ? "muted" : "info"}`} style={{ fontSize: "0.6875rem" }}>
-                        {step.status}
-                      </span>
+          <div className="ql-milestone-list">
+            {chains.map((chain) => {
+              const totalSteps = chain.steps?.length || 0;
+              const completedSteps = (chain.steps || []).filter((s) => s.status === "completed").length;
+              return (
+                <article key={chain.id} className="ql-milestone-card">
+                  <header className="ql-milestone-card-head">
+                    <div>
+                      <h3>{chain.title}</h3>
+                      <p className="ql-milestone-meta">
+                        <span className="ql-milestone-amount">{chain.totalAmount}</span>{" "}
+                        <span className="ql-milestone-unit">USDC</span>
+                        <span className="ql-milestone-sep">\u00B7</span>
+                        <span>
+                          {completedSteps} of {totalSteps} steps complete
+                        </span>
+                      </p>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                    <span className={cn("ql-milestone-badge", `is-${chain.status}`)}>
+                      {chain.status}
+                    </span>
+                  </header>
+
+                  <div className="ql-milestone-progress" role="presentation">
+                    {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
+                      <span
+                        key={i}
+                        className={cn(
+                          "ql-milestone-progress-seg",
+                          step.status === "completed" && "is-complete",
+                          (step.status === "unlocked" || step.status === "payment_pending") && "is-active"
+                        )}
+                        title={`${step.label}: ${step.status}`}
+                      />
+                    ))}
+                  </div>
+
+                  <ul className="ql-milestone-step-list">
+                    {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
+                      <li key={i} className={cn("ql-milestone-step-item", `is-${step.status}`)}>
+                        <span className="ql-milestone-step-icon" aria-hidden="true">
+                          {step.status === "completed" ? "\u2713" : step.status === "locked" ? "\uD83D\uDD12" : "\u25CB"}
+                        </span>
+                        <span className="ql-milestone-step-text">{step.label}</span>
+                        <span className="ql-milestone-step-money">
+                          {step.amount} <em>USDC</em>
+                        </span>
+                        <span className="ql-milestone-step-status">{step.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -4917,76 +4364,104 @@ function StatementsPage() {
 
   return (
     <>
-      <section className="hero route-hero">
-        <p className="eyebrow">Reconciliation</p>
-        <h1>Settlement Statements</h1>
-      </section>
+      <RouteHero eyebrow="Reconciliation" title="Settlement Statements" />
 
-      <section className="content-section">
-        <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "1.25rem" }}>
-          Generate a verified statement bundle — all settlement proofs between you and a counterparty over any time period.
-          Export as JSON for accounting, audits, or tax reporting.
+      <section className="ql-page" aria-labelledby="statements-heading">
+        <p className="ql-page-lede">
+          Generate a verified statement bundle — every settlement proof between you and a counterparty
+          over any period. Export as JSON for accounting, audits, or tax reporting.
         </p>
 
-        <form onSubmit={handleGenerate} className="card" style={{ padding: "1.25rem", marginBottom: "1.5rem" }}>
-          <div style={{ display: "grid", gap: "0.75rem" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              <input className="input" placeholder="Recipient address (0x...)" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
-              <input className="input" placeholder="Payer / counterparty (0x...)" value={payer} onChange={(e) => setPayer(e.target.value)} />
+        <form onSubmit={handleGenerate} className="ql-form-card">
+          <div className="form-section">
+            <p className="form-section-label">Counterparty</p>
+            <div className="field-grid">
+              <Field label="Recipient address">
+                <input
+                  placeholder="0x..."
+                  value={recipient}
+                  onChange={(e) => setRecipient(e.target.value)}
+                  spellCheck={false}
+                />
+              </Field>
+              <Field label="Payer / counterparty">
+                <input
+                  placeholder="0x..."
+                  value={payer}
+                  onChange={(e) => setPayer(e.target.value)}
+                  spellCheck={false}
+                />
+              </Field>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              <input className="input" type="date" placeholder="From" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-              <input className="input" type="date" placeholder="To" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
+
+          <div className="form-section">
+            <p className="form-section-label">Period</p>
+            <div className="field-grid">
+              <Field label="From">
+                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              </Field>
+              <Field label="To">
+                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              </Field>
             </div>
-            <button className="button button-primary" type="submit" disabled={loading}>
-              {loading ? "Generating..." : "Generate Statement"}
+          </div>
+
+          <div className="action-row">
+            <button className="primary-button" type="submit" disabled={loading}>
+              {loading ? "Generating…" : "Generate statement"}
             </button>
           </div>
         </form>
 
-        {error && <div className="notice notice-error" style={{ marginBottom: "1rem" }}>{error}</div>}
+        {error && <div className="notice notice-error">{error}</div>}
 
         {bundle && (
-          <div className="card" style={{ padding: "1.25rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1rem" }}>
-              <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>Statement Summary</h3>
-              <button className="button button-ghost" type="button" onClick={handleDownloadJson} style={{ fontSize: "0.75rem" }}>
+          <div className="ql-statement-result">
+            <div className="ql-statement-result-head">
+              <h3>Statement summary</h3>
+              <button className="secondary-button" type="button" onClick={handleDownloadJson}>
                 Download JSON
               </button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
-              <div>
-                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Total Amount</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{bundle.summary.totalAmount} {bundle.summary.token}</div>
+            <div className="ql-metric-grid">
+              <div className="ql-metric">
+                <p className="ql-metric-label">Total amount</p>
+                <p className="ql-metric-value">
+                  {bundle.summary.totalAmount} <span className="ql-metric-unit">{bundle.summary.token}</span>
+                </p>
               </div>
-              <div>
-                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Proofs</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{bundle.summary.totalProofs}</div>
+              <div className="ql-metric">
+                <p className="ql-metric-label">Proofs</p>
+                <p className="ql-metric-value">{bundle.summary.totalProofs}</p>
               </div>
-              <div>
-                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Period</div>
-                <div style={{ fontSize: "0.8125rem" }}>
-                  {new Date(bundle.summary.period.from).toLocaleDateString()} — {new Date(bundle.summary.period.to).toLocaleDateString()}
-                </div>
+              <div className="ql-metric">
+                <p className="ql-metric-label">Period</p>
+                <p className="ql-metric-detail">
+                  {new Date(bundle.summary.period.from).toLocaleDateString()} —{" "}
+                  {new Date(bundle.summary.period.to).toLocaleDateString()}
+                </p>
               </div>
-              <div>
-                <div style={{ fontSize: "0.6875rem", color: "var(--muted)", textTransform: "uppercase" }}>Network</div>
-                <div style={{ fontSize: "0.8125rem" }}>{bundle.summary.networkMode}</div>
+              <div className="ql-metric">
+                <p className="ql-metric-label">Network</p>
+                <p className="ql-metric-detail">{bundle.summary.networkMode}</p>
               </div>
             </div>
 
             {bundle.proofs.length > 0 && (
-              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
-                <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>Individual Proofs</div>
-                <div style={{ display: "grid", gap: "0.5rem", maxHeight: "300px", overflowY: "auto" }}>
+              <div className="ql-proof-list">
+                <p className="form-section-label">Individual proofs</p>
+                <div className="ql-proof-rows">
                   {bundle.proofs.map((psp: StatementPspView) => (
-                    <div key={psp.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem 0.75rem", background: "var(--surface)", borderRadius: "0.5rem", fontSize: "0.8125rem" }}>
-                      <div>
-                        <span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{psp.uid}</span>
-                        <span style={{ marginLeft: "0.75rem", color: "var(--muted)" }}>{psp.invoice?.label || "—"}</span>
+                    <div key={psp.uid} className="ql-proof-row">
+                      <div className="ql-proof-row-main">
+                        <span className="ql-proof-uid">{psp.uid}</span>
+                        <span className="ql-proof-label">{psp.invoice?.label || "—"}</span>
                       </div>
-                      <span style={{ fontWeight: 600 }}>{psp.invoice?.amount} {psp.invoice?.token}</span>
+                      <span className="ql-proof-amount">
+                        {psp.invoice?.amount} {psp.invoice?.token}
+                      </span>
                     </div>
                   ))}
                 </div>

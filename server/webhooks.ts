@@ -35,6 +35,15 @@ export type CreateWebhookInput = {
   events?: string[];
 };
 
+export type PspWebhookPayload = {
+  event: "psp.issued";
+  uid?: string;
+  requestId?: string;
+  networkMode?: string;
+  createdAt: string;
+  psp: Record<string, unknown>;
+};
+
 // ---------- Create ----------
 
 export async function createWebhook(
@@ -125,37 +134,69 @@ export async function triggerWebhooks(psp: Record<string, unknown>): Promise<voi
 
   if (error || !webhooks?.length) return;
 
-  const pspRecipient = (psp.recipient as string)?.toLowerCase();
+  const payload = buildPspWebhookPayload(psp);
 
   for (const row of webhooks) {
     // Filter by recipient if the webhook specifies one
-    if (row.recipient && row.recipient !== pspRecipient) continue;
+    if (!matchesWebhookRecipient(row, psp)) continue;
 
     // Filter by event type
     const events: string[] = row.events || ["psp.issued"];
     if (!events.includes("psp.issued")) continue;
 
-    await deliverWebhook(row, psp, supabase);
+    await deliverWebhook(row, payload, supabase);
   }
+}
+
+export function buildPspWebhookPayload(
+  psp: Record<string, unknown>,
+  now = new Date()
+): PspWebhookPayload {
+  const invoice = isRecord(psp.invoice) ? psp.invoice : {};
+  return {
+    event: "psp.issued",
+    uid: typeof psp.uid === "string" ? psp.uid : undefined,
+    requestId: typeof invoice.requestId === "string" ? invoice.requestId : undefined,
+    networkMode: typeof psp.networkMode === "string" ? psp.networkMode : undefined,
+    createdAt: now.toISOString(),
+    psp
+  };
+}
+
+export function matchesWebhookRecipient(row: Record<string, unknown>, psp: Record<string, unknown>): boolean {
+  const configuredRecipient = typeof row.recipient === "string" ? row.recipient.toLowerCase() : "";
+  if (!configuredRecipient) {
+    return true;
+  }
+  return configuredRecipient === readPspRecipient(psp);
+}
+
+export function readPspRecipient(psp: Record<string, unknown>): string | undefined {
+  const invoice = isRecord(psp.invoice) ? psp.invoice : undefined;
+  const recipient = invoice?.recipient;
+  return typeof recipient === "string" ? recipient.toLowerCase() : undefined;
+}
+
+export function signWebhookPayload(payloadJson: string, secret: string): string {
+  return createHmac("sha256", secret).update(payloadJson).digest("hex");
 }
 
 // ---------- Delivery ----------
 
 async function deliverWebhook(
   row: Record<string, unknown>,
-  psp: Record<string, unknown>,
+  payloadBody: PspWebhookPayload,
   supabase: ReturnType<typeof getSupabaseAdmin>
 ): Promise<void> {
-  const payload = JSON.stringify(psp);
-  const signature = createHmac("sha256", row.secret as string)
-    .update(payload)
-    .digest("hex");
+  const payload = JSON.stringify(payloadBody);
+  const signature = signWebhookPayload(payload, row.secret as string);
 
   try {
     const res = await fetch(row.url as string, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Disburse-Event": "psp.issued",
         "X-Disburse-Signature": signature
       },
       body: payload,
@@ -211,4 +252,8 @@ function rowToWebhook(row: Record<string, unknown>): Webhook {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

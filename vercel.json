@@ -1,5 +1,15 @@
 {
+  "crons": [
+    {
+      "path": "/api/markets-expire-orders",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/api/:route*",
+      "destination": "/api?route=:route*"
+    },
     {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"

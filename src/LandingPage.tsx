@@ -179,7 +179,7 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               className="mb-8 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-white/40"
             >
               <span className="h-[1px] w-6 bg-[var(--primary-bg,#2fb37f)]/60" aria-hidden="true" />
-              Verifiable stablecoin settlement
+              Arc Testnet settlement proofs
             </motion.p>
 
             <motion.h1
@@ -209,9 +209,9 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               }
               className="mt-7 max-w-[54ch] text-[15px] leading-[1.65] text-white/60"
             >
-              Issue a QR request. The payer settles from any supported chain in
-              USDC. Disburse turns the onchain transfer into a structured
-              receipt your accountant or auditor can actually file.
+              Turn an Arc Testnet stablecoin payment into a portable proof your
+              software, accountant, or auditor can verify without trusting
+              Disburse infrastructure.
             </motion.p>
 
             <motion.div
@@ -257,7 +257,7 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               className="mt-10 flex flex-wrap items-center gap-1.5 text-[11.5px] text-white/35"
             >
               <Lock size={11} strokeWidth={1.6} className="text-white/30" />
-              No signup, no custody, no private keys.
+              Wallet-signed requests. Arc Testnet receipts. PSP verification.
             </motion.div>
           </div>
 
@@ -357,7 +357,7 @@ function ConsolePreview() {
               The console
             </p>
             <h2 className="max-w-[30ch] text-[clamp(1.35rem,2.2vw,1.8rem)] font-medium leading-[1.2] tracking-[-0.02em] text-white/95">
-              A working statement for every stablecoin payment.
+              A proof inbox for every Arc Testnet payment.
             </h2>
           </div>
           <a
@@ -567,8 +567,8 @@ function HowItWorks() {
     },
     {
       n: "03",
-      t: "Receive a verifiable receipt",
-      d: "A Verifiable Settlement Receipt is derived from the onchain transfer log. Export as JSON, UBL 2.1 XML, or PDF.",
+      t: "Receive a portable proof",
+      d: "A Portable Settlement Proof is derived from Arc Testnet settlement data. Export JSON, UBL 2.1 XML, or PDF.",
       icon: ShieldCheck,
     },
   ];
@@ -578,7 +578,7 @@ function HowItWorks() {
       <div ref={ref} className="reveal mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-24">
         <SectionHeader
           eyebrow="How it works"
-          title="From invoice to receipt in three steps."
+          title="From invoice to portable proof in three steps."
         />
 
         <ol className="mt-12 grid grid-cols-1 gap-px bg-white/[0.05] md:grid-cols-3">
@@ -624,8 +624,8 @@ function Features() {
     },
     {
       icon: ShieldCheck,
-      title: "Verifiable Settlement Receipt",
-      body: "Structured JSON proof, SHA-256 fingerprinted, re-derivable from the tx hash.",
+      title: "Portable Settlement Proof",
+      body: "Signed JSON proof, content-addressed, and verifiable by API, CLI, or smart contract.",
     },
     {
       icon: FileText,
@@ -649,8 +649,8 @@ function Features() {
       <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-24">
         <SectionHeader
           eyebrow="Principles"
-          title="Six properties that make a payment auditable."
-          lede="Every claim below is checked on chain before a request is marked paid."
+          title="Six properties that make a payment machine-verifiable."
+          lede="Every claim below is checked on Arc Testnet before a request is marked paid."
         />
 
         <div className="mt-12 grid grid-cols-1 gap-px bg-white/[0.05] sm:grid-cols-2 lg:grid-cols-3">
@@ -769,8 +769,8 @@ function FAQ() {
       a: "Arc Testnet for direct settlement. Base Sepolia and Monad Testnet as source chains. Cross-chain payments settle on Arc via Polymer cryptographic proofs.",
     },
     {
-      q: "How is a Verifiable Settlement Receipt different from a PDF invoice?",
-      a: "A VSR is a structured JSON document with a SHA-256 fingerprint. Anyone can re-derive the same record from the transaction hash without access to Disburse.",
+      q: "How is a Portable Settlement Proof different from a PDF invoice?",
+      a: "A PSP is a signed, content-addressed JSON document. Anyone can verify the same settlement with the proof JSON, issuer address, and Arc Testnet data.",
     },
     {
       q: "What is stored in my browser versus the backend?",
@@ -887,8 +887,8 @@ function Footer() {
             </span>
           </div>
           <p className="text-[12px] leading-relaxed text-white/45">
-            A non-custodial receipt layer for stablecoin payments. Built for
-            freelancers, DAOs, and teams that need settlement they can audit.
+            A proof layer for Arc Testnet stablecoin payments. Built for apps,
+            agents, DAOs, and teams that need settlement they can verify.
           </p>
         </div>
 

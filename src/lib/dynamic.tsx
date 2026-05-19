@@ -19,6 +19,7 @@ type DynamicWalletBridgeContextValue = {
   sdkHasLoaded: boolean;
   primaryWallet: Wallet | null;
   openAuthFlow: () => void;
+  disconnect: () => Promise<void>;
   getEthereumProvider: () => Promise<EthereumProvider | undefined>;
   getAccount: () => Address | undefined;
   getChainId: () => Promise<number | undefined>;
@@ -59,7 +60,19 @@ const disabledDynamicWalletBridge: DynamicWalletBridgeContextValue = {
   hasWallet: false,
   sdkHasLoaded: false,
   primaryWallet: null,
-  openAuthFlow: () => undefined,
+  openAuthFlow: () => {
+    // Surface the misconfiguration loudly so the silent "no modal appears"
+    // case (VITE_DYNAMIC_ENVIRONMENT_ID unset) is debuggable.
+    if (typeof window !== "undefined") {
+      console.error(
+        "[disburse] Wallet auth flow requested but Dynamic is disabled. Set VITE_DYNAMIC_ENVIRONMENT_ID in your environment."
+      );
+      window.alert(
+        "Wallet login is not configured for this deployment. Set VITE_DYNAMIC_ENVIRONMENT_ID and reload."
+      );
+    }
+  },
+  disconnect: async () => undefined,
   getEthereumProvider: async () => undefined,
   getAccount: () => undefined,
   getChainId: async () => undefined
@@ -102,7 +115,7 @@ export function useDisburseDynamicWallet() {
 }
 
 function DynamicWalletBridge({ children }: { children: ReactNode }) {
-  const { primaryWallet, sdkHasLoaded, setShowAuthFlow } = useDynamicContext();
+  const { primaryWallet, sdkHasLoaded, setShowAuthFlow, handleLogOut } = useDynamicContext();
   const switchNetwork = useSwitchNetwork();
   const value = useMemo<DynamicWalletBridgeContextValue>(
     () => ({
@@ -111,6 +124,9 @@ function DynamicWalletBridge({ children }: { children: ReactNode }) {
       sdkHasLoaded,
       primaryWallet,
       openAuthFlow: () => setShowAuthFlow(true),
+      disconnect: async () => {
+        await handleLogOut();
+      },
       getEthereumProvider: async () => {
         if (!primaryWallet) {
           return undefined;
@@ -132,7 +148,7 @@ function DynamicWalletBridge({ children }: { children: ReactNode }) {
         return readDynamicWalletChainId(primaryWallet);
       }
     }),
-    [primaryWallet, sdkHasLoaded, setShowAuthFlow, switchNetwork]
+    [primaryWallet, sdkHasLoaded, setShowAuthFlow, handleLogOut, switchNetwork]
   );
 
   return (

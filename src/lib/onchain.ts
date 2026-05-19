@@ -31,7 +31,8 @@ import {
   type DecodedTransfer,
   type PaymentRequest,
   type PaymentToken,
-  type Receipt
+  type Receipt,
+  type TransferLog
 } from "./payments.js";
 
 export type EthereumProvider = EIP1193Provider & {
@@ -181,7 +182,7 @@ export async function switchToArc(provider: EthereumProvider): Promise<void> {
 export async function readBalances(account: Address, transfer: TokenTransfer): Promise<Balances> {
   const [nativeBalance, tokenBalance, gasPrice] = await Promise.all([
     publicClient.getBalance({ address: account }),
-    publicClient.readContract({
+    readArcContract<bigint>({
       address: TOKENS[transfer.token].address,
       abi: erc20Abi,
       functionName: "balanceOf",
@@ -363,7 +364,7 @@ export async function verifyPayment(request: PaymentRequest): Promise<Verificati
       const receipt = await publicClient.getTransactionReceipt({ hash: request.txHash });
       const transfer = receipt.logs
         .filter((log) => log.address.toLowerCase() === TOKENS[request.token].address.toLowerCase())
-        .map(decodeTransferLog)
+        .map((log) => decodeTransferLog(log as unknown as TransferLog))
         .find(
           (decoded): decoded is DecodedTransfer => Boolean(decoded && transferMatchesRequest(request, decoded))
         );
@@ -494,12 +495,12 @@ export async function checkArcRpc(): Promise<RpcHealth> {
 
   const activeClient = createEndpointPublicClient(activeEndpoint.url);
   const [usdcDecimals, eurcDecimals] = await Promise.all([
-    activeClient.readContract({
+    readEndpointContract<number>(activeClient, {
       address: TOKENS.USDC.address,
       abi: erc20Abi,
       functionName: "decimals"
     }),
-    activeClient.readContract({
+    readEndpointContract<number>(activeClient, {
       address: TOKENS.EURC.address,
       abi: erc20Abi,
       functionName: "decimals"
@@ -522,6 +523,17 @@ export async function checkArcRpc(): Promise<RpcHealth> {
 
 export function applyArcGasFloor(gasPrice: bigint): bigint {
   return gasPrice > ARC_MIN_GAS_PRICE ? gasPrice : ARC_MIN_GAS_PRICE;
+}
+
+function readArcContract<T>(parameters: unknown): Promise<T> {
+  return publicClient.readContract(parameters as any) as Promise<T>;
+}
+
+function readEndpointContract<T>(
+  client: ReturnType<typeof createEndpointPublicClient>,
+  parameters: unknown
+): Promise<T> {
+  return client.readContract(parameters as any) as Promise<T>;
 }
 
 export function selectActiveRpcEndpoint(statuses: RpcEndpointStatus[]): RpcEndpointStatus | undefined {

@@ -65,28 +65,80 @@ function validateStructure(psp: unknown): { ok: boolean; reason?: string } {
     return { ok: false, reason: "Issuer publicKey must be a valid EVM address" };
   }
 
-  // Invoice
+  // Exactly one of invoice / marketClaim must be present (v1.1 contract).
   const invoice = doc.invoice as Record<string, unknown> | undefined;
-  if (!invoice) {
-    return { ok: false, reason: "Missing invoice object" };
+  const marketClaim = doc.marketClaim as Record<string, unknown> | undefined;
+  if (!invoice && !marketClaim) {
+    return { ok: false, reason: "Missing invoice or marketClaim object" };
   }
-  if (typeof invoice.requestId !== "string" || !invoice.requestId) {
-    return { ok: false, reason: "Missing invoice.requestId" };
+  if (invoice && marketClaim) {
+    return {
+      ok: false,
+      reason: "PSP must have exactly one of invoice or marketClaim, not both",
+    };
   }
-  if (typeof invoice.payer !== "string" || !isAddress(invoice.payer)) {
-    return { ok: false, reason: "Invalid invoice.payer address" };
+
+  if (invoice) {
+    if (typeof invoice.requestId !== "string" || !invoice.requestId) {
+      return { ok: false, reason: "Missing invoice.requestId" };
+    }
+    if (typeof invoice.payer !== "string" || !isAddress(invoice.payer)) {
+      return { ok: false, reason: "Invalid invoice.payer address" };
+    }
+    if (typeof invoice.recipient !== "string" || !isAddress(invoice.recipient)) {
+      return { ok: false, reason: "Invalid invoice.recipient address" };
+    }
+    if (typeof invoice.token !== "string" || !invoice.token) {
+      return { ok: false, reason: "Missing invoice.token" };
+    }
+    if (typeof invoice.amount !== "string" || !invoice.amount) {
+      return { ok: false, reason: "Missing invoice.amount" };
+    }
+    if (typeof invoice.label !== "string") {
+      return { ok: false, reason: "Missing invoice.label" };
+    }
   }
-  if (typeof invoice.recipient !== "string" || !isAddress(invoice.recipient)) {
-    return { ok: false, reason: "Invalid invoice.recipient address" };
-  }
-  if (typeof invoice.token !== "string" || !invoice.token) {
-    return { ok: false, reason: "Missing invoice.token" };
-  }
-  if (typeof invoice.amount !== "string" || !invoice.amount) {
-    return { ok: false, reason: "Missing invoice.amount" };
-  }
-  if (typeof invoice.label !== "string") {
-    return { ok: false, reason: "Missing invoice.label" };
+
+  if (marketClaim) {
+    if (typeof marketClaim.marketId !== "string" || !marketClaim.marketId) {
+      return { ok: false, reason: "Missing marketClaim.marketId" };
+    }
+    if (
+      typeof marketClaim.onchainMarket !== "string" ||
+      !isAddress(marketClaim.onchainMarket)
+    ) {
+      return { ok: false, reason: "Invalid marketClaim.onchainMarket address" };
+    }
+    if (typeof marketClaim.question !== "string" || !marketClaim.question) {
+      return { ok: false, reason: "Missing marketClaim.question" };
+    }
+    if (marketClaim.outcome !== "YES" && marketClaim.outcome !== "NO") {
+      return { ok: false, reason: "Invalid marketClaim.outcome (must be 'YES' or 'NO')" };
+    }
+    if (
+      marketClaim.winningOutcome !== "YES" &&
+      marketClaim.winningOutcome !== "NO"
+    ) {
+      return { ok: false, reason: "Invalid marketClaim.winningOutcome" };
+    }
+    if (
+      typeof marketClaim.sharesRedeemed !== "string" ||
+      !marketClaim.sharesRedeemed
+    ) {
+      return { ok: false, reason: "Missing marketClaim.sharesRedeemed" };
+    }
+    if (
+      typeof marketClaim.payoutAmount !== "string" ||
+      !marketClaim.payoutAmount
+    ) {
+      return { ok: false, reason: "Missing marketClaim.payoutAmount" };
+    }
+    if (
+      typeof marketClaim.resolvedAt !== "string" ||
+      isNaN(Date.parse(marketClaim.resolvedAt))
+    ) {
+      return { ok: false, reason: "Invalid marketClaim.resolvedAt timestamp" };
+    }
   }
 
   // Settlement
@@ -186,15 +238,35 @@ export async function verify(
     return { ok: false, reason: sigResult.reason };
   }
 
-  // All checks passed
+  // All checks passed. validateStructure guaranteed exactly one variant.
+  if (doc.invoice) {
+    return {
+      ok: true,
+      fields: {
+        kind: "payment",
+        requestId: doc.invoice.requestId,
+        payer: doc.invoice.payer,
+        recipient: doc.invoice.recipient,
+        token: doc.invoice.token,
+        amount: doc.invoice.amount,
+        settlementChainId: doc.settlement.chainId,
+        settlementTxHash: doc.settlement.txHash,
+        issuer: doc.issuer.publicKey,
+        networkMode: doc.networkMode,
+      },
+    };
+  }
+
+  const mc = doc.marketClaim!;
   return {
     ok: true,
     fields: {
-      requestId: doc.invoice.requestId,
-      payer: doc.invoice.payer,
-      recipient: doc.invoice.recipient,
-      token: doc.invoice.token,
-      amount: doc.invoice.amount,
+      kind: "market_claim",
+      marketId: mc.marketId,
+      onchainMarket: mc.onchainMarket,
+      question: mc.question,
+      outcome: mc.outcome,
+      payoutAmount: mc.payoutAmount,
       settlementChainId: doc.settlement.chainId,
       settlementTxHash: doc.settlement.txHash,
       issuer: doc.issuer.publicKey,

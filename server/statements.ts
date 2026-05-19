@@ -12,7 +12,11 @@
 
 import { getSupabaseAdmin } from "./supabase.js";
 import { HttpError } from "./http.js";
-import type { PspV1 } from "../src/lib/psp/types.js";
+import type { PspInvoice, PspV1 } from "../src/lib/psp/types.js";
+
+// Statements are invoice-centric — market-claim PSPs (v1.1) are filtered out
+// upstream, so within this module a "proof" always has `invoice` present.
+type PaymentPsp = PspV1 & { invoice: PspInvoice };
 import type { Address } from "viem";
 
 // ---------- Types ----------
@@ -80,8 +84,12 @@ export async function generateStatement(query: StatementQuery): Promise<Statemen
   const { data, error } = await dbQuery;
   if (error) throw new HttpError(500, error.message);
 
-  // Filter by recipient/payer/token in application layer (JSONB fields)
-  let proofs: PspV1[] = (data || []).map((row) => row.document as unknown as PspV1);
+  // Filter by recipient/payer/token in application layer (JSONB fields).
+  // Statements are invoice-centric — market-claim PSPs (v1.1) have no payer/
+  // recipient/token shape, so they're excluded from statement rollups.
+  let proofs: PaymentPsp[] = (data || [])
+    .map((row) => row.document as unknown as PspV1)
+    .filter((p): p is PaymentPsp => Boolean(p.invoice));
 
   if (query.recipient) {
     const addr = query.recipient.toLowerCase();

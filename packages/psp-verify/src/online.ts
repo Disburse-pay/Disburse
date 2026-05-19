@@ -144,6 +144,15 @@ export async function verifyOnline(
       };
     }
 
+    if (!psp.invoice) {
+      return {
+        ok: false,
+        reason:
+          "Full online verification with this helper currently supports payment PSPs; use signatureOnly or MarketsPspVerifier for market-claim PSPs.",
+        registeredIssuer,
+      };
+    }
+
     // Full verification with settlement check
     const settlementId = psp.settlement.settlementEvent.settlementId as Hex;
     const fields = {

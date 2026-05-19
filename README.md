@@ -34,8 +34,8 @@ Freelancers rebuild spreadsheets by hand. DAOs reconcile from Discord screenshot
 
 ## Why it matters
 
-- **Non-custodial.** Disburse never holds a private key, never touches a balance, never gates withdrawal. The wallet is the authority.
-- **Any chain in, USDC out.** Cross-chain payers see one invoice, pay from their home chain, and the recipient receives USDC on Arc.
+- **Wallet-signed.** Disburse never receives private keys. Arc-native payments go wallet-to-recipient; cross-chain testnet routes use source escrow plus prefunded Arc settlement liquidity.
+- **Arc Testnet as the proof layer.** Cross-chain payers see one invoice, pay from a supported testnet source, and the recipient receives USDC through Arc settlement.
 - **Compliance-ready exports.** UBL 2.1 drops into existing EU e-invoicing pipelines. PDFs go to finance inboxes. JSON proofs are SHA-256 fingerprinted so third parties can re-verify independently.
 - **Built on Arc.** The settlement contract lives on Arc, aligning the product with Circle's economic OS for the internet.
 
@@ -55,7 +55,8 @@ Freelancers rebuild spreadsheets by hand. DAOs reconcile from Discord screenshot
 npm install
 npm run dev        # http://localhost:5173
 npm run typecheck
-npm test           # Vitest (57 tests across client, server, onchain)
+npm test           # Vitest
+npm run markets:create -- --question "Will Arc mainnet launch by 2026-07-01?" --closes-at "2026-07-01T00:00:00.000Z"
 npm run build
 ```
 
@@ -64,6 +65,33 @@ The dev server binds to `0.0.0.0` and routes all paths to `index.html` via `verc
 Documentation is served from `docs.disburse.online` on the same Vercel project. The app treats that subdomain as the docs site.
 
 Supabase-backed QR realtime and the `/api/*` handlers require a Vercel context. Run `vercel dev` locally or deploy to Vercel; plain Vite dev still supports the local-only QR fallback.
+
+### Prediction markets admin
+
+Create a market with the admin helper after applying the markets Supabase migrations and deploying the markets contracts:
+
+```bash
+npm run markets:create -- \
+  --question "Will Arc mainnet launch by 2026-07-01?" \
+  --closes-at "2026-07-01T00:00:00.000Z" \
+  --category Crypto \
+  --description "Resolves YES if Arc mainnet is publicly operational by the close time."
+```
+
+For an M2 smoke probe, create a short-lived market and use the printed `MARKETS_SMOKE_MARKET_ID`:
+
+```bash
+npm run markets:create -- \
+  --question "Smoke market" \
+  --close-in-minutes 8 \
+  --category Smoke
+
+node --env-file=.env.local --import tsx scripts/smoke-markets.ts
+```
+
+Required env for creation: `ADMIN_API_KEY`, `SUPABASE_URL` or `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `MARKETS_FACTORY`, and `MARKETS_RELAYER_PRIVATE_KEY`.
+
+The Vercel Hobby plan only allows daily cron jobs, so `vercel.json` schedules `/api/markets-expire-orders` once per day. On Vercel Pro, change the schedule to `*/5 * * * *` for five-minute expiry sweeps.
 
 ## Environment
 

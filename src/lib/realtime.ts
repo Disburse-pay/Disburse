@@ -8,7 +8,14 @@ import {
   type CrossChainPaymentState
 } from "./crosschain.js";
 
-export type QrRealtimeEventType = "submitted" | "proving" | "settling" | "paid" | "failed" | "expired";
+export type QrRealtimeEventType =
+  | "submitted"
+  | "proving"
+  | "settling"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "psp_issue";
 
 export type PaymentRequestRow = {
   id: string;

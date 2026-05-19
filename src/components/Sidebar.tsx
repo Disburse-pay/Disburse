@@ -1,7 +1,9 @@
 import {
+  BarChart3,
   BookOpen,
   ChevronsLeft,
   Database,
+  ExternalLink,
   FileText,
   LayoutGrid,
   type LucideIcon,
@@ -10,6 +12,7 @@ import {
   Send,
 } from "lucide-react";
 import { useI18n } from "../lib/i18n";
+import { getBetHref } from "../lib/routing";
 import { cn } from "../lib/utils";
 
 export type Page =
@@ -21,7 +24,11 @@ export type Page =
   | "import-export"
   | "milestones"
   | "statements"
-  | "docs";
+  | "docs"
+  | "markets"
+  | "market-detail"
+  | "market-positions"
+  | "market-history";
 
 type NavItem = {
   page: Page;
@@ -42,8 +49,8 @@ type Props = {
 
 const navItems: NavItem[] = [
   { page: "dashboard",     labelKey: "overview",      href: "/",               icon: LayoutGrid, group: "operate" },
-  { page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send,       group: "operate" },
   { page: "qr-payments",   labelKey: "qrPayments",    href: "/qr-payments",    icon: QrCode,     group: "operate" },
+  { page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send,       group: "operate" },
   { page: "milestones",    labelKey: "milestones",    href: "/milestones",     icon: Milestone,  group: "operate" },
   { page: "statements",    labelKey: "statements",    href: "/statements",     icon: FileText,   group: "manage"  },
   { page: "import-export", labelKey: "backup",        href: "/import-export",  icon: Database,   group: "manage"  },
@@ -104,6 +111,48 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate,
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-3">
+        {(() => {
+          // Cross-subdomain link to the prediction-markets shell. Rendered as a
+          // peer of the main nav groups but visually separated as a sibling
+          // product surface, not an in-app route.
+          const betHref = getBetHref("/");
+          const betLabel = "Bet";
+          return (
+            <div className="border-b border-[var(--line-soft)] pb-3">
+              {!isCollapsed && (
+                <p className="mb-1.5 px-5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--muted-soft)]">
+                  products
+                </p>
+              )}
+              <a
+                href={betHref}
+                onClick={(e) => onNavigate(e, betHref)}
+                title={isCollapsed ? betLabel : undefined}
+                className={cn(
+                  "relative mx-2 flex items-center gap-3 rounded-[var(--btn-radius)] px-3 py-[7px] text-[12.5px] text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)]/70 hover:text-[var(--ink)]",
+                  isCollapsed && "mx-2 justify-center px-0",
+                )}
+              >
+                <BarChart3
+                  size={15}
+                  strokeWidth={1.6}
+                  className="flex-shrink-0 text-[var(--muted)] transition-colors"
+                />
+                {!isCollapsed && (
+                  <>
+                    <span className="font-medium">{betLabel}</span>
+                    <ExternalLink
+                      size={11}
+                      strokeWidth={1.6}
+                      className="ml-auto text-[var(--muted-soft)]"
+                      aria-hidden="true"
+                    />
+                  </>
+                )}
+              </a>
+            </div>
+          );
+        })()}
         {groups.map((group) => {
           const items = navItems.filter((i) => i.group === group);
           return (

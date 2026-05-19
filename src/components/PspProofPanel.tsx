@@ -1,14 +1,13 @@
 /**
  * PSP Proof Panel
  *
- * Displays Portable Settlement Proof details in the receipt view.
- * Fetches the PSP by request ID from the API and shows:
- * - UID and digest
- * - Copy JSON / Download buttons
- * - Link to the public viewer
+ * Displays the Portable Settlement Proof tied to a paid QR request. The panel
+ * queries by request_id so the receipt surface can show the proof without
+ * already knowing the immutable PSP UID.
  */
 
-import { useEffect, useState } from "react";
+import { Check, Copy, Download, ExternalLink, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { PspV1 } from "../lib/psp/types";
 
 type PspProofPanelProps = {
@@ -29,11 +28,8 @@ export function PspProofPanel({ requestId, onCopy }: PspProofPanelProps) {
       setError(null);
 
       try {
-        // Try fetching by building UID from the API — we don't know the UID yet,
-        // so we query by request_id through a slightly different path
         const response = await fetch(`/api/psp?request_id=${encodeURIComponent(requestId)}`);
         if (response.status === 404) {
-          // No PSP yet — not an error, just not issued
           if (!cancelled) {
             setPsp(null);
             setLoading(false);
@@ -58,85 +54,112 @@ export function PspProofPanel({ requestId, onCopy }: PspProofPanelProps) {
       }
     }
 
-    fetchPsp();
-    return () => { cancelled = true; };
+    void fetchPsp();
+    return () => {
+      cancelled = true;
+    };
   }, [requestId]);
 
-  if (loading) {
-    return null; // Don't show anything while loading
-  }
+  const jsonContent = useMemo(() => (psp ? JSON.stringify(psp, null, 2) : ""), [psp]);
 
-  if (error || !psp) {
-    return null; // Silently hide if no PSP exists
-  }
-
-  const viewerUrl = `/api/psp-viewer?uid=${encodeURIComponent(psp.uid)}`;
-  const jsonContent = JSON.stringify(psp, null, 2);
-
-  function handleCopyJson() {
+  function copyValue(value: string) {
     if (onCopy) {
-      onCopy(jsonContent);
-    } else {
-      navigator.clipboard.writeText(jsonContent).catch(() => {});
+      onCopy(value);
+      return;
     }
+    navigator.clipboard.writeText(value).catch(() => {});
   }
 
   function handleDownload() {
+    if (!psp) return;
     const blob = new Blob([jsonContent], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${psp!.uid}.json`;
+    a.download = `${psp.uid}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  if (loading) {
+    return (
+      <section className="psp-proof-panel pending" aria-label="Portable Settlement Proof">
+        <PanelHeader title="Portable Settlement Proof" badge="checking" />
+        <p className="psp-proof-note">Checking Arc Testnet proof issuance for this request.</p>
+      </section>
+    );
+  }
+
+  if (error || !psp) {
+    return (
+      <section className="psp-proof-panel pending" aria-label="Portable Settlement Proof">
+        <PanelHeader title="Portable Settlement Proof" badge={error ? "unavailable" : "pending"} />
+        <p className="psp-proof-note">
+          The receipt is verified on Arc Testnet. A PSP will appear here when the backend issuer has signed
+          the portable proof document.
+        </p>
+      </section>
+    );
+  }
+
+  const viewerUrl = `/api/psp-viewer?uid=${encodeURIComponent(psp.uid)}`;
+  const fetchCommand = `curl -s "${window.location.origin}/api/psp?uid=${psp.uid}" | npx @disburse/psp-verify --stdin --issuer ${psp.issuer.publicKey}`;
+
   return (
-    <div className="psp-proof-panel">
-      <div className="psp-proof-header">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          <polyline points="9 12 11 14 15 10" />
-        </svg>
-        <span className="psp-proof-title">Portable Settlement Proof</span>
-        <span className="psp-proof-badge">{psp.uid}</span>
-      </div>
+    <section className="psp-proof-panel" aria-label="Portable Settlement Proof">
+      <PanelHeader title="Portable Settlement Proof" badge={psp.uid} issued />
 
       <div className="psp-proof-details">
-        <div className="psp-proof-row">
-          <span className="psp-proof-label">Digest</span>
-          <code className="psp-proof-value">{psp.digest.slice(0, 10)}...{psp.digest.slice(-8)}</code>
+        <ProofRow label="Digest" value={`${psp.digest.slice(0, 10)}...${psp.digest.slice(-8)}`} />
+        <ProofRow label="Issuer" value={`${psp.issuer.publicKey.slice(0, 6)}...${psp.issuer.publicKey.slice(-4)}`} />
+        <ProofRow label="Network" value={`${psp.networkMode} · Arc Testnet`} />
+      </div>
+
+      <div className="psp-proof-command">
+        <div>
+          <span>CLI verify</span>
+          <code>{fetchCommand}</code>
         </div>
-        <div className="psp-proof-row">
-          <span className="psp-proof-label">Issuer</span>
-          <code className="psp-proof-value">{psp.issuer.publicKey.slice(0, 6)}...{psp.issuer.publicKey.slice(-4)}</code>
-        </div>
-        <div className="psp-proof-row">
-          <span className="psp-proof-label">Network</span>
-          <span className="psp-proof-value">{psp.networkMode}</span>
-        </div>
+        <button type="button" aria-label="Copy CLI verification command" onClick={() => copyValue(fetchCommand)}>
+          <Copy size={12} strokeWidth={1.8} />
+        </button>
       </div>
 
       <div className="psp-proof-actions">
-        <button className="compliance-button" type="button" onClick={handleCopyJson}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-          </svg>
+        <button className="compliance-button" type="button" onClick={() => copyValue(jsonContent)}>
+          <Copy size={14} strokeWidth={1.5} />
           Copy JSON
         </button>
         <button className="compliance-button" type="button" onClick={handleDownload}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-          </svg>
+          <Download size={14} strokeWidth={1.5} />
           Download
         </button>
         <a className="compliance-button" href={viewerUrl} target="_blank" rel="noopener noreferrer">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/>
-          </svg>
-          View Proof
+          <ExternalLink size={14} strokeWidth={1.5} />
+          View proof
         </a>
       </div>
+    </section>
+  );
+}
+
+function PanelHeader({ title, badge, issued }: { title: string; badge: string; issued?: boolean }) {
+  return (
+    <div className="psp-proof-header">
+      <span className="psp-proof-icon" aria-hidden="true">
+        {issued ? <Check size={14} strokeWidth={1.8} /> : <ShieldCheck size={14} strokeWidth={1.6} />}
+      </span>
+      <span className="psp-proof-title">{title}</span>
+      <span className="psp-proof-badge">{badge}</span>
+    </div>
+  );
+}
+
+function ProofRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="psp-proof-row">
+      <span className="psp-proof-label">{label}</span>
+      <code className="psp-proof-value">{value}</code>
     </div>
   );
 }

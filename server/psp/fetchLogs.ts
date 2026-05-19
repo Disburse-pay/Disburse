@@ -23,6 +23,7 @@ import {
   type RemotePaymentSourceChainId,
 } from "../../src/lib/crosschain.js";
 import { createCrossChainPublicClient } from "../../src/lib/crosschainOnchain.js";
+import type { MarketClaim } from "../../src/lib/markets/types.js";
 import type { PaymentRequest, Receipt } from "../../src/lib/payments.js";
 import type { PspSettlement, PspSettlementEvent, PspSource } from "../../src/lib/psp/types.js";
 
@@ -41,6 +42,20 @@ const QR_PAYMENT_SETTLED_EVENT = {
     { name: "destinationToken", type: "address", indexed: false },
     { name: "amount", type: "uint256", indexed: false },
     { name: "nonce", type: "uint256", indexed: false },
+  ],
+} as const;
+
+// Mirrors `Market.sol` exactly. Shape kept in lockstep with the on-chain
+// event so the same fetch-and-decode pattern from QrPaymentSettled applies.
+const MARKET_CLAIMED_EVENT = {
+  type: "event" as const,
+  name: "MarketClaimed" as const,
+  inputs: [
+    { name: "settlementId", type: "bytes32", indexed: true },
+    { name: "marketId", type: "bytes32", indexed: true },
+    { name: "claimant", type: "address", indexed: true },
+    { name: "amount", type: "uint256", indexed: false },
+    { name: "outcome", type: "uint8", indexed: false },
   ],
 } as const;
 
@@ -74,6 +89,10 @@ const QR_PAYMENT_SETTLED_SELECTOR = keccak256(
 
 const TRANSFER_SELECTOR = keccak256(
   toBytes("Transfer(address,address,uint256)")
+);
+
+const MARKET_CLAIMED_SELECTOR = keccak256(
+  toBytes("MarketClaimed(bytes32,bytes32,address,uint256,uint8)")
 );
 
 // ---------- Types ----------
@@ -229,6 +248,73 @@ export async function readSourcePaymentLog(
       payer: (decoded as any).args.payer as Address,
       token: (decoded as any).args.token as Address,
       amount: String((decoded as any).args.amount),
+    },
+  };
+}
+
+// ---------- Market-claim settlement (MarketClaimed) ----------
+
+/**
+ * Read the `MarketClaimed` event from the Arc claim transaction.
+ *
+ * Mirrors `readCrossChainSettlementLog` — the on-chain event was designed in
+ * lockstep with QrPaymentSettled so the same fetch-decode-then-assemble
+ * pattern produces a valid PspSettlement. Returns the settlement metadata
+ * needed by the PSP issuer; the market-side fields (question, outcome,
+ * payout) are denormalized at the issuer from the off-chain MarketClaim row.
+ *
+ * Asserts the event's `settlementId` matches the off-chain row to catch the
+ * "wrong tx hash recorded in market_claims" failure mode loudly.
+ */
+export async function readMarketClaimLog(
+  claim: MarketClaim,
+  marketContract: Address
+): Promise<ArcSettlementLog> {
+  const txReceipt = await publicClient.getTransactionReceipt({
+    hash: claim.txHash as Hash,
+  });
+
+  const claimedLog = txReceipt.logs.find(
+    (log) =>
+      log.address.toLowerCase() === marketContract.toLowerCase() &&
+      (log as any).topics[0]?.toLowerCase() === MARKET_CLAIMED_SELECTOR.toLowerCase()
+  );
+
+  if (!claimedLog) {
+    throw new Error(
+      `No MarketClaimed log found in tx ${claim.txHash} from market ${marketContract}`
+    );
+  }
+
+  const decoded = decodeEventLog({
+    abi: [MARKET_CLAIMED_EVENT],
+    data: claimedLog.data,
+    topics: (claimedLog as any).topics as [Hex, ...Hex[]],
+  });
+
+  const onchainSettlementId = (decoded as any).args.settlementId as Hex;
+  if (onchainSettlementId.toLowerCase() !== claim.settlementId.toLowerCase()) {
+    throw new Error(
+      `Settlement ID mismatch in tx ${claim.txHash}: log emitted ${onchainSettlementId}, market_claims row has ${claim.settlementId}`
+    );
+  }
+
+  const block = await publicClient.getBlock({
+    blockNumber: txReceipt.blockNumber,
+  });
+
+  return {
+    settlement: {
+      chainId: ARC_CHAIN_ID,
+      txHash: claim.txHash as Hash,
+      blockNumber: String(txReceipt.blockNumber),
+      settledAt: new Date(Number(block.timestamp) * 1000).toISOString(),
+      settlementEvent: {
+        contract: getAddress(marketContract),
+        settlementId: onchainSettlementId,
+        eventTopic: MARKET_CLAIMED_SELECTOR,
+        logIndex: claimedLog.logIndex ?? 0,
+      },
     },
   };
 }

@@ -94,6 +94,32 @@ export type PspLinkedDocument = {
   uri?: string;
 };
 
+/**
+ * Market-claim block for PSPs that prove a prediction-market payout.
+ *
+ * Exactly one of `invoice` or `marketClaim` is present on a PSP core. Verifiers
+ * MUST ignore unknown fields per spec §2.3, so v1.0 verifiers continue to
+ * read v1.1 PSPs without error — they just won't surface the market context.
+ */
+export type PspMarketClaim = {
+  /** Off-chain market UUID */
+  marketId: string;
+  /** Market contract address on Arc */
+  onchainMarket: Address;
+  /** Denormalized question text so the PSP is self-describing offline */
+  question: string;
+  /** Which outcome the claimant held (and won) */
+  outcome: "YES" | "NO";
+  /** Resolved winning outcome (will equal `outcome` for a successful claim) */
+  winningOutcome: "YES" | "NO";
+  /** Shares redeemed (1e6 fixed-point, stringified) */
+  sharesRedeemed: string;
+  /** USDC paid out (human-readable, e.g. "5.00") */
+  payoutAmount: string;
+  /** When the market was resolved (ISO-8601) */
+  resolvedAt: string;
+};
+
 // ---------- Signature ----------
 
 export type PspSignatureAlgorithm = "secp256k1-keccak256";
@@ -115,7 +141,17 @@ export type PspCore = {
   version: PspVersion;
   networkMode: NetworkMode;
   issuer: PspIssuer;
-  invoice: PspInvoice;
+  /**
+   * Payment-invoice context. Present for payment PSPs (the original v1 shape).
+   * Made optional in v1.1 — market-claim PSPs use `marketClaim` instead. Exactly
+   * one of `invoice` or `marketClaim` MUST be set on a valid PSP.
+   */
+  invoice?: PspInvoice;
+  /**
+   * Market-claim context for prediction-market payout PSPs. Added in v1.1.
+   * Mutually exclusive with `invoice`.
+   */
+  marketClaim?: PspMarketClaim;
   settlement: PspSettlement;
   /** Present only for cross-chain settlements */
   source?: PspSource;
@@ -142,18 +178,32 @@ export type PspV1 = PspCore & {
 
 // ---------- Verification result ----------
 
+/**
+ * Verifier output shape. The discriminator `kind` lets consumers branch on
+ * payment vs market-claim PSPs; invoice-only and marketClaim-only fields are
+ * each optional. Always-present fields are non-optional once verification
+ * succeeds.
+ */
+export type PspVerifyFields = {
+  kind: "payment" | "market_claim";
+  settlementChainId: number;
+  settlementTxHash: Hash;
+  issuer: Address;
+  networkMode: NetworkMode;
+  requestId?: string;
+  payer?: Address;
+  recipient?: Address;
+  token?: string;
+  amount?: string;
+  marketId?: string;
+  onchainMarket?: Address;
+  question?: string;
+  outcome?: "YES" | "NO";
+  payoutAmount?: string;
+};
+
 export type PspVerifyResult = {
   ok: boolean;
   reason?: string;
-  fields?: {
-    requestId: string;
-    payer: Address;
-    recipient: Address;
-    token: string;
-    amount: string;
-    settlementChainId: number;
-    settlementTxHash: Hash;
-    issuer: Address;
-    networkMode: NetworkMode;
-  };
+  fields?: PspVerifyFields;
 };

@@ -74,7 +74,7 @@ export async function readCrossChainBalances(
   const client = createCrossChainPublicClient(sourceChainId);
   const [nativeBalance, tokenBalance, gasPrice] = await Promise.all([
     client.getBalance({ address: account }),
-    client.readContract({
+    readCrossChainContract<bigint>(client, {
       address: route.tokenAddress,
       abi: crossChainErc20Abi,
       functionName: "balanceOf",
@@ -98,7 +98,7 @@ export async function estimateCrossChainPayment(
   const route = requireCrossChainBrowserRoute(sourceChainId);
   const client = createCrossChainPublicClient(sourceChainId);
   const amount = parseTokenAmount(request.amount, request.token);
-  const allowance = await client.readContract({
+  const allowance = await readCrossChainContract<bigint>(client, {
     address: route.tokenAddress,
     abi: crossChainErc20Abi,
     functionName: "allowance",
@@ -159,7 +159,7 @@ export async function submitCrossChainPayment(
   const route = requireCrossChainBrowserRoute(sourceChainId);
   const client = createCrossChainPublicClient(sourceChainId);
   const amount = parseTokenAmount(request.amount, request.token);
-  const allowance = await client.readContract({
+  const allowance = await readCrossChainContract<bigint>(client, {
     address: route.tokenAddress,
     abi: crossChainErc20Abi,
     functionName: "allowance",
@@ -246,7 +246,7 @@ export async function waitForCrossChainPaymentReceipt(
       `Wallet returned ${hash}, but it was sent to ${receipt.to ?? "an unknown contract"} instead of the QR payment contract ${sourceContract}. Confirm the QR pay transaction, not a USDC token transaction.`
     );
   }
-  if (!receipt.logs.some((log) => isExpectedSourcePaymentLog(log, request, sourceContract, route.tokenAddress))) {
+  if (!receipt.logs.some((log) => isExpectedSourcePaymentLog(log as unknown as SourcePaymentLog, request, sourceContract, route.tokenAddress))) {
     throw new Error(
       `QR payment transaction ${hash} did not emit the expected payment event. The source-chain USDC may have moved without a Polymer-provable QR payment event.`
     );
@@ -289,12 +289,14 @@ function buildCrossChainPayArgs(
   ];
 }
 
+type SourcePaymentLog = {
+  address: Address;
+  data: `0x${string}`;
+  topics: [] | [`0x${string}`, ...`0x${string}`[]];
+};
+
 function isExpectedSourcePaymentLog(
-  log: {
-    address: Address;
-    data: `0x${string}`;
-    topics: [] | [`0x${string}`, ...`0x${string}`[]];
-  },
+  log: SourcePaymentLog,
   request: PaymentRequest,
   sourceContract: Address,
   tokenAddress: Address
@@ -308,7 +310,16 @@ function isExpectedSourcePaymentLog(
       abi: [qrPaymentInitiatedEvent],
       data: log.data,
       topics: log.topics
-    });
+    }) as {
+      eventName: string;
+      args: {
+        requestId: `0x${string}`;
+        recipient: Address;
+        token: Address;
+        amount: bigint;
+        destinationChainId: bigint;
+      };
+    };
 
     return (
       decoded.eventName === "QrPaymentInitiated" &&
@@ -356,7 +367,7 @@ async function waitForCrossChainAllowance(
   let allowance = 0n;
 
   while (Date.now() <= deadline) {
-    allowance = await client.readContract({
+    allowance = await readCrossChainContract<bigint>(client, {
       address: input.token,
       abi: crossChainErc20Abi,
       functionName: "allowance",
@@ -409,6 +420,13 @@ function readProviderErrorCode(error: unknown): number | undefined {
 
 function isAllowanceRevert(error: unknown): boolean {
   return readErrorText(error).some((message) => /allowance|transfer amount exceeds allowance/i.test(message));
+}
+
+function readCrossChainContract<T>(
+  client: ReturnType<typeof createCrossChainPublicClient>,
+  parameters: unknown
+): Promise<T> {
+  return client.readContract(parameters as any) as Promise<T>;
 }
 
 function readErrorText(error: unknown, seen = new Set<unknown>()): string[] {

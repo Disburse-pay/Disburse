@@ -10,7 +10,7 @@ import {
 } from "./canonical";
 import { buildSignedPsp, signPsp, verifyPspSignature } from "./sign";
 import { verify, verifyJson } from "./verify";
-import type { PspCore, PspV1 } from "./types";
+import type { PspCore, PspInvoice, PspV1 } from "./types";
 
 // ---------- Fixtures ----------
 
@@ -20,7 +20,12 @@ function createTestKey(): { privateKey: Hex; address: Address } {
   return { privateKey, address: account.address };
 }
 
-function createTestCore(issuerAddress: Address): PspCore {
+// Narrow return type so test sites can dereference `.invoice.X` directly. The
+// PspCore type itself made `invoice` optional in v1.1 (market_claim PSPs omit
+// it), but every fixture here is a payment-shape PSP.
+function createTestCore(
+  issuerAddress: Address
+): PspCore & { invoice: PspInvoice } {
   return {
     version: 1,
     networkMode: "testnet",
@@ -189,7 +194,7 @@ describe("PSP Canonicalization", () => {
     expect(extracted).not.toHaveProperty("uid");
     expect(extracted).not.toHaveProperty("createdAt");
     expect(extracted.version).toBe(1);
-    expect(extracted.invoice.requestId).toBe(core.invoice.requestId);
+    expect(extracted.invoice!.requestId).toBe(core.invoice.requestId);
   });
 });
 
@@ -260,7 +265,7 @@ describe("PSP Signing", () => {
 
     const tampered = {
       ...psp,
-      invoice: { ...psp.invoice, amount: "999.99" },
+      invoice: { ...psp.invoice!, amount: "999.99" },
     };
 
     const result = await verifyPspSignature(tampered);
@@ -291,9 +296,10 @@ describe("PSP Verification", () => {
 
     const result = await verify(psp);
     expect(result.ok).toBe(true);
+    expect(result.fields?.kind).toBe("payment");
     expect(result.fields?.requestId).toBe(core.invoice.requestId);
-    expect(result.fields?.payer.toLowerCase()).toBe(core.invoice.payer.toLowerCase());
-    expect(result.fields?.recipient.toLowerCase()).toBe(core.invoice.recipient.toLowerCase());
+    expect(result.fields?.payer?.toLowerCase()).toBe(core.invoice.payer.toLowerCase());
+    expect(result.fields?.recipient?.toLowerCase()).toBe(core.invoice.recipient.toLowerCase());
     expect(result.fields?.issuer.toLowerCase()).toBe(address.toLowerCase());
     expect(result.fields?.networkMode).toBe("testnet");
   });
@@ -321,7 +327,7 @@ describe("PSP Verification", () => {
     const core = createTestCore(address);
     const psp = await buildSignedPsp(core, privateKey);
 
-    const tampered = { ...psp, invoice: { ...psp.invoice, amount: "0.01" } };
+    const tampered = { ...psp, invoice: { ...psp.invoice!, amount: "0.01" } };
     const result = await verify(tampered);
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("Digest mismatch");
@@ -335,7 +341,7 @@ describe("PSP Verification", () => {
     const tampered = {
       ...psp,
       invoice: {
-        ...psp.invoice,
+        ...psp.invoice!,
         recipient: "0x0000000000000000000000000000000000000001" as Address,
       },
     };

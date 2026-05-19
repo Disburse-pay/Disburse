@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, LogOut, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
 import { useI18n } from "../lib/i18n";
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
   expectedChainLabel: string;
   isConnecting: boolean;
   onConnect: () => void;
+  onDisconnect?: () => void;
   onSwitch: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
@@ -34,6 +36,7 @@ export default function Header({
   expectedChainLabel,
   isConnecting,
   onConnect,
+  onDisconnect,
   onSwitch,
   onToggleTheme,
   onOpenSettings,
@@ -138,18 +141,7 @@ export default function Header({
             {t("switchToNetwork", { network: expectedChainLabel })}
           </button>
         ) : (
-          <div className="flex items-center gap-2 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-2.5 py-1.5">
-            <span
-              className="relative flex h-1.5 w-1.5 items-center justify-center"
-              aria-hidden="true"
-            >
-              <span className="absolute h-full w-full animate-ping rounded-full bg-[var(--primary-bg)] opacity-40" />
-              <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--primary-bg)]" />
-            </span>
-            <span className="font-mono text-[11px] leading-none text-[var(--ink)]">
-              {shortAddr}
-            </span>
-          </div>
+          <ConnectedWalletPill shortAddr={shortAddr ?? ""} onDisconnect={onDisconnect} />
         )}
       </div>
     </header>
@@ -179,6 +171,62 @@ function translateHeaderSubtitle(subtitle: string, t: (key: string, params?: Rec
     "How Disburse settles, verifies, and exports payments.": "routeDocsSubtitle",
   };
   return keyBySubtitle[subtitle] ? t(keyBySubtitle[subtitle]) : subtitle;
+}
+
+function ConnectedWalletPill({
+  shortAddr,
+  onDisconnect,
+}: {
+  shortAddr: string;
+  onDisconnect?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-2.5 py-1.5 transition-colors hover:border-[var(--ink)]"
+      >
+        <span
+          className="relative flex h-1.5 w-1.5 items-center justify-center"
+          aria-hidden="true"
+        >
+          <span className="absolute h-full w-full animate-ping rounded-full bg-[var(--primary-bg)] opacity-40" />
+          <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--primary-bg)]" />
+        </span>
+        <span className="font-mono text-[11px] leading-none text-[var(--ink)]">
+          {shortAddr}
+        </span>
+      </button>
+      {open && onDisconnect && (
+        <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[160px] overflow-hidden rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-md">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onDisconnect();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)]"
+          >
+            <LogOut size={12} strokeWidth={1.75} />
+            Disconnect
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function IconButton({

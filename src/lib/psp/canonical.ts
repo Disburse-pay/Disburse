@@ -118,15 +118,26 @@ export function deterministicStringify(value: unknown): string {
 /**
  * Extract the signable core from a PspCore (or a full PspV1 that has extra fields).
  * Removes digest, signature, uid, createdAt — only core fields remain.
+ *
+ * v1.1: a PSP carries either `invoice` (payment) or `marketClaim` (market
+ * payout) but not both. Each is included only when present so the canonical
+ * bytes match whatever shape was signed.
  */
 export function extractCore(psp: PspCore & Record<string, unknown>): PspCore {
   const core: PspCore = {
     version: psp.version,
     networkMode: psp.networkMode,
     issuer: psp.issuer,
-    invoice: psp.invoice,
     settlement: psp.settlement,
   };
+
+  if (psp.invoice) {
+    core.invoice = psp.invoice;
+  }
+
+  if (psp.marketClaim) {
+    core.marketClaim = psp.marketClaim;
+  }
 
   if (psp.source) {
     core.source = psp.source;

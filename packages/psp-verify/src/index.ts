@@ -30,6 +30,7 @@ export type {
   PspSignatureAlgorithm,
   PspSource,
   PspV1,
+  PspVerifyFields,
   PspVerifyResult,
   PspVersion,
 } from "./types.js";

@@ -1,6 +1,8 @@
+import type { Hash } from "viem";
 import { assertMethod, readQueryString, sendError, type ApiRequest, type ApiResponse } from "../server/http.js";
 import { readPspByUid } from "../server/psp/issue.js";
 import type { PspV1 } from "../src/lib/psp/types.js";
+import { ARC_DESTINATION_CHAIN_ID, getCrossChainExplorerTxUrl, isPaymentSourceChainId } from "../src/lib/crosschain.js";
 
 /**
  * GET /api/psp-viewer?uid=psp:abc123...
@@ -14,32 +16,31 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
     const uid = readQueryString(request, "uid");
     if (!uid || !/^psp:[0-9a-f]{16}$/.test(uid)) {
-      response.setHeader?.("content-type", "text/html; charset=utf-8");
+      response.setHeader?.("content-type", "application/json; charset=utf-8");
       response.status(400).json({ error: "Provide a valid PSP uid." });
       return;
     }
 
     const psp = await readPspByUid(uid);
     if (!psp) {
-      response.setHeader?.("content-type", "text/html; charset=utf-8");
+      response.setHeader?.("content-type", "application/json; charset=utf-8");
       response.status(404).json({ error: "PSP not found." });
       return;
     }
 
     const html = renderPspViewer(psp);
-    response.setHeader?.("content-type", "text/html; charset=utf-8");
-    response.setHeader?.("cache-control", "public, max-age=31536000, immutable");
-    response.status(200).json(html);
+    sendHtml(response, 200, html);
   } catch (error) {
     sendError(response, error);
   }
 }
 
 function renderPspViewer(psp: PspV1): string {
-  const arcExplorer = `https://testnet.arcscan.io/tx/${psp.settlement.txHash}`;
-  const sourceExplorer = psp.source
-    ? `https://sepolia.basescan.org/tx/${psp.source.txHash}`
-    : null;
+  const arcExplorer = getCrossChainExplorerTxUrl(ARC_DESTINATION_CHAIN_ID, psp.settlement.txHash);
+  const sourceExplorer =
+    psp.source && isPaymentSourceChainId(psp.source.chainId)
+      ? getCrossChainExplorerTxUrl(psp.source.chainId, psp.source.txHash as Hash)
+      : null;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -76,6 +77,7 @@ function renderPspViewer(psp: PspV1): string {
     <h1>Portable Settlement Proof</h1>
     <p class="uid">${psp.uid}</p>
 
+    ${psp.invoice ? `
     <div class="section">
       <h2>Invoice</h2>
       <div class="row"><span class="label">Request ID</span><span class="value">${psp.invoice.requestId}</span></div>
@@ -85,6 +87,18 @@ function renderPspViewer(psp: PspV1): string {
       <div class="row"><span class="label">Recipient</span><span class="value">${truncateAddress(psp.invoice.recipient)}</span></div>
       ${psp.invoice.invoiceDate ? `<div class="row"><span class="label">Date</span><span class="value">${psp.invoice.invoiceDate}</span></div>` : ""}
     </div>
+    ` : ""}
+
+    ${psp.marketClaim ? `
+    <div class="section">
+      <h2>Market Claim</h2>
+      <div class="row"><span class="label">Market</span><span class="value">${escapeHtml(psp.marketClaim.question)}</span></div>
+      <div class="row"><span class="label">Outcome</span><span class="value">${psp.marketClaim.outcome}${psp.marketClaim.outcome === psp.marketClaim.winningOutcome ? " (won)" : ""}</span></div>
+      <div class="row"><span class="label">Payout</span><span class="value">${psp.marketClaim.payoutAmount} USDC</span></div>
+      <div class="row"><span class="label">Market Address</span><span class="value">${truncateAddress(psp.marketClaim.onchainMarket)}</span></div>
+      <div class="row"><span class="label">Resolved At</span><span class="value">${psp.marketClaim.resolvedAt}</span></div>
+    </div>
+    ` : ""}
 
     <div class="section">
       <h2>Settlement (Arc Testnet)</h2>
@@ -126,6 +140,17 @@ curl -s "${getApiUrl()}/api/psp?uid=${psp.uid}" | npx @disburse/psp-verify --std
   </div>
 </body>
 </html>`;
+}
+
+function sendHtml(response: ApiResponse, statusCode: number, html: string) {
+  response.setHeader?.("content-type", "text/html; charset=utf-8");
+  response.setHeader?.("cache-control", "public, max-age=31536000, immutable");
+  const next = response.status(statusCode);
+  if (next.send) {
+    next.send(html);
+    return;
+  }
+  next.json(html);
 }
 
 function escapeHtml(str: string): string {
