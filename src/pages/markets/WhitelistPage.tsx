@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { ArrowRight, Loader2, KeyRound } from "lucide-react";
-import { validateWhitelistCode, requestWhitelistAccess } from "../../lib/markets/api";
+import { redeemWhitelistCode, requestWhitelistAccess } from "../../lib/markets/api";
 
 type Props = {
-  onValidated: (code: string) => void;
+  account: string;
+  onRedeemed: () => void;
 };
 
-export default function WhitelistPage({ onValidated }: Props) {
+export default function WhitelistPage({ account, onRedeemed }: Props) {
   const [mode, setMode] = useState<"code" | "request" | "success">("code");
   
   // Code state
@@ -26,11 +27,11 @@ export default function WhitelistPage({ onValidated }: Props) {
     setIsVerifying(true);
     setCodeError("");
     try {
-      const { valid } = await validateWhitelistCode(code);
-      if (valid) {
-        onValidated(code.trim().toLowerCase());
+      const res = await redeemWhitelistCode(code, account);
+      if (res.success) {
+        onRedeemed();
       } else {
-        setCodeError("Invalid or expired code.");
+        setCodeError(res.error || "Invalid or already used code.");
       }
     } catch (err) {
       setCodeError("Failed to verify code. Try again later.");
@@ -71,7 +72,7 @@ export default function WhitelistPage({ onValidated }: Props) {
             Disburse Markets Beta
           </h1>
           <p className="text-[14px] leading-relaxed text-[var(--muted)]">
-            Prediction markets are currently in a closed beta. You need a whitelist code to access the platform.
+            Your wallet (<span className="font-mono">{account.slice(0,6)}…{account.slice(-4)}</span>) is not whitelisted yet. Enter your single-use code to bind it to your wallet.
           </p>
         </div>
 

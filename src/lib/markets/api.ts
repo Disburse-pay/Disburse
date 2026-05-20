@@ -440,11 +440,25 @@ export async function fetchMyClaims(account: Address): Promise<MarketClaim[]> {
 
 // ---------- whitelist ----------
 
-export async function validateWhitelistCode(code: string): Promise<{ valid: boolean }> {
+export async function checkWhitelistStatus(address: string): Promise<{ whitelisted: boolean }> {
   try {
-    return await fetchJson<{ valid: boolean }>(`/api/markets-whitelist-validate?code=${encodeURIComponent(code)}`);
+    return await fetchJson<{ whitelisted: boolean }>(`/api/markets-whitelist-status?address=${encodeURIComponent(address)}`);
   } catch (error) {
-    return { valid: false };
+    return { whitelisted: false };
+  }
+}
+
+export async function redeemWhitelistCode(code: string, address: string): Promise<{ success: boolean; error?: string; message?: string }> {
+  try {
+    return await fetchJson<{ success: boolean; error?: string; message?: string }>("/api/markets-whitelist-redeem", {
+      method: "POST",
+      body: JSON.stringify({ code, address }),
+    });
+  } catch (error) {
+    if (error instanceof MarketsApiError) {
+      return { success: false, error: error.message };
+    }
+    return { success: false, error: "Failed to redeem code" };
   }
 }
 

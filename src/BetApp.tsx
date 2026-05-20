@@ -21,7 +21,8 @@ import MarketDetailPage from "./pages/markets/MarketDetailPage";
 import MyPositionsPage from "./pages/markets/MyPositionsPage";
 import HistoryPage from "./pages/markets/HistoryPage";
 import WhitelistPage from "./pages/markets/WhitelistPage";
-import { validateWhitelistCode } from "./lib/markets/api";
+import { checkWhitelistStatus } from "./lib/markets/api";
+
 
 type NavItem = {
   page: Page;
@@ -42,30 +43,33 @@ export default function BetApp() {
   const [, setRouteKey] = useState<string>(() => getCurrentRouteKey());
 
   // Whitelist gating state
+  const wallet = useDisburseDynamicWallet();
+  const account = wallet.getAccount?.();
   const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(null);
 
-  // Check whitelist status on mount
+  // Check whitelist status when account changes
   useEffect(() => {
+    if (!account) {
+      setIsWhitelisted(null);
+      return;
+    }
+    
+    let cancelled = false;
     async function checkWhitelist() {
-      const code = localStorage.getItem("disburse_bet_whitelist_code");
-      if (!code) {
-        setIsWhitelisted(false);
-        return;
-      }
-      // Validate with server
-      const { valid } = await validateWhitelistCode(code);
-      if (valid) {
-        setIsWhitelisted(true);
-      } else {
-        localStorage.removeItem("disburse_bet_whitelist_code");
-        setIsWhitelisted(false);
+      // Show loading while checking
+      setIsWhitelisted(null);
+      const { whitelisted } = await checkWhitelistStatus(account!);
+      if (!cancelled) {
+        setIsWhitelisted(whitelisted);
       }
     }
     void checkWhitelist();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [account]);
 
-  const handleWhitelistSuccess = useCallback((code: string) => {
-    localStorage.setItem("disburse_bet_whitelist_code", code);
+  const handleWhitelistRedeemed = useCallback(() => {
     setIsWhitelisted(true);
   }, []);
 
@@ -101,28 +105,47 @@ export default function BetApp() {
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
   }, []);
 
-  // Show nothing while verifying local storage code
-  if (isWhitelisted === null) {
-    return <div className="min-h-screen bg-[var(--canvas)]" />;
-  }
-
-  // Show whitelist gate if not validated
-  if (!isWhitelisted) {
-    return <WhitelistPage onValidated={handleWhitelistSuccess} />;
-  }
+  // If not connected, show the shell but prompt to connect.
+  // If connected but not whitelisted, show the WhitelistPage.
+  // If connected and whitelisted, render the markets.
+  const isReady = account && isWhitelisted;
 
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
       <BetHeader page={page} onNavigate={onNavigate} />
-      <div className="mx-auto flex max-w-[1400px] gap-8 px-6 pt-6 md:px-10">
-        <BetSidebar page={page} onNavigate={onNavigate} />
-        <main className="min-w-0 flex-1 pt-2">
-          {page === "markets" && <MarketsListPage onNavigate={onNavigate} />}
-          {page === "market-detail" && <MarketDetailPage marketId={marketId} onNavigate={onNavigate} />}
-          {page === "market-positions" && <MyPositionsPage onNavigate={onNavigate} />}
-          {page === "market-history" && <HistoryPage onNavigate={onNavigate} />}
-        </main>
-      </div>
+      
+      {!account ? (
+        <div className="mx-auto flex max-w-[1400px] flex-col items-center justify-center gap-6 px-6 pt-32 text-center md:px-10">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ink)] text-[var(--canvas)]">
+            <Wallet className="h-8 w-8" />
+          </div>
+          <h1 className="font-mono text-[16px] font-semibold tracking-tight text-[var(--ink)]">
+            Disburse Markets Beta
+          </h1>
+          <p className="max-w-[400px] text-[14px] leading-relaxed text-[var(--muted)]">
+            Connect your wallet to enter the prediction markets closed beta.
+          </p>
+          <button
+            type="button"
+            onClick={() => wallet.openAuthFlow?.()}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--ink)] px-6 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--canvas)] transition-opacity hover:opacity-90"
+          >
+            Connect Wallet
+          </button>
+        </div>
+      ) : !isWhitelisted ? (
+        <WhitelistPage account={account} onRedeemed={handleWhitelistRedeemed} />
+      ) : (
+        <div className="mx-auto flex max-w-[1400px] gap-8 px-6 pt-6 md:px-10">
+          <BetSidebar page={page} onNavigate={onNavigate} />
+          <main className="min-w-0 flex-1 pt-2">
+            {page === "markets" && <MarketsListPage onNavigate={onNavigate} />}
+            {page === "market-detail" && <MarketDetailPage marketId={marketId} onNavigate={onNavigate} />}
+            {page === "market-positions" && <MyPositionsPage onNavigate={onNavigate} />}
+            {page === "market-history" && <HistoryPage onNavigate={onNavigate} />}
+          </main>
+        </div>
+      )}
     </div>
   );
 }
