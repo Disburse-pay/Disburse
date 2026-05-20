@@ -8,6 +8,7 @@ import marketsClaims from "../api-handlers/markets-claims.js";
 import marketsDetail from "../api-handlers/markets-detail.js";
 import marketsExpireOrders from "../api-handlers/markets-expire-orders.js";
 import marketsFills from "../api-handlers/markets-fills.js";
+import marketsMyFills from "../api-handlers/markets-my-fills.js";
 import marketsOrderbook from "../api-handlers/markets-orderbook.js";
 import marketsOrders from "../api-handlers/markets-orders.js";
 import marketsOperatorCron from "../api-handlers/markets-operator-cron.js";
@@ -33,6 +34,7 @@ const handlers: Record<string, Handler> = {
   "markets-detail": marketsDetail,
   "markets-expire-orders": marketsExpireOrders,
   "markets-fills": marketsFills,
+  "markets-my-fills": marketsMyFills,
   "markets-orderbook": marketsOrderbook,
   "markets-orders": marketsOrders,
   "markets-operator-cron": marketsOperatorCron,

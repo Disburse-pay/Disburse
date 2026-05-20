@@ -31,7 +31,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { page: "markets",           label: "Markets",   href: MARKETS_PATH,           icon: LayoutGrid },
   { page: "market-positions",  label: "Positions", href: MARKET_POSITIONS_PATH,  icon: BarChart3 },
-  { page: "market-history",    label: "History",   href: MARKET_HISTORY_PATH,    icon: History }
+  { page: "market-history",    label: "Resolved",  href: MARKET_HISTORY_PATH,    icon: History }
 ];
 
 export default function BetApp() {

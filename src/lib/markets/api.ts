@@ -250,6 +250,49 @@ export async function indexFillsTx(txHash: Hex): Promise<{ insertedCount: number
   return { insertedCount: result.insertedCount };
 }
 
+// ---------- user fills (portfolio volume) ----------
+
+type MyFillWire = {
+  marketId: string;
+  outcome: number;
+  side: number;
+  price: string;
+  size: string;
+  totalUsdc: string;
+  filledAt: string;
+};
+
+export type MyFill = {
+  marketId: string;
+  outcome: number;
+  side: number;
+  priceMicros: number;
+  sizeMicros: number;
+  totalUsdcMicros: number;
+  filledAt: string;
+};
+
+/**
+ * GET /api/markets-my-fills?address=0x...
+ *
+ * Returns all fills where the user is taker or maker. Used by the portfolio
+ * dashboard to compute total volume traded.
+ */
+export async function fetchMyFills(address: Address): Promise<MyFill[]> {
+  const result = await fetchJson<{ fills: MyFillWire[] }>(
+    `/api/markets-my-fills?address=${encodeURIComponent(address)}`
+  );
+  return result.fills.map((f) => ({
+    marketId: f.marketId,
+    outcome: f.outcome,
+    side: f.side,
+    priceMicros: Number(f.price),
+    sizeMicros: Number(f.size),
+    totalUsdcMicros: Number(f.totalUsdc),
+    filledAt: f.filledAt,
+  }));
+}
+
 // ---------- orders (post a signed maker order) ----------
 
 export type WireOrder = {
