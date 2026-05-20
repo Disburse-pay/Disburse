@@ -14,6 +14,7 @@ import {
   parseWireOrder,
   verifyOrderSignature,
 } from "../server/markets/orders.js";
+import { assertMakerInventory } from "../server/markets/maker-check.js";
 import { getMarketByAddress, insertOrder } from "../server/markets/repo.js";
 
 /**
@@ -59,6 +60,13 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     if (!market) {
       throw new HttpError(404, `Unknown market contract ${order.market}`);
     }
+
+    // Pre-check: the maker must already hold the inventory + have approved
+    // the Exchange. Without this an unbacked order sits on the book until
+    // expiry; takers who try to fill it eat gas on a guaranteed-revert tx.
+    // The check itself is two RPC reads in parallel — cheap relative to the
+    // cost of advertising a broken order. See server/markets/maker-check.ts.
+    await assertMakerInventory(order, exchangeAddress);
 
     const hash = hashOrder(order, exchangeAddress);
 

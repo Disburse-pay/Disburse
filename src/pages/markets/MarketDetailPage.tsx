@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calendar, Hash } from "lucide-react";
+import type { Hash } from "viem";
+import { ArrowLeft, Calendar, Hash as HashIcon } from "lucide-react";
+import { useDisburseDynamicWallet } from "../../lib/dynamic";
 import {
   aggregateOrderbook,
   fetchFills,
   fetchMarketDetail,
   MarketsApiError,
+  recordClaim,
   type RawOpenOrder
 } from "../../lib/markets/api";
+import { readClaimableShares, submitClaim } from "../../lib/markets/onchain";
 import {
   subscribeMarketFills,
   subscribeMarketOrders
@@ -26,6 +30,7 @@ import OrderbookDepth from "../../components/markets/OrderbookDepth";
 import PriceChart from "../../components/markets/PriceChart";
 import TradePanel from "../../components/markets/TradePanel";
 import OutcomeBadge from "../../components/markets/OutcomeBadge";
+import ClaimButton from "../../components/markets/ClaimButton";
 
 type Props = {
   marketId: string | undefined;
@@ -190,7 +195,7 @@ export default function MarketDetailPage({ marketId, onNavigate }: Props) {
         <dl className="mt-4 grid grid-cols-2 gap-6 text-[11px] text-[var(--muted)] sm:grid-cols-4">
           <Meta icon={Calendar} label="Closes" value={new Date(market.closesAt).toLocaleDateString()} />
           <Meta
-            icon={Hash}
+            icon={HashIcon}
             label="Contract"
             value={`${market.onchainAddress.slice(0, 6)}…${market.onchainAddress.slice(-4)}`}
           />
@@ -220,17 +225,7 @@ export default function MarketDetailPage({ marketId, onNavigate }: Props) {
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
           {isResolved ? (
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5 text-[13px] text-[var(--muted)]">
-              This market has resolved. Winners can claim payouts from the
-              <a
-                href="/markets/history"
-                onClick={(e) => onNavigate(e, "/markets/history")}
-                className="ml-1 text-[var(--ink)] underline-offset-2 hover:underline"
-              >
-                History
-              </a>{" "}
-              page.
-            </div>
+            <ResolvedPanel market={market} onNavigate={onNavigate} />
           ) : (
             <TradePanel
               market={market}
@@ -270,6 +265,144 @@ function applyOrderChange(
   const next = prev.slice();
   next[idx] = change.order;
   return next;
+}
+
+/**
+ * ResolvedPanel — replaces the TradePanel on resolved markets.
+ *
+ * Mirrors the read+claim flow that HistoryPage already implements, but
+ * scoped to this single market so winners can claim directly from the
+ * market page without a context switch. Behaviour:
+ *   1. If wallet is disconnected → render a "Connect" CTA.
+ *   2. If wallet is connected and holds winning shares → render the
+ *      ClaimButton wired to Market.claim().
+ *   3. Otherwise → render a "No claimable shares" line.
+ *
+ * We do NOT detect prior claims here — once the tx lands the user's
+ * winning-share balance goes to zero and case (3) takes over naturally.
+ * For a polished PSP display history, the canonical surface remains
+ * /markets/history.
+ */
+function ResolvedPanel({
+  market,
+  onNavigate
+}: {
+  market: Market;
+  onNavigate: NavigateHandler;
+}) {
+  const wallet = useDisburseDynamicWallet();
+  const account = wallet.getAccount?.();
+  const [claimableMicros, setClaimableMicros] = useState<bigint>(0n);
+  const [statusMsg, setStatusMsg] = useState<string | undefined>();
+  const [didClaim, setDidClaim] = useState(false);
+
+  // Re-read the winning-share balance whenever the wallet changes (or after
+  // a claim flips it to zero).
+  useEffect(() => {
+    if (!account) {
+      setClaimableMicros(0n);
+      return;
+    }
+    let cancelled = false;
+    readClaimableShares(account, market)
+      .then((bal) => {
+        if (!cancelled) setClaimableMicros(bal);
+      })
+      .catch(() => {
+        if (!cancelled) setClaimableMicros(0n);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account, market, didClaim]);
+
+  async function handleClaim() {
+    if (!account || claimableMicros <= 0n) return;
+    setStatusMsg("Sign in wallet…");
+    try {
+      const provider = await wallet.getEthereumProvider();
+      if (!provider) throw new Error("Wallet provider not available. Reconnect and try again.");
+
+      const txHash: Hash = await submitClaim(
+        provider,
+        account,
+        market.onchainAddress,
+        claimableMicros
+      );
+      setStatusMsg("Indexing claim…");
+      await recordClaim({ marketId: market.id, txHash });
+      setStatusMsg(undefined);
+      setDidClaim(true);
+    } catch (err) {
+      const message =
+        err instanceof MarketsApiError
+          ? `Claim failed (${err.status}): ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Claim failed";
+      setStatusMsg(message);
+    }
+  }
+
+  const payoutLabel = `$${microsToUsdcString(Number(claimableMicros))}`;
+
+  return (
+    <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+          Resolved · <OutcomeBadge outcome={market.winningOutcome ?? "YES"} />
+        </p>
+      </div>
+
+      {!account ? (
+        <>
+          <p className="mb-4 text-[13px] text-[var(--muted)]">
+            Connect a wallet to check whether you have winning shares to
+            claim on this market.
+          </p>
+          <button
+            type="button"
+            onClick={() => wallet.openAuthFlow?.()}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--canvas)] hover:opacity-90"
+          >
+            Connect to claim
+          </button>
+        </>
+      ) : claimableMicros > 0n ? (
+        <>
+          <p className="mb-3 text-[13px] text-[var(--muted)]">
+            You hold {microsToUsdcString(Number(claimableMicros))}{" "}
+            {market.winningOutcome ?? "YES"} shares from the winning side.
+            Claim to redeem them 1:1 for USDC.
+          </p>
+          <div className="flex justify-end">
+            <ClaimButton
+              claimable={!statusMsg}
+              payoutLabel={payoutLabel}
+              onClaim={handleClaim}
+            />
+          </div>
+          {statusMsg && (
+            <p className="mt-3 break-all font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              {statusMsg}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="text-[13px] text-[var(--muted)]">
+          No winning shares to claim. See{" "}
+          <a
+            href="/markets/history"
+            onClick={(e) => onNavigate(e, "/markets/history")}
+            className="text-[var(--ink)] underline-offset-2 hover:underline"
+          >
+            History
+          </a>{" "}
+          for past payouts.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function BackLink({ onNavigate }: { onNavigate: NavigateHandler }) {

@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { Wallet, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Wallet } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useDisburseDynamicWallet } from "../../lib/dynamic";
 import {
   microsToUsdcString,
   type Market,
-  type OrderSide,
-  type Outcome,
-  type Position
+  type Outcome
 } from "../../lib/markets/types";
 import {
-  fetchPositions,
   indexFillsTx,
   MarketsApiError,
   postSignedOrder,
@@ -32,7 +29,6 @@ type Props = {
   rawOrders: RawOpenOrder[];
 };
 
-type Intent = "BUY" | "SELL";
 type OrderType = "LIMIT" | "MARKET";
 
 type SubmitState =
@@ -50,8 +46,21 @@ type SubmitState =
  * the taker accepts = mid ± 5%. Kept conservative for v1 — book is thin. */
 const MARKET_SLIPPAGE_BPS = 500n;
 
+/**
+ * TradePanel — BUY-only entry surface.
+ *
+ * UX model (post-simplification):
+ *   - Two big buttons: BUY YES, BUY NO. Pick a side.
+ *   - Order type: Market (sweeps the book now) or Limit (rests until taker).
+ *   - We show three numbers so the bet feels concrete:
+ *       Total       — what leaves your wallet right now
+ *       Shares      — what you receive (1 share = $1 redemption value)
+ *       If wins     — max payout if your side wins (== shares × $1)
+ *
+ * Selling is NOT here. Position holders sell from
+ * `MyPositionsPage` → `PositionCard` so the entry path stays single-purpose.
+ */
 export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders }: Props) {
-  const [intent, setIntent] = useState<Intent>("BUY");
   // Default to MARKET — that's the "click to actually trade shares" path.
   // Limit is the maker path for users who want to set their own price.
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
@@ -60,77 +69,36 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
   );
   const [sizeStr, setSizeStr] = useState<string>("10");
   const [submit, setSubmit] = useState<SubmitState>({ kind: "idle" });
-  const [position, setPosition] = useState<Position | undefined>();
 
   const wallet = useDisburseDynamicWallet();
   const account = wallet.getAccount?.();
   const hasWallet = Boolean(account);
-
-  // Load this market's position whenever the wallet changes. Used to gate
-  // the Sell flow — you can't sell shares you don't own.
-  useEffect(() => {
-    if (!account) {
-      setPosition(undefined);
-      return;
-    }
-    let cancelled = false;
-    fetchPositions(account)
-      .then((rows) => {
-        if (cancelled) return;
-        setPosition(rows.find((p) => p.marketId === market.id));
-      })
-      .catch(() => {
-        // Position read is best-effort; failures just mean the Sell section
-        // stays hidden until next reload. We don't surface this as an error
-        // because it would compete with the trade panel's primary status line.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [account, market.id, submit.kind]);
-
-  const yesShares = position?.yesSharesMicros ?? 0;
-  const noShares = position?.noSharesMicros ?? 0;
-  const sharesOwnedForOutcome = outcome === "YES" ? yesShares : noShares;
-  const canSell = sharesOwnedForOutcome > 0;
-
-  // If the user is in Sell mode and switches to an outcome they don't own,
-  // drop back to Buy — otherwise the Sell button would submit a sell with
-  // size > position, which the matching engine rejects anyway.
-  useEffect(() => {
-    if (intent === "SELL" && !canSell) setIntent("BUY");
-  }, [intent, canSell]);
 
   const priceMicros = useMemo(() => parseUsdToMicros(priceStr), [priceStr]);
   const sizeMicros = useMemo(() => parseUsdToMicros(sizeStr), [sizeStr]);
 
   const priceOk = priceMicros !== undefined && priceMicros > 0 && priceMicros < 1_000_000;
   const sizeOk = sizeMicros !== undefined && sizeMicros > 0;
-  // For sell, also enforce size <= shares owned.
-  const sellSizeOk = intent === "BUY" || (sizeMicros !== undefined && sizeMicros <= sharesOwnedForOutcome);
 
   // For Market mode the "estimated total" is the size walked against the
   // current book at the best opposite-side prices. We compute it here so the
   // Total row stays in sync with the actual on-chain sweep.
   const marketPlan = useMemo(() => {
     if (orderType !== "MARKET" || !sizeOk || !account) return undefined;
-    const limit =
-      intent === "BUY"
-        ? (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n
-        : (PRICE_SCALE * (10_000n - MARKET_SLIPPAGE_BPS)) / 10_000n;
+    const limit = (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n;
     // Clamp limit price into the valid (0, 1_000_000) range expected by the
-    // Exchange. For BUY the slippage-adjusted ceiling could exceed 1.0 — cap
-    // at PRICE_SCALE-1 so we'll still sweep any ask in-range.
+    // Exchange. The slippage-adjusted ceiling could exceed 1.0 — cap at
+    // PRICE_SCALE-1 so we'll still sweep any ask in-range.
     const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
     return planTakerFills({
       rawOrders,
       takerAddress: account,
       outcome,
-      intent,
+      intent: "BUY",
       sizeMicros: BigInt(sizeMicros!),
       limitPriceMicros: clamped
     });
-  }, [orderType, sizeOk, sizeMicros, account, rawOrders, outcome, intent]);
+  }, [orderType, sizeOk, sizeMicros, account, rawOrders, outcome]);
 
   const marketHasLiquidity = (marketPlan?.length ?? 0) > 0;
   const marketSweptSize = marketPlan?.reduce((acc, p) => acc + p.fillSize, 0n) ?? 0n;
@@ -147,6 +115,16 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         : 0
       : Number(marketSweptUsdc);
 
+  // Max payout = shares × $1. For Market mode, "shares" = what the sweep
+  // actually filled (may be less than requested if book ran out); for
+  // Limit, it's the size the user typed.
+  const sharesMicros =
+    orderType === "LIMIT" ? (sizeOk ? sizeMicros! : 0) : Number(marketSweptSize);
+  const maxPayoutMicros = sharesMicros;
+  const profitMicros = maxPayoutMicros - totalMicros;
+  const profitPct =
+    totalMicros > 0 ? (profitMicros / totalMicros) * 100 : 0;
+
   const submitting =
     submit.kind === "signing" ||
     submit.kind === "posting" ||
@@ -156,8 +134,8 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
 
   const canSubmit =
     orderType === "LIMIT"
-      ? priceOk && sizeOk && sellSizeOk && hasWallet && !submitting
-      : sizeOk && sellSizeOk && hasWallet && marketHasLiquidity && !submitting;
+      ? priceOk && sizeOk && hasWallet && !submitting
+      : sizeOk && hasWallet && marketHasLiquidity && !submitting;
 
   async function handleSubmit() {
     if (!canSubmit || !account) return;
@@ -176,12 +154,11 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
 
-      const side: OrderSide = intent;
       const order: ClientOrder = {
         maker: account,
         market: market.onchainAddress,
         outcome: outcome === "YES" ? 1 : 0,
-        side: side === "BUY" ? 0 : 1,
+        side: 0, // BUY
         price: BigInt(priceMicros!),
         size: BigInt(sizeMicros!),
         expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 60 * 60),
@@ -233,10 +210,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
 
       // Slippage-adjusted limit. Same math as `marketPlan` above; recompute
       // here so we don't depend on a stale memo when the user clicks fast.
-      const limit =
-        intent === "BUY"
-          ? (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n
-          : (PRICE_SCALE * (10_000n - MARKET_SLIPPAGE_BPS)) / 10_000n;
+      const limit = (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n;
       const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
 
       setSubmit({ kind: "filling" });
@@ -244,7 +218,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         taker: account,
         market: market.onchainAddress,
         outcome,
-        intent,
+        intent: "BUY",
         sizeMicros: BigInt(sizeMicros!),
         limitPriceMicros: clamped,
         rawOrders
@@ -279,15 +253,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
     }
   }
 
-  function handleBuy(next: Outcome) {
-    setIntent("BUY");
-    onOutcomeChange(next);
-    setPriceStr(priceForOutcome(market, next));
-    setSubmit({ kind: "idle" });
-  }
-
-  function handleSell(next: Outcome) {
-    setIntent("SELL");
+  function handlePickOutcome(next: Outcome) {
     onOutcomeChange(next);
     setPriceStr(priceForOutcome(market, next));
     setSubmit({ kind: "idle" });
@@ -300,7 +266,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-4 flex items-center justify-between">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
-          {intent === "BUY" ? "Trade · Buy" : `Trade · Sell ${outcome}`}
+          Place a bet
         </p>
         {account && (
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -309,41 +275,24 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         )}
       </div>
 
-      {/* Primary intent: pick a side to buy. Two big buttons replace the old
-          BUY/SELL toggle + YES/NO toggle pair. Selling is reached via the
-          Position section below. */}
-      {intent === "BUY" ? (
-        <div className="mb-4 grid grid-cols-2 gap-2">
-          <OutcomeButton
-            label="Buy YES"
-            priceLabel={yesPriceLabel}
-            tone="green"
-            active={outcome === "YES"}
-            onClick={() => handleBuy("YES")}
-          />
-          <OutcomeButton
-            label="Buy NO"
-            priceLabel={noPriceLabel}
-            tone="red"
-            active={outcome === "NO"}
-            onClick={() => handleBuy("NO")}
-          />
-        </div>
-      ) : (
-        <div className="mb-4 flex items-center justify-between rounded-md border border-[var(--line)] bg-[var(--input-bg)] px-3 py-2">
-          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--ink)]">
-            Selling {outcome}
-          </span>
-          <button
-            type="button"
-            onClick={() => handleBuy(outcome)}
-            className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] hover:text-[var(--ink)]"
-          >
-            <X className="h-3 w-3" />
-            Cancel
-          </button>
-        </div>
-      )}
+      {/* Pick a side. Two big buttons replace the old BUY/SELL toggle pair —
+          selling lives on the positions page. */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <OutcomeButton
+          label="Buy YES"
+          priceLabel={yesPriceLabel}
+          tone="green"
+          active={outcome === "YES"}
+          onClick={() => handlePickOutcome("YES")}
+        />
+        <OutcomeButton
+          label="Buy NO"
+          priceLabel={noPriceLabel}
+          tone="red"
+          active={outcome === "NO"}
+          onClick={() => handlePickOutcome("NO")}
+        />
+      </div>
 
       {/* Order type toggle. Market sweeps the live book on-chain; Limit posts
           a signed maker order that rests until a taker arrives. */}
@@ -373,20 +322,29 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
 
       <Field
         label="Size"
-        hint={intent === "SELL" ? `max ${microsToUsdcString(sharesOwnedForOutcome)}` : "shares"}
+        hint="shares"
         suffix={outcome}
         value={sizeStr}
         onChange={setSizeStr}
-        invalid={sizeStr !== "" && (!sizeOk || !sellSizeOk)}
+        invalid={sizeStr !== "" && !sizeOk}
       />
 
-      <div className="mt-4 flex items-center justify-between rounded-md border border-[var(--line-soft)] bg-[var(--input-bg)] px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
-          Total
-        </span>
-        <span className="font-mono text-[13px] font-medium text-[var(--ink)]">
-          ${microsToUsdcString(totalMicros)}
-        </span>
+      {/* Three-line economics summary. We make the bet concrete:
+          - Total: what leaves the wallet now
+          - If wins: max payout when this side resolves true
+          - Profit: payout minus total (with % return) */}
+      <div className="mt-4 space-y-1 rounded-md border border-[var(--line-soft)] bg-[var(--input-bg)] px-3 py-2.5">
+        <Line label="Total" value={`$${microsToUsdcString(totalMicros)}`} />
+        <Line
+          label={`If ${outcome} wins`}
+          value={`$${microsToUsdcString(maxPayoutMicros)}`}
+        />
+        <Line
+          label="Potential profit"
+          value={`${profitMicros >= 0 ? "+" : ""}$${microsToUsdcString(profitMicros)}`}
+          subValue={totalMicros > 0 ? `${profitMicros >= 0 ? "+" : ""}${profitPct.toFixed(0)}%` : undefined}
+          accent={profitMicros >= 0 ? "green" : "red"}
+        />
       </div>
 
       <button
@@ -397,11 +355,9 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
           "mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.18em] transition-colors",
           hasWallet
             ? canSubmit
-              ? intent === "BUY"
-                ? outcome === "YES"
-                  ? "bg-[var(--green-text)] text-[var(--canvas)] hover:opacity-90"
-                  : "bg-[var(--red-text)] text-[var(--canvas)] hover:opacity-90"
-                : "bg-[var(--ink)] text-[var(--canvas)] hover:opacity-90"
+              ? outcome === "YES"
+                ? "bg-[var(--green-text)] text-[var(--canvas)] hover:opacity-90"
+                : "bg-[var(--red-text)] text-[var(--canvas)] hover:opacity-90"
               : "cursor-not-allowed bg-[var(--line-soft)] text-[var(--muted)]"
             : "bg-[var(--ink)] text-[var(--canvas)] hover:opacity-90"
         )}
@@ -422,18 +378,16 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         ) : submit.kind === "indexing" ? (
           "Indexing fill…"
         ) : orderType === "MARKET" ? (
-          intent === "BUY" ? `Buy ${outcome} at market` : `Sell ${outcome} at market`
-        ) : intent === "BUY" ? (
-          `Buy ${outcome}`
+          `Buy ${outcome} at market`
         ) : (
-          `Sell ${outcome}`
+          `Buy ${outcome}`
         )}
       </button>
 
       {orderType === "MARKET" && sizeOk && !marketHasLiquidity && (
         <p className="mt-3 rounded-md border border-[var(--yellow-text)]/40 bg-[var(--yellow-text)]/5 px-2 py-1.5 text-[11px] text-[var(--yellow-text)]">
-          No matching {intent === "BUY" ? "asks" : "bids"} on {outcome} at the current
-          slippage. Place a limit order or wait for liquidity.
+          No matching asks on {outcome} at the current slippage. Place a
+          limit order or wait for liquidity.
         </p>
       )}
       {submit.kind === "ok" && (
@@ -453,37 +407,17 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         </p>
       )}
 
-      {/* Position section: only renders when the user holds shares in this
-          market. Each line lets the user switch the panel to Sell mode for
-          that outcome. */}
-      {hasWallet && (yesShares > 0 || noShares > 0) && (
-        <section className="mt-5 rounded-md border border-[var(--line-soft)] bg-[var(--input-bg)] p-3">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
-            Your position
-          </p>
-          {yesShares > 0 && (
-            <PositionRow
-              outcome="YES"
-              sharesMicros={yesShares}
-              active={intent === "SELL" && outcome === "YES"}
-              onSell={() => handleSell("YES")}
-            />
-          )}
-          {noShares > 0 && (
-            <PositionRow
-              outcome="NO"
-              sharesMicros={noShares}
-              active={intent === "SELL" && outcome === "NO"}
-              onSell={() => handleSell("NO")}
-            />
-          )}
-        </section>
-      )}
-
       <p className="mt-3 text-[11px] leading-relaxed text-[var(--muted)]">
         Orders are signed off-chain (EIP-712) and matched on Arc Testnet.
-        Before your first trade, approve USDC and outcome shares to the Exchange.
-        Winning payouts emit a PSP.
+        Hold winning shares until the market resolves, then claim 1 USDC
+        per share. To exit early, sell from your{" "}
+        <a
+          href="/markets/positions"
+          className="text-[var(--ink)] underline-offset-2 hover:underline"
+        >
+          positions
+        </a>{" "}
+        page.
       </p>
     </div>
   );
@@ -550,51 +484,6 @@ function OrderTypeTab({
   );
 }
 
-function PositionRow({
-  outcome,
-  sharesMicros,
-  active,
-  onSell
-}: {
-  outcome: Outcome;
-  sharesMicros: number;
-  active: boolean;
-  onSell: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-1">
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "rounded-sm px-1.5 py-[2px] font-mono text-[9px] tracking-[0.18em]",
-            outcome === "YES"
-              ? "bg-[var(--green-text)]/15 text-[var(--green-text)]"
-              : "bg-[var(--red-text)]/15 text-[var(--red-text)]"
-          )}
-        >
-          {outcome}
-        </span>
-        <span className="font-mono text-[12px] text-[var(--ink)]">
-          {microsToUsdcString(sharesMicros)} shares
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={onSell}
-        disabled={active}
-        className={cn(
-          "rounded-md border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-          active
-            ? "border-[var(--line)] text-[var(--muted)]"
-            : "border-[var(--ink)] text-[var(--ink)] hover:bg-[var(--ink)] hover:text-[var(--canvas)]"
-        )}
-      >
-        {active ? "Selected" : "Sell"}
-      </button>
-    </div>
-  );
-}
-
 function Field({
   label,
   hint,
@@ -640,6 +529,39 @@ function Field({
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+function Line({
+  label,
+  value,
+  subValue,
+  accent
+}: {
+  label: string;
+  value: string;
+  subValue?: string;
+  accent?: "green" | "red";
+}) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "font-mono text-[13px] font-medium",
+          accent === "green" && "text-[var(--green-text)]",
+          accent === "red" && "text-[var(--red-text)]",
+          !accent && "text-[var(--ink)]"
+        )}
+      >
+        {value}
+        {subValue && (
+          <span className="ml-1.5 text-[10px] opacity-80">{subValue}</span>
+        )}
+      </span>
     </div>
   );
 }

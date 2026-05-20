@@ -154,6 +154,18 @@ export default function MyPositionsPage({ onNavigate }: Props) {
                 market={market}
                 position={position}
                 onNavigate={onNavigate}
+                // After a successful sell the realtime channel will deliver
+                // the position update — refetch as a belt-and-braces fallback
+                // in case the channel is wedged.
+                onSold={() => {
+                  if (!account) return;
+                  void Promise.all([fetchPositions(account), fetchMarkets()]).then(
+                    ([pos, mkts]) => {
+                      setPositions(pos);
+                      setMarkets(mkts);
+                    }
+                  );
+                }}
               />
             ))}
           </div>
