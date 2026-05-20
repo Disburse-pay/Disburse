@@ -20,6 +20,8 @@ import MarketsListPage from "./pages/markets/MarketsListPage";
 import MarketDetailPage from "./pages/markets/MarketDetailPage";
 import MyPositionsPage from "./pages/markets/MyPositionsPage";
 import HistoryPage from "./pages/markets/HistoryPage";
+import WhitelistPage from "./pages/markets/WhitelistPage";
+import { validateWhitelistCode } from "./lib/markets/api";
 
 type NavItem = {
   page: Page;
@@ -38,6 +40,34 @@ export default function BetApp() {
   const [page, setPage] = useState<Page>(() => getInitialPage());
   const [marketId, setMarketId] = useState<string | undefined>(() => getMarketIdFromPath());
   const [, setRouteKey] = useState<string>(() => getCurrentRouteKey());
+
+  // Whitelist gating state
+  const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(null);
+
+  // Check whitelist status on mount
+  useEffect(() => {
+    async function checkWhitelist() {
+      const code = localStorage.getItem("disburse_bet_whitelist_code");
+      if (!code) {
+        setIsWhitelisted(false);
+        return;
+      }
+      // Validate with server
+      const { valid } = await validateWhitelistCode(code);
+      if (valid) {
+        setIsWhitelisted(true);
+      } else {
+        localStorage.removeItem("disburse_bet_whitelist_code");
+        setIsWhitelisted(false);
+      }
+    }
+    void checkWhitelist();
+  }, []);
+
+  const handleWhitelistSuccess = useCallback((code: string) => {
+    localStorage.setItem("disburse_bet_whitelist_code", code);
+    setIsWhitelisted(true);
+  }, []);
 
   // Apply persisted theme on mount. The bet shell does not have its own
   // toggle yet — it inherits whatever the user last selected in the app.
@@ -70,6 +100,16 @@ export default function BetApp() {
     setRouteKey(getCurrentRouteKey());
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
   }, []);
+
+  // Show nothing while verifying local storage code
+  if (isWhitelisted === null) {
+    return <div className="min-h-screen bg-[var(--canvas)]" />;
+  }
+
+  // Show whitelist gate if not validated
+  if (!isWhitelisted) {
+    return <WhitelistPage onValidated={handleWhitelistSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">

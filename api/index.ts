@@ -13,6 +13,8 @@ import marketsOrderbook from "../api-handlers/markets-orderbook.js";
 import marketsOrders from "../api-handlers/markets-orders.js";
 import marketsOperatorCron from "../api-handlers/markets-operator-cron.js";
 import marketsPositions from "../api-handlers/markets-positions.js";
+import marketsWhitelistValidate from "../api-handlers/markets-whitelist-validate.js";
+import marketsWhitelistRequest from "../api-handlers/markets-whitelist-request.js";
 import milestones from "../api-handlers/milestones.js";
 import psp from "../api-handlers/psp.js";
 import pspVerify from "../api-handlers/psp-verify.js";
@@ -39,6 +41,8 @@ const handlers: Record<string, Handler> = {
   "markets-orders": marketsOrders,
   "markets-operator-cron": marketsOperatorCron,
   "markets-positions": marketsPositions,
+  "markets-whitelist-validate": marketsWhitelistValidate,
+  "markets-whitelist-request": marketsWhitelistRequest,
   milestones,
   psp,
   "psp-verify": pspVerify,

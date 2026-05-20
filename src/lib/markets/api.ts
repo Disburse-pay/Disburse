@@ -437,3 +437,20 @@ export async function fetchMyClaims(account: Address): Promise<MarketClaim[]> {
     claimedAt: row.claimed_at
   }));
 }
+
+// ---------- whitelist ----------
+
+export async function validateWhitelistCode(code: string): Promise<{ valid: boolean }> {
+  try {
+    return await fetchJson<{ valid: boolean }>(`/api/markets-whitelist-validate?code=${encodeURIComponent(code)}`);
+  } catch (error) {
+    return { valid: false };
+  }
+}
+
+export async function requestWhitelistAccess(data: { name: string; email: string; twitter?: string }): Promise<{ success: boolean; message: string }> {
+  return await fetchJson<{ success: boolean; message: string }>("/api/markets-whitelist-request", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
