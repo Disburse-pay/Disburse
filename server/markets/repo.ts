@@ -587,15 +587,35 @@ export async function applyPositionDelta(
   input: ApplyPositionDeltaInput
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.rpc("apply_market_position_delta", {
-    p_market_id: input.marketId,
-    p_user_address: input.userAddress.toLowerCase(),
-    p_outcome: input.outcome,
-    p_share_delta: input.shareDelta.toString(),
-    p_cost_basis_delta: (input.costBasisDelta ?? 0n).toString(),
-    p_realized_pnl_delta: (input.realizedPnlDelta ?? 0n).toString(),
-  });
-  if (error) throw new HttpError(500, error.message);
+  const addr = input.userAddress.toLowerCase();
+  const costDelta = Number(input.costBasisDelta ?? 0n);
+  const pnlDelta = Number(input.realizedPnlDelta ?? 0n);
+  const shareDelta = Number(input.shareDelta);
+
+  // Read current position (if any).
+  const { data: existing, error: readErr } = await supabase
+    .from("market_positions")
+    .select("yes_shares,no_shares,cost_basis,realized_pnl")
+    .eq("user_address", addr)
+    .eq("market_id", input.marketId)
+    .maybeSingle();
+  if (readErr) throw new HttpError(500, readErr.message);
+
+  const prev = existing ?? { yes_shares: 0, no_shares: 0, cost_basis: 0, realized_pnl: 0 };
+  const row = {
+    user_address: addr,
+    market_id: input.marketId,
+    yes_shares: Number(prev.yes_shares) + (input.outcome === 1 ? shareDelta : 0),
+    no_shares: Number(prev.no_shares) + (input.outcome === 0 ? shareDelta : 0),
+    cost_basis: Number(prev.cost_basis) + costDelta,
+    realized_pnl: Number(prev.realized_pnl) + pnlDelta,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: writeErr } = await supabase
+    .from("market_positions")
+    .upsert(row, { onConflict: "user_address,market_id" });
+  if (writeErr) throw new HttpError(500, writeErr.message);
 }
 
 type PositionCacheRow = {
