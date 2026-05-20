@@ -1,4 +1,4 @@
-import { assertMethod, readJson, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
+import { assertMethod, readJsonBody, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
 import { Resend } from "resend";
 
 /**
@@ -11,8 +11,10 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   try {
     assertMethod(request, "POST");
     
-    const body = await readJson(request);
-    const { name, email, twitter } = body;
+    const body = readJsonBody(request);
+    const name = typeof body.name === "string" ? body.name : undefined;
+    const email = typeof body.email === "string" ? body.email : undefined;
+    const twitter = typeof body.twitter === "string" ? body.twitter : undefined;
     
     if (!name || !email) {
       sendJson(response, 400, { error: "Name and email are required" });

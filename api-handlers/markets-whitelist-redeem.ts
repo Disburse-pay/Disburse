@@ -1,4 +1,4 @@
-import { assertMethod, readJson, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
+import { assertMethod, readJsonBody, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
 import { isAddress } from "viem";
 import { getSupabaseAdmin } from "../server/supabase.js";
 
@@ -11,8 +11,9 @@ import { getSupabaseAdmin } from "../server/supabase.js";
 export default async function handler(request: ApiRequest, response: ApiResponse) {
   try {
     assertMethod(request, "POST");
-    const body = await readJson(request);
-    const { code, address } = body;
+    const body = readJsonBody(request);
+    const code = typeof body.code === "string" ? body.code : undefined;
+    const address = typeof body.address === "string" ? body.address : undefined;
     
     if (!code || !address || !isAddress(address)) {
       sendJson(response, 400, { error: "Code and valid EVM address are required" });
