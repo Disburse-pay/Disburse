@@ -82,14 +82,18 @@ export async function fetchMarketDetail(id: string): Promise<{
   /** Raw open orders — pre-aggregation. Use `aggregateOrderbook` to fold. */
   rawOrders: RawOpenOrder[];
 }> {
-  const result = await fetchJson<{ market: Market; orderbook: RawOpenOrder[] }>(
+  const result = await fetchJson<{ market: Market; orderbook: RawOpenOrderWire[] }>(
     `/api/markets-detail?id=${encodeURIComponent(id)}`
   );
-  return { market: result.market, rawOrders: result.orderbook };
+  return { market: result.market, rawOrders: result.orderbook.map(rawOrderFromWire) };
 }
 
 // `markets-detail` returns ALL open orders (both outcomes, both sides) so the
 // caller can render two orderbooks from one round-trip and keep them in sync.
+type RawOpenOrderWire = Omit<RawOpenOrder, "expiry"> & {
+  expiry: number | string;
+};
+
 export type RawOpenOrder = {
   hash: Hex;
   maker: Address;
@@ -106,6 +110,21 @@ export type RawOpenOrder = {
   status: "open" | "partial" | "filled" | "cancelled" | "expired";
   createdAt: string;
 };
+
+function rawOrderFromWire(order: RawOpenOrderWire): RawOpenOrder {
+  const expiry =
+    typeof order.expiry === "number"
+      ? order.expiry
+      : Math.floor(new Date(order.expiry).getTime() / 1000);
+  return {
+    ...order,
+    price: String(order.price),
+    size: String(order.size),
+    filled: String(order.filled),
+    salt: String(order.salt),
+    expiry: Number.isFinite(expiry) ? expiry : 0
+  };
+}
 
 // ---------- orderbook ----------
 
@@ -124,8 +143,11 @@ export function aggregateOrderbook(
   const outcomeInt = outcome === "YES" ? 1 : 0;
   const bidLevels = new Map<number, number>();
   const askLevels = new Map<number, number>();
+  const nowSec = Math.floor(Date.now() / 1000);
   for (const o of rawOrders) {
     if (o.outcome !== outcomeInt) continue;
+    if (o.status !== "open" && o.status !== "partial") continue;
+    if (o.expiry <= nowSec) continue;
     const remaining = BigInt(o.size) - BigInt(o.filled);
     if (remaining <= 0n) continue;
     // 1e6-scale fits comfortably in Number for both price and size as long as

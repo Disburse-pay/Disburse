@@ -7,6 +7,7 @@ import {
   microsToUsdcString,
   probabilityToPercent,
   type Market,
+  type Outcome,
   type Position
 } from "../../lib/markets/types";
 import type { NavigateHandler } from "../../lib/routing";
@@ -16,6 +17,9 @@ import SellSheet from "./SellSheet";
 type Props = {
   market: Market;
   position: Position;
+  outcome?: Outcome;
+  sharesMicros?: number;
+  costBasisMicros?: number;
   onNavigate: NavigateHandler;
   /** Called after a successful sell so the parent can refresh positions. */
   onSold?: () => void;
@@ -40,17 +44,32 @@ type Props = {
  * the claim button here too; left as a follow-up to avoid duplicating the
  * resolved-market read pipeline that HistoryPage already owns.
  */
-export default function PositionCard({ market, position, onNavigate, onSold }: Props) {
-  const isYes = position.yesSharesMicros > position.noSharesMicros;
-  const sharesMicros = isYes ? position.yesSharesMicros : position.noSharesMicros;
-  const outcome = isYes ? "YES" : "NO";
-  const priceMicros = isYes ? market.yesPriceMicros : market.noPriceMicros;
-  const valueMicros = Math.floor((sharesMicros * priceMicros) / 1_000_000);
-  const pnlMicros = valueMicros - position.costBasisMicros;
-  const pnlPct = position.costBasisMicros > 0 ? (pnlMicros / position.costBasisMicros) * 100 : 0;
-  const positive = pnlMicros >= 0;
+export default function PositionCard({
+  market,
+  position,
+  outcome: forcedOutcome,
+  sharesMicros: forcedSharesMicros,
+  costBasisMicros: forcedCostBasisMicros,
+  onNavigate,
+  onSold
+}: Props) {
+  const inferredIsYes = position.yesSharesMicros >= position.noSharesMicros;
+  const outcome: Outcome = forcedOutcome ?? (inferredIsYes ? "YES" : "NO");
+  const sharesMicros =
+    forcedSharesMicros ??
+    (outcome === "YES" ? position.yesSharesMicros : position.noSharesMicros);
+  const costBasisMicros = forcedCostBasisMicros ?? position.costBasisMicros;
+  const priceMicros = outcome === "YES" ? market.yesPriceMicros : market.noPriceMicros;
   const isResolved = market.status === "resolved";
   const won = isResolved && market.winningOutcome === outcome;
+  const valueMicros = isResolved
+    ? won
+      ? sharesMicros
+      : 0
+    : Math.floor((sharesMicros * priceMicros) / 1_000_000);
+  const pnlMicros = valueMicros - costBasisMicros;
+  const pnlPct = costBasisMicros > 0 ? (pnlMicros / costBasisMicros) * 100 : 0;
+  const positive = pnlMicros >= 0;
   const href = `/markets/${market.id}`;
 
   const [showSell, setShowSell] = useState(false);
@@ -88,7 +107,7 @@ export default function PositionCard({ market, position, onNavigate, onSold }: P
       </div>
 
       <dl className="grid grid-cols-3 gap-4 border-t border-[var(--line-soft)] pt-4">
-        <StatCell label="Cost basis" value={`$${microsToUsdcString(position.costBasisMicros)}`} />
+        <StatCell label="Cost basis" value={`$${microsToUsdcString(costBasisMicros)}`} />
         <StatCell
           label={isResolved ? "Payout" : "Value (mark)"}
           value={`$${microsToUsdcString(isResolved && won ? sharesMicros : valueMicros)}`}

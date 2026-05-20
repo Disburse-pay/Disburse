@@ -95,7 +95,11 @@ export default function MarketDetailPage({ marketId, onNavigate }: Props) {
     });
     const unsubFills = subscribeMarketFills(marketId, (fill) => {
       // Newest first — matches `fetchFills` ordering.
-      setFills((prev) => (prev.some((f) => f.id === fill.id) ? prev : [fill, ...prev]));
+      setFills((prev) => {
+        if (prev.some((f) => f.id === fill.id)) return prev;
+        setMarket((current) => (current ? applyFillToMarketStats(current, fill) : current));
+        return [fill, ...prev];
+      });
     });
     return () => {
       unsubOrders();
@@ -238,6 +242,17 @@ export default function MarketDetailPage({ marketId, onNavigate }: Props) {
       </section>
     </div>
   );
+}
+
+function applyFillToMarketStats(market: Market, fill: Fill): Market {
+  const yesPrice = fill.outcome === "YES" ? fill.priceMicros : 1_000_000 - fill.priceMicros;
+  const totalUsdc = Math.floor((fill.priceMicros * fill.sizeMicros) / 1_000_000);
+  return {
+    ...market,
+    yesPriceMicros: yesPrice,
+    noPriceMicros: 1_000_000 - yesPrice,
+    volumeMicros: market.volumeMicros + totalUsdc
+  };
 }
 
 // Apply a single realtime change to the raw orders list. Keeps `rawOrders`

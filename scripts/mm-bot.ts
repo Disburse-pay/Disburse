@@ -421,6 +421,18 @@ async function postOrder(cfg: Config, order: Order, signature: Hex): Promise<{ h
   return (await res.json()) as { hash: Hex };
 }
 
+async function postClaim(cfg: Config, marketId: string, txHash: Hash): Promise<void> {
+  const res = await fetch(`${cfg.apiBaseUrl}/api/markets-claims`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ marketId, txHash }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`POST /api/markets-claims ${res.status}: ${txt}`);
+  }
+}
+
 // ─── Markets list ───────────────────────────────────────────────────────
 
 async function fetchMarketsByStatus(
@@ -468,11 +480,12 @@ async function claimResolvedMarket(cfg: Config, market: MarketRow): Promise<void
 
   log(`  ${market.id}: claim ${fmt(bal)} ${winningOutcome === 1 ? "YES" : "NO"} (won)`);
   if (cfg.dryRun) return;
-  await sendTx(cfg, marketAddr, encodeFunctionData({
+  const txHash = await sendTx(cfg, marketAddr, encodeFunctionData({
     abi: MARKET_ABI,
     functionName: "claim",
     args: [bal],
   }));
+  await postClaim(cfg, market.id, txHash);
 }
 
 /**

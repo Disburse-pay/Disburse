@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDisburseDynamicWallet } from "../../lib/dynamic";
 import { fetchMarkets, fetchPositions, MarketsApiError } from "../../lib/markets/api";
 import { subscribeMyPositions } from "../../lib/markets/realtime";
-import { microsToUsdcString, type Market, type Position } from "../../lib/markets/types";
+import { microsToUsdcString, type Market, type Outcome, type Position } from "../../lib/markets/types";
 import type { NavigateHandler } from "../../lib/routing";
 import PositionCard from "../../components/markets/PositionCard";
 
@@ -70,27 +70,48 @@ export default function MyPositionsPage({ onNavigate }: Props) {
 
   const rows = useMemo(() => {
     const marketById = new Map(markets.map((m) => [m.id, m] as const));
-    return positions
-      .map((p) => ({ position: p, market: marketById.get(p.marketId) }))
-      .filter((r): r is { position: Position; market: Market } => Boolean(r.market))
-      // Hide rows where both balances are zero — common after a full claim or
-      // a partial-fill round-trip that nets to nothing.
-      .filter(
-        ({ position }) => position.yesSharesMicros > 0 || position.noSharesMicros > 0
-      );
+    return positions.flatMap((position) => {
+      const market = marketById.get(position.marketId);
+      if (!market) return [];
+      const totalShares = Math.max(0, position.yesSharesMicros) + Math.max(0, position.noSharesMicros);
+      if (totalShares <= 0) return [];
+
+      const yesCost = Math.floor((position.costBasisMicros * Math.max(0, position.yesSharesMicros)) / totalShares);
+      const noCost = position.costBasisMicros - yesCost;
+      const legs: Array<{
+        position: Position;
+        market: Market;
+        outcome: Outcome;
+        sharesMicros: number;
+        costBasisMicros: number;
+      }> = [];
+
+      if (position.yesSharesMicros > 0) {
+        legs.push({ position, market, outcome: "YES", sharesMicros: position.yesSharesMicros, costBasisMicros: yesCost });
+      }
+      if (position.noSharesMicros > 0) {
+        legs.push({ position, market, outcome: "NO", sharesMicros: position.noSharesMicros, costBasisMicros: noCost });
+      }
+      return legs;
+    });
   }, [positions, markets]);
 
   const totals = useMemo(() => {
     let cost = 0;
     let value = 0;
+    let realized = 0;
+    const seen = new Set<string>();
     for (const { position, market } of rows) {
-      const isYes = position.yesSharesMicros > position.noSharesMicros;
-      const shares = isYes ? position.yesSharesMicros : position.noSharesMicros;
-      const price = isYes ? market.yesPriceMicros : market.noPriceMicros;
-      cost += position.costBasisMicros;
-      value += Math.floor((shares * price) / 1_000_000);
+      const key = `${position.userAddress}:${position.marketId}`;
+      if (!seen.has(key)) {
+        cost += position.costBasisMicros;
+        realized += position.realizedPnlMicros;
+        value += Math.floor((Math.max(0, position.yesSharesMicros) * market.yesPriceMicros) / 1_000_000);
+        value += Math.floor((Math.max(0, position.noSharesMicros) * market.noPriceMicros) / 1_000_000);
+        seen.add(key);
+      }
     }
-    return { cost, value, pnl: value - cost };
+    return { cost, value, pnl: value - cost + realized };
   }, [rows]);
 
   return (
@@ -108,7 +129,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
           <Stat label="Cost basis" value={`$${microsToUsdcString(totals.cost)}`} />
           <Stat label="Mark value" value={`$${microsToUsdcString(totals.value)}`} />
           <Stat
-            label="Unrealized"
+            label="Total P&L"
             value={`${totals.pnl >= 0 ? "+" : ""}$${microsToUsdcString(totals.pnl)}`}
             accent={totals.pnl >= 0 ? "green" : "red"}
           />
@@ -148,11 +169,14 @@ export default function MyPositionsPage({ onNavigate }: Props) {
         )}
         {account && loadState === "ready" && rows.length > 0 && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {rows.map(({ position, market }) => (
+            {rows.map(({ position, market, outcome, sharesMicros, costBasisMicros }) => (
               <PositionCard
-                key={`${market.id}`}
+                key={`${market.id}:${outcome}`}
                 market={market}
                 position={position}
+                outcome={outcome}
+                sharesMicros={sharesMicros}
+                costBasisMicros={costBasisMicros}
                 onNavigate={onNavigate}
                 // After a successful sell the realtime channel will deliver
                 // the position update — refetch as a belt-and-braces fallback

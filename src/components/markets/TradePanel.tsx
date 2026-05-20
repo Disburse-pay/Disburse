@@ -16,7 +16,12 @@ import {
 } from "../../lib/markets/api";
 import { getMarketsConfig } from "../../lib/markets/config";
 import { PRICE_SCALE, randomSalt, signOrder, type ClientOrder } from "../../lib/markets/sign";
-import { planTakerFills, takeOrder } from "../../lib/markets/onchain";
+import {
+  deriveTakerLimitPrice,
+  ensureUsdcApproval,
+  planTakerFills,
+  takeOrder
+} from "../../lib/markets/onchain";
 
 type Props = {
   market: Market;
@@ -84,21 +89,24 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
   // current book at the best opposite-side prices. We compute it here so the
   // Total row stays in sync with the actual on-chain sweep.
   const marketPlan = useMemo(() => {
-    if (orderType !== "MARKET" || !sizeOk || !account) return undefined;
-    const limit = (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n;
-    // Clamp limit price into the valid (0, 1_000_000) range expected by the
-    // Exchange. The slippage-adjusted ceiling could exceed 1.0 — cap at
-    // PRICE_SCALE-1 so we'll still sweep any ask in-range.
-    const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
+    if (orderType !== "MARKET" || !sizeOk) return undefined;
+    const limit = deriveTakerLimitPrice({
+      rawOrders,
+      takerAddress: account ?? "0x0000000000000000000000000000000000000000",
+      outcome,
+      intent: "BUY",
+      slippageBps: MARKET_SLIPPAGE_BPS,
+      fallbackPriceMicros: BigInt(outcome === "YES" ? market.yesPriceMicros : market.noPriceMicros)
+    });
     return planTakerFills({
       rawOrders,
-      takerAddress: account,
+      takerAddress: account ?? "0x0000000000000000000000000000000000000000",
       outcome,
       intent: "BUY",
       sizeMicros: BigInt(sizeMicros!),
-      limitPriceMicros: clamped
+      limitPriceMicros: limit
     });
-  }, [orderType, sizeOk, sizeMicros, account, rawOrders, outcome]);
+  }, [orderType, sizeOk, sizeMicros, account, rawOrders, outcome, market.yesPriceMicros, market.noPriceMicros]);
 
   const marketHasLiquidity = (marketPlan?.length ?? 0) > 0;
   const marketSweptSize = marketPlan?.reduce((acc, p) => acc + p.fillSize, 0n) ?? 0n;
@@ -145,7 +153,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
       return;
     }
 
-    setSubmit({ kind: "signing" });
+    setSubmit({ kind: "approving" });
 
     try {
       const { exchangeAddress } = getMarketsConfig();
@@ -153,6 +161,9 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
       if (!provider) {
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
+
+      await ensureUsdcApproval(provider, account, exchangeAddress, BigInt(totalMicros));
+      setSubmit({ kind: "signing" });
 
       const order: ClientOrder = {
         maker: account,
@@ -187,7 +198,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         err instanceof MarketsApiError
           ? `Order rejected (${err.status}): ${err.message}`
           : err instanceof Error
-            ? `Signing failed: ${err.message}`
+            ? `Order failed: ${err.message}`
             : "Unknown error";
       setSubmit({ kind: "error", message });
     }
@@ -208,10 +219,17 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
 
-      // Slippage-adjusted limit. Same math as `marketPlan` above; recompute
-      // here so we don't depend on a stale memo when the user clicks fast.
-      const limit = (PRICE_SCALE * (10_000n + MARKET_SLIPPAGE_BPS)) / 10_000n;
-      const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
+      // Slippage-adjusted ceiling from the current best ask. Same math as
+      // `marketPlan` above; recompute here so a fast click does not rely on a
+      // stale memo.
+      const limit = deriveTakerLimitPrice({
+        rawOrders,
+        takerAddress: account,
+        outcome,
+        intent: "BUY",
+        slippageBps: MARKET_SLIPPAGE_BPS,
+        fallbackPriceMicros: BigInt(outcome === "YES" ? market.yesPriceMicros : market.noPriceMicros)
+      });
 
       setSubmit({ kind: "filling" });
       const result = await takeOrder(provider, {
@@ -220,7 +238,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         outcome,
         intent: "BUY",
         sizeMicros: BigInt(sizeMicros!),
-        limitPriceMicros: clamped,
+        limitPriceMicros: limit,
         rawOrders
       });
 

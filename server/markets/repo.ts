@@ -20,6 +20,9 @@ import type {
   OrderSide,
   OrderStatus,
 } from "../../src/lib/markets/types.js";
+import type { CachedPosition } from "./accounting.js";
+
+const PRICE_SCALE = 1_000_000;
 
 // ---------- Outcome <-> smallint conversion ----------
 
@@ -82,6 +85,166 @@ function rowToMarket(row: MarketRow): Market {
   };
 }
 
+type FillStatsRow = {
+  market_id: string;
+  outcome: number;
+  price: number | string;
+  total_usdc: number | string;
+  filled_at: string;
+};
+
+type OrderStatsRow = {
+  market_id: string;
+  outcome: number;
+  side: number;
+  price: number | string;
+  size: number | string;
+  filled: number | string;
+};
+
+type PositionStatsRow = {
+  market_id: string;
+  yes_shares: number | string;
+  no_shares: number | string;
+};
+
+async function hydrateMarketStats(markets: Market[]): Promise<Market[]> {
+  if (markets.length === 0) return markets;
+
+  const ids = markets.map((market) => market.id);
+  const supabase = getSupabaseAdmin();
+  const [fillsResult, ordersResult, positionsResult] = await Promise.all([
+    supabase
+      .from("market_fills")
+      .select("market_id,outcome,price,total_usdc,filled_at")
+      .in("market_id", ids)
+      .order("filled_at", { ascending: true }),
+    supabase
+      .from("market_orders")
+      .select("market_id,outcome,side,price,size,filled")
+      .in("market_id", ids)
+      .in("status", ["open", "partial"])
+      .gt("expiry", new Date().toISOString()),
+    supabase
+      .from("market_positions")
+      .select("market_id,yes_shares,no_shares")
+      .in("market_id", ids),
+  ]);
+
+  if (fillsResult.error) throw new HttpError(500, fillsResult.error.message);
+  if (ordersResult.error) throw new HttpError(500, ordersResult.error.message);
+  if (positionsResult.error) throw new HttpError(500, positionsResult.error.message);
+
+  const stats = new Map<
+    string,
+    {
+      latestYesPrice?: number;
+      volumeMicros: number;
+      openInterestMicros: number;
+      bestBid: Record<0 | 1, number | undefined>;
+      bestAsk: Record<0 | 1, number | undefined>;
+    }
+  >();
+
+  for (const market of markets) {
+    stats.set(market.id, {
+      volumeMicros: 0,
+      openInterestMicros: 0,
+      bestBid: { 0: undefined, 1: undefined },
+      bestAsk: { 0: undefined, 1: undefined },
+    });
+  }
+
+  for (const row of (fillsResult.data ?? []) as FillStatsRow[]) {
+    const stat = stats.get(row.market_id);
+    if (!stat) continue;
+    const price = toNumber(row.price);
+    const outcome = row.outcome === 1 ? 1 : 0;
+    stat.latestYesPrice = outcome === 1 ? price : PRICE_SCALE - price;
+    stat.volumeMicros += toNumber(row.total_usdc);
+  }
+
+  for (const row of (ordersResult.data ?? []) as OrderStatsRow[]) {
+    const stat = stats.get(row.market_id);
+    if (!stat) continue;
+    const remaining = toBigInt(row.size) - toBigInt(row.filled);
+    if (remaining <= 0n) continue;
+    const outcome = row.outcome === 1 ? 1 : 0;
+    const price = toNumber(row.price);
+    if (row.side === 0) {
+      stat.bestBid[outcome] = Math.max(stat.bestBid[outcome] ?? 0, price);
+    } else {
+      stat.bestAsk[outcome] = Math.min(stat.bestAsk[outcome] ?? PRICE_SCALE, price);
+    }
+  }
+
+  for (const row of (positionsResult.data ?? []) as PositionStatsRow[]) {
+    const stat = stats.get(row.market_id);
+    if (!stat) continue;
+    stat.openInterestMicros += Math.max(0, toNumber(row.yes_shares));
+    stat.openInterestMicros += Math.max(0, toNumber(row.no_shares));
+  }
+
+  return markets.map((market) => {
+    const stat = stats.get(market.id);
+    if (!stat) return market;
+
+    const yesPriceMicros =
+      market.status === "resolved" && market.winningOutcome
+        ? market.winningOutcome === "YES"
+          ? PRICE_SCALE
+          : 0
+        : stat.latestYesPrice ?? midpointYesPrice(stat);
+    const noPriceMicros =
+      market.status === "resolved" && market.winningOutcome
+        ? market.winningOutcome === "NO"
+          ? PRICE_SCALE
+          : 0
+        : PRICE_SCALE - yesPriceMicros;
+
+    return {
+      ...market,
+      yesPriceMicros,
+      noPriceMicros,
+      volumeMicros: stat.volumeMicros,
+      openInterestMicros: stat.openInterestMicros,
+    };
+  });
+}
+
+function midpointYesPrice(stat: {
+  bestBid: Record<0 | 1, number | undefined>;
+  bestAsk: Record<0 | 1, number | undefined>;
+}): number {
+  const candidates: number[] = [];
+  const yesMid = midpoint(stat.bestBid[1], stat.bestAsk[1]);
+  const noMid = midpoint(stat.bestBid[0], stat.bestAsk[0]);
+  if (yesMid !== undefined) candidates.push(yesMid);
+  if (noMid !== undefined) candidates.push(PRICE_SCALE - noMid);
+  if (candidates.length === 0) return PRICE_SCALE / 2;
+  return clampPrice(Math.round(candidates.reduce((sum, value) => sum + value, 0) / candidates.length));
+}
+
+function midpoint(bestBid?: number, bestAsk?: number): number | undefined {
+  if (bestBid !== undefined && bestAsk !== undefined) return (bestBid + bestAsk) / 2;
+  return bestBid ?? bestAsk;
+}
+
+function clampPrice(value: number): number {
+  if (!Number.isFinite(value)) return PRICE_SCALE / 2;
+  if (value <= 0) return 0;
+  if (value >= PRICE_SCALE) return PRICE_SCALE;
+  return value;
+}
+
+function toNumber(value: number | string): number {
+  return typeof value === "number" ? value : Number(value);
+}
+
+function toBigInt(value: number | string): bigint {
+  return typeof value === "number" ? BigInt(value) : BigInt(value);
+}
+
 export async function listMarkets(options?: {
   status?: MarketStatus;
   limit?: number;
@@ -101,7 +264,7 @@ export async function listMarkets(options?: {
 
   const { data, error } = await q;
   if (error) throw new HttpError(500, error.message);
-  return (data ?? []).map(rowToMarket);
+  return hydrateMarketStats((data ?? []).map(rowToMarket));
 }
 
 export async function getMarketById(id: string): Promise<Market | null> {
@@ -114,7 +277,9 @@ export async function getMarketById(id: string): Promise<Market | null> {
     .eq("id", id)
     .maybeSingle();
   if (error) throw new HttpError(500, error.message);
-  return data ? rowToMarket(data as MarketRow) : null;
+  if (!data) return null;
+  const [market] = await hydrateMarketStats([rowToMarket(data as MarketRow)]);
+  return market;
 }
 
 export async function getMarketByAddress(
@@ -309,7 +474,8 @@ export async function getOpenOrdersForMarket(
       "hash,maker,outcome,side,price,size,filled,expiry,salt,signature,status,created_at"
     )
     .eq("market_id", marketId)
-    .in("status", ["open", "partial"]);
+    .in("status", ["open", "partial"])
+    .gt("expiry", new Date().toISOString());
   if (outcome !== undefined) q = q.eq("outcome", outcome);
   if (side !== undefined) q = q.eq("side", side);
   const { data, error } = await q;
@@ -430,6 +596,35 @@ export async function applyPositionDelta(
     p_realized_pnl_delta: (input.realizedPnlDelta ?? 0n).toString(),
   });
   if (error) throw new HttpError(500, error.message);
+}
+
+type PositionCacheRow = {
+  yes_shares: string;
+  no_shares: string;
+  cost_basis: string;
+  realized_pnl: string;
+};
+
+export async function getPositionByUserMarket(
+  marketId: string,
+  userAddress: Address
+): Promise<CachedPosition | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("market_positions")
+    .select("yes_shares,no_shares,cost_basis,realized_pnl")
+    .eq("market_id", marketId)
+    .eq("user_address", userAddress.toLowerCase())
+    .maybeSingle();
+  if (error) throw new HttpError(500, error.message);
+  if (!data) return null;
+  const row = data as PositionCacheRow;
+  return {
+    yesShares: BigInt(row.yes_shares),
+    noShares: BigInt(row.no_shares),
+    costBasis: BigInt(row.cost_basis),
+    realizedPnl: BigInt(row.realized_pnl),
+  };
 }
 
 // ---------- Claims ----------

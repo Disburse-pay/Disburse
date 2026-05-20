@@ -9,7 +9,7 @@ import {
   MarketsApiError,
   type RawOpenOrder
 } from "../../lib/markets/api";
-import { planTakerFills, takeOrder } from "../../lib/markets/onchain";
+import { deriveTakerLimitPrice, planTakerFills, takeOrder } from "../../lib/markets/onchain";
 import { microsToUsdcString, type Outcome } from "../../lib/markets/types";
 
 const PRICE_SCALE = 1_000_000n;
@@ -98,17 +98,20 @@ export default function SellSheet({
   // Plan the sweep against current bids so we can preview the proceeds.
   const plan = useMemo(() => {
     if (!sizeOk || !account || rawOrders.length === 0) return undefined;
-    // For SELL the limit is the floor; bids below the slippage-adjusted
-    // floor are skipped. Match TradePanel's math direction.
-    const limit = (PRICE_SCALE * (10_000n - SELL_SLIPPAGE_BPS)) / 10_000n;
-    const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
+    const limit = deriveTakerLimitPrice({
+      rawOrders,
+      takerAddress: account,
+      outcome,
+      intent: "SELL",
+      slippageBps: SELL_SLIPPAGE_BPS
+    });
     return planTakerFills({
       rawOrders,
       takerAddress: account,
       outcome,
       intent: "SELL",
       sizeMicros: BigInt(sizeMicros!),
-      limitPriceMicros: clamped
+      limitPriceMicros: limit
     });
   }, [sizeOk, sizeMicros, account, rawOrders, outcome]);
 
@@ -137,8 +140,13 @@ export default function SellSheet({
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
 
-      const limit = (PRICE_SCALE * (10_000n - SELL_SLIPPAGE_BPS)) / 10_000n;
-      const clamped = limit >= PRICE_SCALE ? PRICE_SCALE - 1n : limit <= 0n ? 1n : limit;
+      const limit = deriveTakerLimitPrice({
+        rawOrders,
+        takerAddress: account,
+        outcome,
+        intent: "SELL",
+        slippageBps: SELL_SLIPPAGE_BPS
+      });
 
       const result = await takeOrder(provider, {
         taker: account,
@@ -146,7 +154,7 @@ export default function SellSheet({
         outcome,
         intent: "SELL",
         sizeMicros: BigInt(sizeMicros!),
-        limitPriceMicros: clamped,
+        limitPriceMicros: limit,
         rawOrders
       });
 

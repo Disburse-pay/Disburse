@@ -24,12 +24,19 @@ import { HttpError } from "../http.js";
 import type { Market, MarketClaim } from "../../src/lib/markets/types.js";
 import { tryIssueMarketClaimPsp } from "../psp/hook.js";
 import {
+  applyPositionDelta,
   getClaimByTxHash,
   getMarketById,
+  getPositionByUserMarket,
   insertClaim,
   outcomeFromInt,
 } from "./repo.js";
 import { createServerArcPublicClient } from "./rpc.js";
+import {
+  clampShareReduction,
+  costBasisForShareReduction,
+  prorateAmount,
+} from "./accounting.js";
 
 const MARKET_CLAIMED_EVENT = parseAbiItem(
   "event MarketClaimed(bytes32 indexed settlementId, bytes32 indexed marketId, address indexed claimant, uint256 amount, uint8 outcome)"
@@ -143,6 +150,14 @@ export async function indexClaim(input: {
     settlementId: args.settlementId,
   });
 
+  await applyClaimToCachedPosition({
+    marketId: market.id,
+    userAddress: getAddress(args.claimant),
+    outcome: outcomeInt,
+    shares: args.amount,
+    payout: args.amount,
+  });
+
   // Fire the PSP hook. The market must already be resolved with a winning
   // outcome for the hook to actually produce a PSP — otherwise it throws
   // internally and the catch in tryIssueMarketClaimPsp swallows it so the
@@ -182,3 +197,33 @@ export { MARKET_CLAIMED_SELECTOR };
 
 // Suppress unused warnings on internal helpers exposed by repo barrel.
 void outcomeFromInt;
+
+async function applyClaimToCachedPosition(input: {
+  marketId: string;
+  userAddress: Address;
+  outcome: 0 | 1;
+  shares: bigint;
+  payout: bigint;
+}): Promise<void> {
+  const position = await getPositionByUserMarket(input.marketId, input.userAddress);
+  if (!position) return;
+
+  const shareReduction = clampShareReduction(position, input.outcome, input.shares);
+  if (shareReduction <= 0n) return;
+
+  const basisReduction = costBasisForShareReduction(
+    position,
+    input.outcome,
+    shareReduction
+  );
+  const payout = prorateAmount(input.payout, shareReduction, input.shares);
+
+  await applyPositionDelta({
+    marketId: input.marketId,
+    userAddress: input.userAddress,
+    outcome: input.outcome,
+    shareDelta: -shareReduction,
+    costBasisDelta: -basisReduction,
+    realizedPnlDelta: payout - basisReduction,
+  });
+}

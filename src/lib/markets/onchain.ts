@@ -79,6 +79,7 @@ const EXCHANGE_FILL_ORDERS_ABI = [
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 const PRICE_SCALE = 1_000_000n;
+const BPS_SCALE = 10_000n;
 
 // ---------- tokenId derivation ----------
 
@@ -284,6 +285,63 @@ export function planTakerFills(input: {
   return plan;
 }
 
+export function deriveTakerLimitPrice(input: {
+  rawOrders: RawOpenOrder[];
+  takerAddress?: Address;
+  outcome: Outcome;
+  intent: "BUY" | "SELL";
+  slippageBps: bigint;
+  fallbackPriceMicros?: bigint;
+}): bigint {
+  const best = bestOppositePrice(input);
+  const fallback =
+    input.fallbackPriceMicros && input.fallbackPriceMicros > 0n && input.fallbackPriceMicros < PRICE_SCALE
+      ? input.fallbackPriceMicros
+      : PRICE_SCALE / 2n;
+  const reference = best ?? fallback;
+  const adjusted =
+    input.intent === "BUY"
+      ? (reference * (BPS_SCALE + input.slippageBps)) / BPS_SCALE
+      : (reference * (BPS_SCALE - input.slippageBps)) / BPS_SCALE;
+  return clampLimitPrice(adjusted);
+}
+
+function bestOppositePrice(input: {
+  rawOrders: RawOpenOrder[];
+  takerAddress?: Address;
+  outcome: Outcome;
+  intent: "BUY" | "SELL";
+}): bigint | undefined {
+  const outcomeInt = input.outcome === "YES" ? 1 : 0;
+  const targetSide = input.intent === "BUY" ? 1 : 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const takerLower = input.takerAddress?.toLowerCase();
+  let best: bigint | undefined;
+
+  for (const order of input.rawOrders) {
+    if (order.outcome !== outcomeInt || order.side !== targetSide) continue;
+    if (order.status !== "open" && order.status !== "partial") continue;
+    if (order.expiry <= nowSec) continue;
+    if (takerLower && order.maker.toLowerCase() === takerLower) continue;
+    if (BigInt(order.size) - BigInt(order.filled) <= 0n) continue;
+
+    const price = BigInt(order.price);
+    if (best === undefined) {
+      best = price;
+      continue;
+    }
+    best = input.intent === "BUY" ? (price < best ? price : best) : (price > best ? price : best);
+  }
+
+  return best;
+}
+
+function clampLimitPrice(value: bigint): bigint {
+  if (value <= 0n) return 1n;
+  if (value >= PRICE_SCALE) return PRICE_SCALE - 1n;
+  return value;
+}
+
 /**
  * Submit a market-style fill on-chain. Reads the orderbook snapshot the
  * caller passed in, walks best opposite-side resting orders up to
@@ -397,7 +455,7 @@ export async function takeOrder(
   };
 }
 
-async function ensureUsdcApproval(
+export async function ensureUsdcApproval(
   provider: EthereumProvider,
   taker: Address,
   spender: Address,
@@ -421,7 +479,10 @@ async function ensureUsdcApproval(
     method: "eth_sendTransaction",
     params: [{ from: taker, to: usdc, data }]
   })) as Hex;
-  await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+  if (receipt.status !== "success") {
+    throw new Error(`USDC approval transaction reverted: ${hash}`);
+  }
 }
 
 async function ensureOutcomeTokenApproval(
@@ -447,7 +508,10 @@ async function ensureOutcomeTokenApproval(
     method: "eth_sendTransaction",
     params: [{ from: taker, to: outcomeToken, data }]
   })) as Hex;
-  await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+  if (receipt.status !== "success") {
+    throw new Error(`OutcomeToken approval transaction reverted: ${hash}`);
+  }
 }
 
 // ---------- internal helpers ----------

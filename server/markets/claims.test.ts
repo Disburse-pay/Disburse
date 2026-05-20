@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => {
     getClaimByTxHash: vi.fn(),
     getMarketById: vi.fn(),
     insertClaim: vi.fn(),
+    getPositionByUserMarket: vi.fn(),
+    applyPositionDelta: vi.fn(),
     tryIssueMarketClaimPsp: vi.fn(),
   };
 });
@@ -32,6 +34,8 @@ vi.mock("./repo.js", () => ({
   getClaimByTxHash: mocks.getClaimByTxHash,
   getMarketById: mocks.getMarketById,
   insertClaim: mocks.insertClaim,
+  getPositionByUserMarket: mocks.getPositionByUserMarket,
+  applyPositionDelta: mocks.applyPositionDelta,
   outcomeFromInt: (n: number) => (n === 1 ? "YES" : "NO"),
 }));
 
@@ -85,6 +89,12 @@ describe("markets claims indexer", () => {
     mocks.getMarketById.mockResolvedValue(market);
     mocks.getClaimByTxHash.mockResolvedValue(null);
     mocks.insertClaim.mockResolvedValue(claim);
+    mocks.getPositionByUserMarket.mockResolvedValue({
+      yesShares: 2_000_000n,
+      noShares: 0n,
+      costBasis: 800_000n,
+      realizedPnl: 0n,
+    });
     mocks.tryIssueMarketClaimPsp.mockResolvedValue(PSP_UID);
     mocks.client.getTransactionReceipt.mockResolvedValue(
       receiptWithLogs([claimLog({ marketId: onchainMarketId(MARKET_ID) })])
@@ -111,6 +121,14 @@ describe("markets claims indexer", () => {
       settlementId: SETTLEMENT_ID,
     });
     expect(mocks.tryIssueMarketClaimPsp).toHaveBeenCalledWith(claim, market);
+    expect(mocks.applyPositionDelta).toHaveBeenCalledWith({
+      marketId: MARKET_ID,
+      userAddress: CLAIMANT,
+      outcome: 1,
+      shareDelta: -1_000_000n,
+      costBasisDelta: -400_000n,
+      realizedPnlDelta: 600_000n,
+    });
   });
 
   it("short-circuits already indexed claims without reading RPC", async () => {
@@ -122,6 +140,7 @@ describe("markets claims indexer", () => {
     expect(result.pspUid).toBe(PSP_UID);
     expect(mocks.client.getTransactionReceipt).not.toHaveBeenCalled();
     expect(mocks.insertClaim).not.toHaveBeenCalled();
+    expect(mocks.applyPositionDelta).not.toHaveBeenCalled();
   });
 
   it("rejects reverted claim receipts", async () => {
@@ -189,4 +208,3 @@ function claimLog(input: { marketId: Hex }) {
 function onchainMarketId(marketId: string): Hex {
   return keccak256(stringToBytes(marketId));
 }
-

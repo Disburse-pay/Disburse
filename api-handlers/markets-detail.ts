@@ -46,7 +46,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       price: o.price.toString(),
       size: o.size.toString(),
       filled: o.filled.toString(),
-      expiry: o.expiry,
+      expiry: Math.floor(new Date(o.expiry).getTime() / 1000),
       salt: o.salt.toString(),
       signature: o.signature,
       status: o.status,

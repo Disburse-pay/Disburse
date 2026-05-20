@@ -46,6 +46,7 @@ export default function HistoryPage({ onNavigate }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoadState("loading");
+    setClaimable(new Map());
     const tasks: Promise<unknown>[] = [
       fetchMarkets({ status: "resolved" }).then((m) => {
         if (!cancelled) setMarkets(m);

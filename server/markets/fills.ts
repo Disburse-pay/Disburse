@@ -25,9 +25,15 @@ import {
   applyFillToOrder,
   getMarketByAddress,
   getOrderByHash,
+  getPositionByUserMarket,
   insertFill,
 } from "./repo.js";
 import { createServerArcPublicClient } from "./rpc.js";
+import {
+  clampShareReduction,
+  costBasisForShareReduction,
+  prorateAmount,
+} from "./accounting.js";
 
 const FILLED_EVENT = parseAbiItem(
   "event Filled(bytes32 indexed orderHash, address indexed maker, address indexed taker, address market, uint8 outcome, uint8 side, uint256 price, uint256 fillSize, uint256 totalUsdc)"
@@ -212,12 +218,33 @@ async function applyFillToPositions(input: {
     realizedPnlDelta: 0n,
   });
 
+  const sellerPosition = await getPositionByUserMarket(input.marketId, seller);
+  if (!sellerPosition) {
+    return;
+  }
+
+  const shareReduction = clampShareReduction(
+    sellerPosition,
+    input.outcome,
+    input.size
+  );
+  if (shareReduction <= 0n) {
+    return;
+  }
+
+  const basisReduction = costBasisForShareReduction(
+    sellerPosition,
+    input.outcome,
+    shareReduction
+  );
+  const proceeds = prorateAmount(input.totalUsdc, shareReduction, input.size);
+
   await applyPositionDelta({
     marketId: input.marketId,
     userAddress: seller,
     outcome: input.outcome,
-    shareDelta: -input.size,
-    costBasisDelta: 0n,
-    realizedPnlDelta: input.totalUsdc,
+    shareDelta: -shareReduction,
+    costBasisDelta: -basisReduction,
+    realizedPnlDelta: proceeds - basisReduction,
   });
 }

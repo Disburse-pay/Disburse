@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Address, Hex } from "viem";
-import { planTakerFills } from "./onchain";
+import { deriveTakerLimitPrice, planTakerFills } from "./onchain";
 import type { RawOpenOrder } from "./api";
 
 // Why these tests exist: planTakerFills is the only off-chain logic that
@@ -150,5 +150,42 @@ describe("planTakerFills", () => {
     // Maker has 1 share remaining; plan must cap there, not at 5.
     expect(plan.length).toBe(1);
     expect(plan[0].fillSize).toBe(1_000_000n);
+  });
+});
+
+describe("deriveTakerLimitPrice", () => {
+  it("sets a BUY ceiling from the current best ask, not from 1.0", () => {
+    const rawOrders: RawOpenOrder[] = [
+      order({ maker: MAKER_A, side: 1, price: "600000", size: "5000000" }),
+      order({ maker: MAKER_B, side: 1, price: "500000", size: "5000000" })
+    ];
+
+    expect(
+      deriveTakerLimitPrice({
+        rawOrders,
+        takerAddress: TAKER,
+        outcome: "YES",
+        intent: "BUY",
+        slippageBps: 500n,
+        fallbackPriceMicros: 900_000n
+      })
+    ).toBe(525_000n);
+  });
+
+  it("sets a SELL floor from the current best bid", () => {
+    const rawOrders: RawOpenOrder[] = [
+      order({ maker: MAKER_A, side: 0, price: "400000", size: "5000000" }),
+      order({ maker: MAKER_B, side: 0, price: "500000", size: "5000000" })
+    ];
+
+    expect(
+      deriveTakerLimitPrice({
+        rawOrders,
+        takerAddress: TAKER,
+        outcome: "YES",
+        intent: "SELL",
+        slippageBps: 500n
+      })
+    ).toBe(475_000n);
   });
 });

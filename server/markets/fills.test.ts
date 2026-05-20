@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     createServerArcPublicClient: vi.fn(() => client),
     getOrderByHash: vi.fn(),
     getMarketByAddress: vi.fn(),
+    getPositionByUserMarket: vi.fn(),
     insertFill: vi.fn(),
     applyFillToOrder: vi.fn(),
     applyPositionDelta: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("./rpc.js", () => ({
 vi.mock("./repo.js", () => ({
   getOrderByHash: mocks.getOrderByHash,
   getMarketByAddress: mocks.getMarketByAddress,
+  getPositionByUserMarket: mocks.getPositionByUserMarket,
   insertFill: mocks.insertFill,
   applyFillToOrder: mocks.applyFillToOrder,
   applyPositionDelta: mocks.applyPositionDelta,
@@ -56,6 +58,12 @@ describe("markets fills indexer", () => {
       hash: ORDER_HASH,
       filled: 0n,
       size: 10n,
+    });
+    mocks.getPositionByUserMarket.mockResolvedValue({
+      yesShares: 5n,
+      noShares: 0n,
+      costBasis: 2_000_000n,
+      realizedPnl: 0n,
     });
     mocks.insertFill.mockResolvedValue(true);
   });
@@ -92,13 +100,19 @@ describe("markets fills indexer", () => {
       userAddress: TAKER,
       outcome: 1,
       shareDelta: -2n,
-      costBasisDelta: 0n,
-      realizedPnlDelta: 900_000n,
+      costBasisDelta: -800_000n,
+      realizedPnlDelta: 100_000n,
     });
     expect(mocks.applyFillToOrder).toHaveBeenCalledWith(ORDER_HASH, 2n, 10n);
   });
 
   it("indexes a SELL fill with taker as buyer", async () => {
+    mocks.getPositionByUserMarket.mockResolvedValue({
+      yesShares: 0n,
+      noShares: 5n,
+      costBasis: 2_000_000n,
+      realizedPnl: 0n,
+    });
     mocks.client.getTransactionReceipt.mockResolvedValue(
       receiptWithLogs([filledLog({ side: 1, outcome: 0, fillSize: 3n, totalUsdc: 1_200_000n })])
     );
@@ -118,8 +132,27 @@ describe("markets fills indexer", () => {
       userAddress: MAKER,
       outcome: 0,
       shareDelta: -3n,
-      costBasisDelta: 0n,
-      realizedPnlDelta: 1_200_000n,
+      costBasisDelta: -1_200_000n,
+      realizedPnlDelta: 0n,
+    });
+  });
+
+  it("does not create negative cached seller rows when the seller has no cached shares", async () => {
+    mocks.getPositionByUserMarket.mockResolvedValue(null);
+    mocks.client.getTransactionReceipt.mockResolvedValue(
+      receiptWithLogs([filledLog({ side: 1, outcome: 0, fillSize: 3n, totalUsdc: 1_200_000n })])
+    );
+
+    await indexFills(TX_HASH);
+
+    expect(mocks.applyPositionDelta).toHaveBeenCalledTimes(1);
+    expect(mocks.applyPositionDelta).toHaveBeenCalledWith({
+      marketId: marketRow.id,
+      userAddress: TAKER,
+      outcome: 0,
+      shareDelta: 3n,
+      costBasisDelta: 1_200_000n,
+      realizedPnlDelta: 0n,
     });
   });
 
@@ -195,4 +228,3 @@ function filledLog(input: {
     logIndex: 0,
   };
 }
-
