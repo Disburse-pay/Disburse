@@ -140,8 +140,18 @@ export default function SellSheet({
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
 
+      // Re-fetch a fresh orderbook to avoid filling against stale/expired
+      // orders that would cause on-chain reverts.
+      let freshOrders: RawOpenOrder[];
+      try {
+        const detail = await fetchMarketDetail(marketId);
+        freshOrders = detail.rawOrders;
+      } catch {
+        freshOrders = rawOrders;
+      }
+
       const limit = deriveTakerLimitPrice({
-        rawOrders,
+        rawOrders: freshOrders,
         takerAddress: account,
         outcome,
         intent: "SELL",
@@ -155,7 +165,7 @@ export default function SellSheet({
         intent: "SELL",
         sizeMicros: BigInt(sizeMicros!),
         limitPriceMicros: limit,
-        rawOrders
+        rawOrders: freshOrders
       });
 
       setSubmit({ kind: "indexing" });
@@ -174,12 +184,15 @@ export default function SellSheet({
       });
       onSold?.();
     } catch (err) {
-      const message =
+      const raw =
         err instanceof MarketsApiError
           ? `Sell failed (${err.status}): ${err.message}`
           : err instanceof Error
             ? err.message
             : "Sell failed";
+      const message = raw.includes("Retry with a fresh orderbook")
+        ? "Some orders expired before your sell was mined. Try again."
+        : raw;
       setSubmit({ kind: "error", message });
     }
   }

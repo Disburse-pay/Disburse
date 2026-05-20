@@ -18,6 +18,7 @@ import {
   encodeFunctionData,
   keccak256,
   parseAbi,
+  toHex,
   type Address,
   type Hash,
   type Hex
@@ -74,6 +75,39 @@ const EXCHANGE_FILL_ORDERS_ABI = [
     outputs: []
   }
 ] as const;
+
+/**
+ * Best-effort variant of fillOrders — skips individual failed orders instead
+ * of reverting the entire batch. Returns the count of successfully filled
+ * orders. Reverts only if ALL orders fail.
+ */
+const EXCHANGE_TRY_FILL_ORDERS_ABI = [
+  {
+    type: "function",
+    name: "tryFillOrders",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "orders",
+        type: "tuple[]",
+        components: [
+          { name: "maker", type: "address" },
+          { name: "market", type: "address" },
+          { name: "outcome", type: "uint8" },
+          { name: "side", type: "uint8" },
+          { name: "price", type: "uint256" },
+          { name: "size", type: "uint256" },
+          { name: "expiry", type: "uint64" },
+          { name: "salt", type: "uint256" }
+        ]
+      },
+      { name: "signatures", type: "bytes[]" },
+      { name: "fillSizes", type: "uint256[]" }
+    ],
+    outputs: [{ name: "filledCount", type: "uint256" }]
+  }
+] as const;
+
 
 /** uint256 max, used as approval amount for an effectively-unlimited grant. */
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -235,6 +269,13 @@ type OrderTuple = {
  * (b) the book is exhausted. Returning a partial fill is correct — the caller
  * decides whether to submit it.
  */
+/**
+ * Safety margin in seconds. Orders expiring within this window are excluded
+ * because the tx might not be mined before they expire on-chain, causing
+ * a revert. 60 seconds is conservative for testnet block times.
+ */
+const EXPIRY_BUFFER_SEC = 60;
+
 export function planTakerFills(input: {
   rawOrders: RawOpenOrder[];
   takerAddress: Address;
@@ -247,7 +288,9 @@ export function planTakerFills(input: {
   // BUY taker fills SELL maker orders (side=1, asks). SELL taker fills BUY
   // maker orders (side=0, bids). Anything else is irrelevant.
   const targetSide = input.intent === "BUY" ? 1 : 0;
-  const nowSec = Math.floor(Date.now() / 1000);
+  // Add expiry buffer so we don't attempt orders that might expire before
+  // the transaction is mined on-chain.
+  const nowSec = Math.floor(Date.now() / 1000) + EXPIRY_BUFFER_SEC;
   const takerLower = input.takerAddress.toLowerCase();
 
   const eligible = input.rawOrders
@@ -421,9 +464,11 @@ export async function takeOrder(
   const signatures = plan.map(({ order }) => order.signature);
   const fillSizes = plan.map(({ fillSize }) => fillSize);
 
+  // Use tryFillOrders for best-effort execution — individual stale/expired
+  // orders are skipped instead of reverting the entire batch.
   const data = encodeFunctionData({
-    abi: EXCHANGE_FILL_ORDERS_ABI,
-    functionName: "fillOrders",
+    abi: EXCHANGE_TRY_FILL_ORDERS_ABI,
+    functionName: "tryFillOrders",
     args: [orders, signatures, fillSizes]
   });
 
@@ -440,9 +485,27 @@ export async function takeOrder(
     confirmations: 1
   });
   if (receipt.status !== "success") {
-    throw new Error(`Fill transaction reverted: ${txHash}`);
+    throw new Error(
+      `Fill transaction reverted (all ${plan.length} orders were stale or expired). ` +
+      `Retry with a fresh orderbook. tx: ${txHash}`
+    );
   }
 
+  // Parse actual fills from receipt logs — tryFillOrders may have skipped
+  // some orders, so the planned fills != actual fills.
+  const actualFills = parseFillEvents(receipt.logs, input.taker);
+  if (actualFills.length > 0) {
+    const actualSize = actualFills.reduce((acc, f) => acc + f.size, 0n);
+    const actualUsdc = actualFills.reduce((acc, f) => acc + f.totalUsdc, 0n);
+    return {
+      txHash: txHash as Hash,
+      filledSizeMicros: actualSize,
+      totalUsdcMicros: actualUsdc,
+      fills: actualFills.map((f) => ({ maker: f.maker, price: f.price, size: f.size }))
+    };
+  }
+
+  // Fallback: if log parsing fails, use the optimistic plan estimate
   return {
     txHash: txHash as Hash,
     filledSizeMicros: totalSize,
@@ -453,6 +516,60 @@ export async function takeOrder(
       size: p.fillSize
     }))
   };
+}
+
+type ParsedFill = { maker: Address; price: bigint; size: bigint; totalUsdc: bigint };
+
+/**
+ * Extract Filled events from transaction receipt logs. Used to determine
+ * actual fill results from tryFillOrders, which may skip some orders.
+ */
+function parseFillEvents(
+  logs: Array<{ topics: string[]; data: string; address: string }>,
+  taker: Address
+): ParsedFill[] {
+  const { exchangeAddress } = getMarketsConfig();
+  const fills: ParsedFill[] = [];
+  // Filled event topic: keccak256("Filled(bytes32,address,address,address,uint8,uint8,uint256,uint256,uint256)")
+  const filledTopic = keccak256(
+    toHex(
+      "Filled(bytes32,address,address,address,uint8,uint8,uint256,uint256,uint256)"
+    )
+  );
+
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== exchangeAddress.toLowerCase()) continue;
+    if (!log.topics[0] || log.topics[0] !== filledTopic) continue;
+
+    try {
+      // topics[1] = orderHash, topics[2] = maker (indexed), topics[3] = taker (indexed)
+      const maker = ("0x" + (log.topics[2] ?? "").slice(26)) as Address;
+      // data = abi.encode(market, outcome, side, price, fillSize, totalUsdc)
+      const decoded = decodeFilledData(log.data as Hex);
+      if (decoded) {
+        fills.push({ maker, price: decoded.price, size: decoded.fillSize, totalUsdc: decoded.totalUsdc });
+      }
+    } catch {
+      // Skip malformed log entries
+    }
+  }
+  return fills;
+}
+
+function decodeFilledData(data: Hex): { price: bigint; fillSize: bigint; totalUsdc: bigint } | undefined {
+  try {
+    // Non-indexed params: address market, uint8 outcome, uint8 side, uint256 price, uint256 fillSize, uint256 totalUsdc
+    // That's 6 × 32 bytes = 192 bytes of data
+    if (data.length < 2 + 192 * 2) return undefined;
+    const hex = data.slice(2); // strip 0x
+    // Slots: [0]=market(32), [1]=outcome(32), [2]=side(32), [3]=price(32), [4]=fillSize(32), [5]=totalUsdc(32)
+    const price = BigInt("0x" + hex.slice(192, 256));
+    const fillSize = BigInt("0x" + hex.slice(256, 320));
+    const totalUsdc = BigInt("0x" + hex.slice(320, 384));
+    return { price, fillSize, totalUsdc };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function ensureUsdcApproval(

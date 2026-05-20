@@ -8,6 +8,7 @@ import {
   type Outcome
 } from "../../lib/markets/types";
 import {
+  fetchMarketDetail,
   indexFillsTx,
   MarketsApiError,
   postSignedOrder,
@@ -219,11 +220,24 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         throw new Error("Wallet provider not available. Reconnect and try again.");
       }
 
-      // Slippage-adjusted ceiling from the current best ask. Same math as
-      // `marketPlan` above; recompute here so a fast click does not rely on a
-      // stale memo.
+      // Re-fetch a fresh orderbook snapshot right before submitting.
+      // The rawOrders prop from the parent may be stale — orders could have
+      // expired, been filled by another taker, or been cancelled between the
+      // last render and now. Using fresh data minimises the window for
+      // on-chain reverts.
+      let freshOrders: RawOpenOrder[];
+      try {
+        const detail = await fetchMarketDetail(market.id);
+        freshOrders = detail.rawOrders;
+      } catch {
+        // If the re-fetch fails, fall back to the current snapshot — better
+        // than blocking the trade entirely.
+        freshOrders = rawOrders;
+      }
+
+      // Slippage-adjusted ceiling from the current best ask.
       const limit = deriveTakerLimitPrice({
-        rawOrders,
+        rawOrders: freshOrders,
         takerAddress: account,
         outcome,
         intent: "BUY",
@@ -239,7 +253,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         intent: "BUY",
         sizeMicros: BigInt(sizeMicros!),
         limitPriceMicros: limit,
-        rawOrders
+        rawOrders: freshOrders
       });
 
       // Tell the backend to index this tx's Filled events immediately, so
@@ -261,12 +275,17 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
       });
       setSizeStr("");
     } catch (err) {
-      const message =
+      const raw =
         err instanceof MarketsApiError
           ? `Index failed (${err.status}): ${err.message}`
           : err instanceof Error
             ? err.message
             : "Unknown error";
+      // Strip raw tx hashes from the user-facing message and add a
+      // human-readable hint that retrying is safe.
+      const message = raw.includes("Retry with a fresh orderbook")
+        ? "Some orders expired before your trade was mined. Tap \"Retry\" to try again with fresh prices."
+        : raw;
       setSubmit({ kind: "error", message });
     }
   }
@@ -420,9 +439,21 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         </p>
       )}
       {submit.kind === "error" && (
-        <p className="mt-3 rounded-md border border-[var(--red-text)]/40 bg-[var(--red-text)]/5 px-2 py-1.5 text-[11px] text-[var(--red-text)]">
-          {submit.message}
-        </p>
+        <div className="mt-3 rounded-md border border-[var(--red-text)]/40 bg-[var(--red-text)]/5 px-2 py-1.5">
+          <p className="text-[11px] text-[var(--red-text)]">
+            {submit.message}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSubmit({ kind: "idle" });
+              handleSubmit();
+            }}
+            className="mt-2 rounded border border-[var(--red-text)]/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--red-text)] transition-colors hover:bg-[var(--red-text)]/10"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-[var(--muted)]">

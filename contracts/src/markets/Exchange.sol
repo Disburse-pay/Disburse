@@ -166,6 +166,52 @@ contract Exchange {
         }
     }
 
+    /**
+     * Best-effort batch fill. Unlike fillOrders, if an individual order
+     * reverts (expired, over-fill, cancelled, bad sig, etc.) it is skipped
+     * and the remaining orders still process. Returns the count of
+     * successfully filled orders. Reverts only if ALL orders fail — so the
+     * taker doesn't waste gas on a completely stale book.
+     *
+     * Uses a self-call pattern: each order is attempted via
+     * `this.fillSingle(...)` wrapped in try/catch. `fillSingle` is
+     * restricted to `address(this)` so it cannot be called externally.
+     */
+    function tryFillOrders(
+        Order[] calldata orders,
+        bytes[] calldata signatures,
+        uint256[] calldata fillSizes
+    ) external returns (uint256 filledCount) {
+        require(
+            orders.length == signatures.length && orders.length == fillSizes.length,
+            "Exchange: length mismatch"
+        );
+        require(orders.length > 0, "Exchange: empty batch");
+
+        for (uint256 i = 0; i < orders.length; i++) {
+            try this.fillSingle(orders[i], signatures[i], fillSizes[i], msg.sender) {
+                filledCount++;
+            } catch {
+                // Order was stale/expired/cancelled/over-filled — skip it
+            }
+        }
+        require(filledCount > 0, "Exchange: all orders failed");
+    }
+
+    /**
+     * Single-order fill callable only by this contract (for tryFillOrders).
+     * External visibility is required for try/catch to work in Solidity.
+     */
+    function fillSingle(
+        Order calldata order,
+        bytes calldata signature,
+        uint256 fillSize,
+        address taker
+    ) external {
+        require(msg.sender == address(this), "Exchange: self-call only");
+        _fillOrder(order, signature, fillSize, taker);
+    }
+
     function _fillOrder(
         Order calldata order,
         bytes calldata signature,
