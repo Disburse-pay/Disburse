@@ -83,6 +83,7 @@ export default function LandingPage() {
       <HowItWorks />
       <Features />
       <CrossChain />
+      <PredictionMarkets />
       <FAQ />
       <FinalCta urls={urls} />
       <Footer />
@@ -310,6 +311,7 @@ function TrustStrip() {
     { label: "Base", sub: "Source" },
     { label: "Monad", sub: "Source" },
     { label: "Polymer", sub: "Proofs" },
+    { label: "Prediction Markets", sub: "Beta" },
   ];
   return (
     <section className="border-b border-white/[0.05] bg-[#08090c]">
@@ -694,8 +696,8 @@ function FeatureCard({
 function CrossChain() {
   const routes = [
     { chain: "Arc", speed: "~15 s", route: "Direct ERC-20", gas: "USDC" },
-    { chain: "Base Sepolia", speed: "~2\u20135 min", route: "Polymer proof", gas: "ETH" },
-    { chain: "Monad", speed: "~2\u20135 min", route: "Polymer proof", gas: "MON" },
+    { chain: "Base Sepolia", speed: "~2 to 5 min", route: "Polymer proof", gas: "ETH" },
+    { chain: "Monad", speed: "~2 to 5 min", route: "Polymer proof", gas: "MON" },
   ];
   return (
     <section className="border-b border-white/[0.05]">
@@ -751,6 +753,60 @@ function CrossChain() {
 }
 
 /* ============================================================
+ * PredictionMarkets. Showcasing the new Beta feature.
+ * ========================================================== */
+
+function PredictionMarkets() {
+  return (
+    <section className="border-b border-white/[0.05]">
+      <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-24">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-12">
+          <div className="md:col-span-6">
+            <SectionHeader
+              eyebrow={
+                <span className="inline-flex items-center gap-2">
+                  <Zap size={12} strokeWidth={1.5} className="text-white/40" />
+                  Beta Feature
+                </span>
+              }
+              title={
+                <>
+                  Prediction Markets.
+                  <br />
+                  <span className="italic font-normal text-white/50" style={{ fontFamily: "var(--font-serif)" }}>
+                    Trade on binary outcomes.
+                  </span>
+                </>
+              }
+              lede="Mint YES or NO shares using USDC on Arc Testnet. Trade on an on-chain central limit orderbook, and claim 1 USDC per winning share when the market resolves."
+            />
+          </div>
+
+          <div className="md:col-span-6">
+            <div className="grid grid-cols-1 gap-px bg-white/[0.05] sm:grid-cols-2">
+              <div className="bg-[#0a0b0e] p-5 transition-colors hover:bg-[#0e0f13]">
+                <span className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-white/[0.02] text-white/75">
+                  <Layers size={14} strokeWidth={1.5} />
+                </span>
+                <h4 className="mb-2 text-[14.5px] font-medium tracking-[-0.005em] text-white">Central Limit Orderbook</h4>
+                <p className="text-[12.5px] leading-relaxed text-white/55">Submit limit orders for YES or NO shares. Trades are matched fully on-chain with 1e6 fixed-point scaling.</p>
+              </div>
+              <div className="bg-[#0a0b0e] p-5 transition-colors hover:bg-[#0e0f13]">
+                <span className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-white/[0.02] text-white/75">
+                  <ShieldCheck size={14} strokeWidth={1.5} />
+                </span>
+                <h4 className="mb-2 text-[14.5px] font-medium tracking-[-0.005em] text-white">Verifiable Resolution</h4>
+                <p className="text-[12.5px] leading-relaxed text-white/55">When a market closes, an authorized resolver finalizes the outcome. Claiming winning shares produces a Portable Settlement Proof.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
  * FAQ. Short. Accordion.
  * ========================================================== */
 
@@ -775,6 +831,10 @@ function FAQ() {
     {
       q: "What is stored in my browser versus the backend?",
       a: "QR requests and receipts live in localStorage so history stays offline. If a Supabase backend is configured, QR confirmations also sync through a thin API so payer and requester see the same realtime state.",
+    },
+    {
+      q: "What are Prediction Markets (Beta)?",
+      a: "Disburse now includes a beta feature for binary prediction markets on Arc Testnet. Users can mint and trade YES/NO shares on an on-chain orderbook using USDC. Winning shares can be redeemed for 1 USDC each.",
     },
   ];
 

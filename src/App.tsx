@@ -2352,7 +2352,6 @@ function PayRequestPage({
                       disabled={Boolean(request.txHash)}
                     >
                       {(request.allowedSourceChainIds ?? getAllowedSourceChainIds())
-                        .filter((id) => id !== ARC_DESTINATION_CHAIN_ID)
                         .map((chainId) => (
                           <option value={chainId} key={chainId}>
                             {getCrossChainLabel(chainId)}
@@ -3171,10 +3170,10 @@ function clearInvalidCrossChainSourceHash(request: PaymentRequest, sourceChainId
 
 function chooseDefaultPaymentSource(request: PaymentRequest): PaymentSourceChainId {
   const allowed = isCrossChainPaymentRequest(request) ? request.allowedSourceChainIds : undefined;
-  return allowed?.includes(BASE_SEPOLIA_CHAIN_ID)
-    ? BASE_SEPOLIA_CHAIN_ID
-    : allowed?.includes(ARC_CHAIN_ID)
-      ? ARC_CHAIN_ID
+  return allowed?.includes(ARC_CHAIN_ID)
+    ? ARC_CHAIN_ID
+    : allowed?.includes(BASE_SEPOLIA_CHAIN_ID)
+      ? BASE_SEPOLIA_CHAIN_ID
       : allowed?.[0] ?? ARC_CHAIN_ID;
 }
 
