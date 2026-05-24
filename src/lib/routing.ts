@@ -13,7 +13,8 @@ export type Page =
   | "markets"
   | "market-detail"
   | "market-positions"
-  | "market-history";
+  | "market-history"
+  | "lending";
 
 export type NavigateHandler = (event: MouseEvent<HTMLAnchorElement>, target: string) => void;
 
@@ -26,6 +27,7 @@ export const MARKET_DETAIL_PATH_PREFIX = "/markets/";
 export const MARKETS_PATH = "/markets";
 export const MARKET_POSITIONS_PATH = "/markets/positions";
 export const MARKET_HISTORY_PATH = "/markets/history";
+export const LENDING_PATH = "/lending";
 
 export function getInitialPage(): Page {
   const hostname = window.location.hostname;
@@ -110,6 +112,7 @@ function isBetPath(pathname: string): boolean {
     pathname === MARKETS_PATH ||
     pathname === MARKET_POSITIONS_PATH ||
     pathname === MARKET_HISTORY_PATH ||
+    pathname === LENDING_PATH ||
     pathname.startsWith(MARKET_DETAIL_PATH_PREFIX)
   );
 }
@@ -119,6 +122,7 @@ function isBetPath(pathname: string): boolean {
 export function resolveBetPage(pathname: string): Page {
   if (pathname === MARKET_POSITIONS_PATH) return "market-positions";
   if (pathname === MARKET_HISTORY_PATH) return "market-history";
+  if (pathname === LENDING_PATH) return "lending";
   if (pathname === MARKETS_PATH || pathname === "/") return "markets";
   if (pathname.startsWith(MARKET_DETAIL_PATH_PREFIX)) return "market-detail";
   // Unknown path on bet subdomain falls back to the markets list.

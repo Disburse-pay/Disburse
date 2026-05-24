@@ -3,6 +3,10 @@
     {
       "path": "/api/markets-expire-orders",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/lending-index-cron",
+      "schedule": "*/5 * * * *"
     }
   ],
   "rewrites": [

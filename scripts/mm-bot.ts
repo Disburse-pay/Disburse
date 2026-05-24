@@ -79,6 +79,12 @@ const MARKET_ABI = parseAbi([
   "function tokenIdNo() external view returns (uint256)",
 ]);
 
+// Exchange.fillOrder lets us take another maker's resting quote when ACTIVE
+// take mode is enabled. The struct shape must match Exchange.sol's Order.
+const EXCHANGE_ABI = parseAbi([
+  "function fillOrder((address maker,address market,uint8 outcome,uint8 side,uint256 price,uint256 size,uint64 expiry,uint256 salt) order, bytes signature, uint256 fillSize) external",
+]);
+
 type Config = {
   account: PrivateKeyAccount;
   exchange: Address;
@@ -94,6 +100,16 @@ type Config = {
   quoteTtlSeconds: number;
   fairLookback: number;
   dryRun: boolean;
+  // ── Active-take mode (opt-in) ────────────────────────────────────────
+  // When two MM bots run with opposite fairSkewMicros, their depth looks
+  // subtly different. Without anyone TAKING, no fills ever print on the
+  // tape. The take pass below randomly nibbles the other bot's resting
+  // quote so the market shows ongoing activity. Self-fills revert in
+  // Exchange.sol so we filter out our own maker address before submitting.
+  fairSkewMicros: bigint;        // signed shift applied to fair before quoting
+  takeProbability: number;       // 0..1, chance per market per tick
+  takeSizeMicros: bigint;        // fillSize when we do take
+  takeMaxDeviationMicros: bigint; // skip orders whose price is too far from fair
 };
 
 type MarketRow = {
@@ -176,12 +192,19 @@ async function runTick(cfg: Config) {
     }
   }
 
-  // Live markets: normal quoting loop.
+  // Live markets: normal quoting loop. After quoting each market, optionally
+  // take a small slice of another maker's resting quote so the trade tape
+  // doesn't go dark. Take errors are isolated from quote errors.
   for (const market of active) {
     try {
       await quoteMarket(cfg, market);
     } catch (err) {
       console.error(`market ${market.id} failed:`, err instanceof Error ? err.message : err);
+    }
+    try {
+      await maybeTakeMarket(cfg, market);
+    } catch (err) {
+      console.error(`market ${market.id} take failed:`, err instanceof Error ? err.message : err);
     }
   }
 }
@@ -229,10 +252,14 @@ async function quoteMarket(cfg: Config, market: MarketRow) {
   }
 
   const fairMicros = await fetchFairValue(cfg, market.id);
+  // Two-bot setup: bot A runs with positive skew, bot B with negative skew,
+  // so their books are subtly tilted in opposite directions. The skew only
+  // moves quotes; it does NOT widen the spread (that's still spreadMicros).
+  const skewedFair = clampPrice(fairMicros + cfg.fairSkewMicros);
   const halfSpread = cfg.spreadMicros / 2n;
   // Hard bounds: 0 < price < PRICE_SCALE (Exchange require).
-  const yesBid = clampPrice(fairMicros - halfSpread);
-  const yesAsk = clampPrice(fairMicros + halfSpread);
+  const yesBid = clampPrice(skewedFair - halfSpread);
+  const yesAsk = clampPrice(skewedFair + halfSpread);
   // NO price = 1 - YES price (binary market identity).
   const noBid = clampPrice(PRICE_SCALE - yesAsk);
   const noAsk = clampPrice(PRICE_SCALE - yesBid);
@@ -245,7 +272,8 @@ async function quoteMarket(cfg: Config, market: MarketRow) {
     { outcome: 0, side: 1, price: noAsk,  have: no,      reason: "NO SELL (need NO shares)" },
   ];
 
-  log(`  ${market.id}: fair=${formatPriceMicros(fairMicros)} yes[${formatPriceMicros(yesBid)}/${formatPriceMicros(yesAsk)}] no[${formatPriceMicros(noBid)}/${formatPriceMicros(noAsk)}] usdc=${fmt(usdcBal)} yes=${fmt(yes)} no=${fmt(no)}`);
+  const skewTag = cfg.fairSkewMicros === 0n ? "" : ` skew=${formatSkewMicros(cfg.fairSkewMicros)}`;
+  log(`  ${market.id}: fair=${formatPriceMicros(fairMicros)}${skewTag} yes[${formatPriceMicros(yesBid)}/${formatPriceMicros(yesAsk)}] no[${formatPriceMicros(noBid)}/${formatPriceMicros(noAsk)}] usdc=${fmt(usdcBal)} yes=${fmt(yes)} no=${fmt(no)}`);
 
   for (const q of quotes) {
     // BUY needs price*size USDC; SELL needs `size` shares. Skip if balance
@@ -279,6 +307,145 @@ async function quoteMarket(cfg: Config, market: MarketRow) {
     } catch (err) {
       console.error(`    post ${q.reason} failed:`, err instanceof Error ? err.message : err);
     }
+  }
+}
+
+// ─── Active take (cross other maker quotes) ────────────────────────────
+
+/**
+ * With probability `takeProbability` per market per tick, fetch the full
+ * signed orderbook (`/api/markets-detail`) and call `Exchange.fillOrder`
+ * against one randomly chosen resting order that is NOT ours. This is what
+ * produces visible trade tape — quoting alone leaves the fills feed empty
+ * until a human trades.
+ *
+ * Safety guards:
+ *   - Skip orders whose maker is us (Exchange would revert on self-trade).
+ *   - Skip near-expired orders so the tx isn't wasted on a stale book.
+ *   - Skip orders too far from fair value (likely stale or manipulated).
+ *   - Pre-check on-chain balance for the side we have to pay.
+ */
+async function maybeTakeMarket(cfg: Config, market: MarketRow): Promise<void> {
+  if (cfg.takeProbability <= 0) return;
+  if (Math.random() >= cfg.takeProbability) return;
+
+  type RawOrderWire = {
+    hash: Hex;
+    maker: Address;
+    outcome: 0 | 1;
+    side: 0 | 1;
+    price: string;
+    size: string;
+    filled: string;
+    expiry: number | string;
+    salt: string;
+    signature: Hex;
+    status: string;
+  };
+  const detailRes = await fetch(
+    `${cfg.apiBaseUrl}/api/markets-detail?id=${encodeURIComponent(market.id)}`
+  );
+  if (!detailRes.ok) return;
+  const detail = (await detailRes.json()) as { orderbook?: RawOrderWire[] };
+  if (!detail.orderbook?.length) return;
+
+  const fairMicros = await fetchFairValue(cfg, market.id);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ownMaker = cfg.account.address.toLowerCase();
+
+  const candidates = detail.orderbook.filter((o) => {
+    if (o.maker.toLowerCase() === ownMaker) return false;
+    if (o.status !== "open" && o.status !== "partial") return false;
+    const expirySec =
+      typeof o.expiry === "number"
+        ? o.expiry
+        : Math.floor(new Date(o.expiry).getTime() / 1000);
+    if (expirySec <= nowSec + 30) return false;
+    const remaining = BigInt(o.size) - BigInt(o.filled);
+    if (remaining <= 0n) return false;
+    // Compare in YES space so we use one fair reference for both outcomes.
+    const yesPrice = o.outcome === 1 ? BigInt(o.price) : PRICE_SCALE - BigInt(o.price);
+    const deviation = yesPrice > fairMicros ? yesPrice - fairMicros : fairMicros - yesPrice;
+    if (deviation > cfg.takeMaxDeviationMicros) return false;
+    return true;
+  });
+  if (candidates.length === 0) return;
+
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  const remaining = BigInt(pick.size) - BigInt(pick.filled);
+  const fillSize = remaining < cfg.takeSizeMicros ? remaining : cfg.takeSizeMicros;
+  if (fillSize <= 0n) return;
+
+  const client = createServerArcPublicClient({ timeoutMs: 15_000 });
+  const marketAddr = getAddress(market.onchainAddress);
+
+  // Maker BUY (side=0): taker pays shares. Maker SELL (side=1): taker pays USDC.
+  if (pick.side === 0) {
+    const tokenId = (await client.readContract({
+      address: marketAddr,
+      abi: MARKET_ABI,
+      functionName: pick.outcome === 1 ? "tokenIdYes" : "tokenIdNo",
+    })) as bigint;
+    const bal = (await client.readContract({
+      address: cfg.outcomeToken,
+      abi: ERC1155_ABI,
+      functionName: "balanceOf",
+      args: [cfg.account.address, tokenId],
+    })) as bigint;
+    if (bal < fillSize) {
+      log(`  ${market.id}: take skip (need ${fmt(fillSize)} ${pick.outcome === 1 ? "YES" : "NO"} shares, have ${fmt(bal)})`);
+      return;
+    }
+  } else {
+    const usdcBal = (await client.readContract({
+      address: cfg.collateral,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [cfg.account.address],
+    })) as bigint;
+    const usdcNeed = (BigInt(pick.price) * fillSize) / PRICE_SCALE;
+    if (usdcBal < usdcNeed) {
+      log(`  ${market.id}: take skip (need ${fmt(usdcNeed)} USDC, have ${fmt(usdcBal)})`);
+      return;
+    }
+  }
+
+  const sideLabel = pick.side === 0 ? "BUY" : "SELL";
+  const outcomeLabel = pick.outcome === 1 ? "YES" : "NO";
+  log(`  ${market.id}: TAKE ${fmt(fillSize)} ${outcomeLabel} ${sideLabel} @ ${formatPriceMicros(BigInt(pick.price))} from ${pick.maker.slice(0, 10)}…`);
+  if (cfg.dryRun) return;
+
+  const expirySec =
+    typeof pick.expiry === "number"
+      ? pick.expiry
+      : Math.floor(new Date(pick.expiry as string).getTime() / 1000);
+  const order = {
+    maker: getAddress(pick.maker),
+    market: marketAddr,
+    outcome: pick.outcome,
+    side: pick.side,
+    price: BigInt(pick.price),
+    size: BigInt(pick.size),
+    expiry: BigInt(expirySec),
+    salt: BigInt(pick.salt),
+  };
+  const data = encodeFunctionData({
+    abi: EXCHANGE_ABI,
+    functionName: "fillOrder",
+    args: [order, pick.signature, fillSize],
+  });
+  const txHash = await sendTx(cfg, cfg.exchange, data);
+  log(`    take filled tx=${txHash}`);
+  // Tell the server to index this fill immediately; otherwise the tape lags
+  // until the periodic reconciler runs. Best-effort.
+  try {
+    await fetch(`${cfg.apiBaseUrl}/api/markets-fills`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txHash }),
+    });
+  } catch (err) {
+    log(`    fills-notify failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -571,6 +738,12 @@ function loadConfig(): Config {
     quoteTtlSeconds: readNumber("MM_QUOTE_TTL_S", 90),                     // orders expire after 90s
     fairLookback: readNumber("MM_FAIR_FILLS_LOOKBACK", 10),
     dryRun: process.env.MM_DRY_RUN === "1",
+    // 1 bps = 0.0001 = 100 price-micros. Signed: a second bot uses the
+    // opposite sign so the two books tilt opposite ways.
+    fairSkewMicros: readSignedBigint("MM_FAIR_SKEW_BPS", 0n) * 100n,
+    takeProbability: readFloat01("MM_TAKE_PROBABILITY_PER_TICK", 0),
+    takeSizeMicros: readBigint("MM_TAKE_SIZE_MICROS", 1_000_000n),         // $1
+    takeMaxDeviationMicros: readBigint("MM_TAKE_MAX_DEVIATION_BPS", 1_500n) * 100n, // 15%
   };
 }
 
@@ -595,6 +768,21 @@ function readNumber(key: string, fallback: number): number {
   return n;
 }
 
+function readSignedBigint(key: string, fallback: bigint): bigint {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  if (!/^-?\d+$/.test(raw)) throw new Error(`${key} must be a signed integer`);
+  return BigInt(raw);
+}
+
+function readFloat01(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 1) throw new Error(`${key} must be a number in [0,1]`);
+  return n;
+}
+
 function randomSalt(): bigint {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -615,6 +803,12 @@ function fmt(micros: bigint): string {
 
 function formatPriceMicros(p: bigint): string {
   return `${(Number(p) / 1_000_000).toFixed(3)}`;
+}
+
+function formatSkewMicros(skew: bigint): string {
+  const bps = skew / 100n;
+  const sign = skew >= 0n ? "+" : "";
+  return `${sign}${bps}bps`;
 }
 
 function sleep(ms: number) {

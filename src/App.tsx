@@ -1460,7 +1460,7 @@ function App() {
   // the app-shell pages.
   type AppShellPage = Exclude<
     Page,
-    "landing" | "markets" | "market-detail" | "market-positions" | "market-history"
+    "landing" | "markets" | "market-detail" | "market-positions" | "market-history" | "lending"
   >;
   const routeMeta: Record<AppShellPage, { title: string; subtitle: string }> = {
     dashboard:       { title: "Overview",       subtitle: "Requests, receipts and network health at a glance." },

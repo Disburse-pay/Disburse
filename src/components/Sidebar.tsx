@@ -28,7 +28,8 @@ export type Page =
   | "markets"
   | "market-detail"
   | "market-positions"
-  | "market-history";
+  | "market-history"
+  | "lending";
 
 type NavItem = {
   page: Page;

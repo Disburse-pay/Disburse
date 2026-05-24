@@ -1,9 +1,10 @@
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BarChart3, History, LayoutGrid, LogOut, Wallet } from "lucide-react";
+import { BarChart3, History, LayoutGrid, LogOut, PiggyBank, Wallet } from "lucide-react";
 import { cn } from "./lib/utils";
 import { useDisburseDynamicWallet } from "./lib/dynamic";
 import { getInitialTheme } from "./lib/theme";
 import {
+  LENDING_PATH,
   MARKETS_PATH,
   MARKET_HISTORY_PATH,
   MARKET_POSITIONS_PATH,
@@ -21,6 +22,7 @@ import MarketDetailPage from "./pages/markets/MarketDetailPage";
 import MyPositionsPage from "./pages/markets/MyPositionsPage";
 import HistoryPage from "./pages/markets/HistoryPage";
 import WhitelistPage from "./pages/markets/WhitelistPage";
+import LendingPage from "./pages/lending/LendingPage";
 import { checkWhitelistStatus } from "./lib/markets/api";
 
 
@@ -34,7 +36,8 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { page: "markets",           label: "Markets",   href: MARKETS_PATH,           icon: LayoutGrid },
   { page: "market-positions",  label: "Positions", href: MARKET_POSITIONS_PATH,  icon: BarChart3 },
-  { page: "market-history",    label: "Resolved",  href: MARKET_HISTORY_PATH,    icon: History }
+  { page: "market-history",    label: "Resolved",  href: MARKET_HISTORY_PATH,    icon: History },
+  { page: "lending",           label: "Lending",   href: LENDING_PATH,           icon: PiggyBank }
 ];
 
 export default function BetApp() {
@@ -143,6 +146,7 @@ export default function BetApp() {
             {page === "market-detail" && <MarketDetailPage marketId={marketId} onNavigate={onNavigate} />}
             {page === "market-positions" && <MyPositionsPage onNavigate={onNavigate} />}
             {page === "market-history" && <HistoryPage onNavigate={onNavigate} />}
+            {page === "lending" && <LendingPage />}
           </main>
         </div>
       )}

@@ -3,6 +3,11 @@ import { sendJson } from "../server/http.js";
 
 import adminMarketsCreate from "../api-handlers/admin-markets-create.js";
 import adminMarketsResolve from "../api-handlers/admin-markets-resolve.js";
+import lendingHistory from "../api-handlers/lending-history.js";
+import lendingIndexCron from "../api-handlers/lending-index-cron.js";
+import lendingPoolState from "../api-handlers/lending-pool-state.js";
+import lendingPosition from "../api-handlers/lending-position.js";
+import lendingPositions from "../api-handlers/lending-positions.js";
 import markets from "../api-handlers/markets.js";
 import marketsClaims from "../api-handlers/markets-claims.js";
 import marketsDetail from "../api-handlers/markets-detail.js";
@@ -32,6 +37,11 @@ type Handler = (request: ApiRequest & { headers?: Record<string, string | string
 const handlers: Record<string, Handler> = {
   "admin-markets-create": adminMarketsCreate,
   "admin-markets-resolve": adminMarketsResolve,
+  "lending-history": lendingHistory,
+  "lending-index-cron": lendingIndexCron,
+  "lending-pool-state": lendingPoolState,
+  "lending-position": lendingPosition,
+  "lending-positions": lendingPositions,
   markets,
   "markets-claims": marketsClaims,
   "markets-detail": marketsDetail,
