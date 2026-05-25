@@ -21,9 +21,7 @@ import MarketsListPage from "./pages/markets/MarketsListPage";
 import MarketDetailPage from "./pages/markets/MarketDetailPage";
 import MyPositionsPage from "./pages/markets/MyPositionsPage";
 import HistoryPage from "./pages/markets/HistoryPage";
-import WhitelistPage from "./pages/markets/WhitelistPage";
 import LendingPage from "./pages/lending/LendingPage";
-import { checkWhitelistStatus } from "./lib/markets/api";
 
 
 type NavItem = {
@@ -45,36 +43,14 @@ export default function BetApp() {
   const [marketId, setMarketId] = useState<string | undefined>(() => getMarketIdFromPath());
   const [, setRouteKey] = useState<string>(() => getCurrentRouteKey());
 
-  // Whitelist gating state
   const wallet = useDisburseDynamicWallet();
   const account = wallet.getAccount?.();
-  const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(null);
 
-  // Check whitelist status when account changes
-  useEffect(() => {
-    if (!account) {
-      setIsWhitelisted(null);
-      return;
-    }
-    
-    let cancelled = false;
-    async function checkWhitelist() {
-      // Show loading while checking
-      setIsWhitelisted(null);
-      const { whitelisted } = await checkWhitelistStatus(account!);
-      if (!cancelled) {
-        setIsWhitelisted(whitelisted);
-      }
-    }
-    void checkWhitelist();
-    return () => {
-      cancelled = true;
-    };
-  }, [account]);
-
-  const handleWhitelistRedeemed = useCallback(() => {
-    setIsWhitelisted(true);
-  }, []);
+  // Open beta: any connected wallet can use the markets + lending shells.
+  // The private-beta whitelist gate was retired once the lending product
+  // launched. WhitelistPage / checkWhitelistStatus / market_whitelist_codes
+  // intentionally remain available — flip the gate back on by re-importing
+  // them here if a future surface needs invite-only access.
 
   // Apply persisted theme on mount. The bet shell does not have its own
   // toggle yet — it inherits whatever the user last selected in the app.
@@ -108,36 +84,29 @@ export default function BetApp() {
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
   }, []);
 
-  // If not connected, show the shell but prompt to connect.
-  // If connected but not whitelisted, show the WhitelistPage.
-  // If connected and whitelisted, render the markets.
-  const isReady = account && isWhitelisted;
-
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
       <BetHeader page={page} onNavigate={onNavigate} />
-      
+
       {!account ? (
         <div className="mx-auto flex max-w-[1400px] flex-col items-center justify-center gap-6 px-6 pt-32 text-center md:px-10">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ink)] text-[var(--canvas)]">
             <Wallet className="h-8 w-8" />
           </div>
-          <h1 className="font-mono text-[16px] font-semibold tracking-tight text-[var(--ink)]">
-            Disburse Markets Beta
+          <h1 className="text-[24px] font-semibold tracking-[-0.018em] text-[var(--ink)]">
+            Disburse Markets
           </h1>
-          <p className="max-w-[400px] text-[14px] leading-relaxed text-[var(--muted)]">
-            Connect your wallet to enter the prediction markets closed beta.
+          <p className="max-w-[440px] text-[14px] leading-relaxed text-[var(--muted)]">
+            Connect your wallet to trade prediction markets and use cirBTC-backed lending on Arc Testnet.
           </p>
           <button
             type="button"
             onClick={() => wallet.openAuthFlow?.()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--ink)] px-6 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--canvas)] transition-opacity hover:opacity-90"
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-5 py-2.5 text-[13.5px] font-medium text-[var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
           >
-            Connect Wallet
+            Connect wallet
           </button>
         </div>
-      ) : !isWhitelisted ? (
-        <WhitelistPage account={account} onRedeemed={handleWhitelistRedeemed} />
       ) : (
         <div className="mx-auto flex max-w-[1400px] gap-8 px-6 pt-6 md:px-10">
           <BetSidebar page={page} onNavigate={onNavigate} />
@@ -162,12 +131,12 @@ function BetHeader({ page: _page, onNavigate }: { page: Page; onNavigate: Naviga
           <a
             href={MARKETS_PATH}
             onClick={(e) => onNavigate(e, MARKETS_PATH)}
-            className="font-mono text-[13px] font-semibold tracking-tight text-[var(--ink)]"
+            className="text-[15px] font-semibold tracking-[-0.012em] text-[var(--ink)]"
           >
             Disburse
           </a>
-          <span className="rounded-sm border border-[var(--line)] px-1.5 py-[2px] font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
-            Bet
+          <span className="rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--muted)]">
+            Markets
           </span>
         </div>
 
@@ -214,7 +183,7 @@ function BetWalletButton() {
       <button
         type="button"
         onClick={() => wallet.openAuthFlow?.()}
-        className="inline-flex items-center gap-2 rounded-md border border-[var(--ink)] bg-[var(--ink)] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--canvas)] transition-colors hover:opacity-90"
+        className="inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
       >
         <Wallet className="h-3.5 w-3.5" />
         Connect
@@ -227,10 +196,10 @@ function BetWalletButton() {
       <button
         type="button"
         onClick={() => setMenuOpen((open) => !open)}
-        className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--ink)] transition-colors hover:border-[var(--ink)]"
+        className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-[12.5px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--paper-2)]"
       >
         <Wallet className="h-3.5 w-3.5" />
-        {short}
+        <span className="font-mono">{short}</span>
       </button>
       {menuOpen && (
         <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[180px] overflow-hidden rounded-md border border-[var(--line)] bg-[var(--canvas)] shadow-md">
@@ -241,8 +210,8 @@ function BetWalletButton() {
               await wallet.disconnect?.();
             }}
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--ink)]",
-              "transition-colors hover:bg-[var(--input-bg)]"
+              "flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-[var(--ink)]",
+              "transition-colors hover:bg-[var(--paper-2)]"
             )}
           >
             <LogOut className="h-3.5 w-3.5" />
