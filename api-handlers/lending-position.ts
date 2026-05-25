@@ -8,6 +8,7 @@ import {
 } from "../server/http.js";
 import { HttpError } from "../server/http.js";
 import { getPosition } from "../server/lending/repo.js";
+import { toIntString, toIntStringOrNull } from "../server/lending/wire.js";
 
 /**
  * GET /api/lending-position?address=0x...
@@ -33,13 +34,13 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     sendJson(response, 200, {
       position: {
         userAddress: row.user_address,
-        collateralAmount: String(row.collateral_amount),
-        scaledBorrow: String(row.scaled_borrow),
-        cachedDebtUsdc: String(row.cached_debt_usdc),
-        cachedCollateralUsdc: String(row.cached_collateral_usdc),
-        cachedHealthFactor: row.cached_health_factor ? String(row.cached_health_factor) : null,
+        collateralAmount: toIntString(row.collateral_amount),
+        scaledBorrow: toIntString(row.scaled_borrow),
+        cachedDebtUsdc: toIntString(row.cached_debt_usdc),
+        cachedCollateralUsdc: toIntString(row.cached_collateral_usdc),
+        cachedHealthFactor: toIntStringOrNull(row.cached_health_factor),
         isLiquidatable: row.is_liquidatable,
-        lastUpdatedBlock: row.last_updated_block ? String(row.last_updated_block) : null,
+        lastUpdatedBlock: toIntStringOrNull(row.last_updated_block),
         lastUpdatedAt: row.last_updated_at,
       },
     });

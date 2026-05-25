@@ -1,25 +1,56 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Wallet } from "lucide-react";
 import { useDisburseDynamicWallet } from "../../lib/dynamic";
 import PoolStats from "../../components/lending/PoolStats";
 import PositionPanel from "../../components/lending/PositionPanel";
-import ActionPanel from "../../components/lending/ActionPanel";
+import LendCard from "../../components/lending/LendCard";
+import BorrowCard from "../../components/lending/BorrowCard";
+import { fetchLendingPoolSnapshot } from "../../lib/lending/api";
+import type { LendingPoolSnapshot } from "../../lib/lending/types";
 
 /**
  * LendingPage — top-level page for the cirBTC → USDC lending product.
  *
- * Layout (single column on mobile, two on desktop):
- *   ┌─ PoolStats (cash, borrowed, utilization, APRs)
- *   ┌─ PositionPanel (your collateral, debt, health factor, supplied)
- *   └─ ActionPanel (6 tabs: supply / withdraw / +cirBTC / −cirBTC / borrow / repay)
+ * Layout:
+ *   ┌─ PoolStats          (cash, borrowed, util, APRs, BTC price)
+ *   ┌─ PositionPanel      (collateral, debt, HF, supplied aUSDC)
+ *   └─ Action grid (md:2-col)
+ *      ┌─ LendCard        (Earn — Supply / Withdraw USDC)
+ *      └─ BorrowCard      (Borrow — Deposit / Borrow / Repay / Withdraw)
  *
- * The action panel bumps `refreshKey` on success so PositionPanel re-reads
- * fresh state. PoolStats has its own poller.
+ * Splitting the original 6-tab ActionPanel into Lend vs Borrow makes the
+ * mental model match the product: "I want to earn yield" vs "I want a loan
+ * against my cirBTC". Each card surfaces wallet balances + a MAX button so
+ * users aren't squinting to figure out how much they can move.
+ *
+ * The page itself fetches the pool snapshot once and shares the APR / BTC
+ * price props to the action cards so the cards don't duplicate the poll.
+ * `refreshKey` bumps after every tx so balances + position re-fetch fresh.
  */
 export default function LendingPage() {
   const wallet = useDisburseDynamicWallet();
   const account = wallet.getAccount?.();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [snap, setSnap] = useState<LendingPoolSnapshot | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const s = await fetchLendingPoolSnapshot();
+        if (!cancelled) setSnap(s);
+      } catch {
+        // PoolStats has its own loader + error UI; this is just for the
+        // child cards' optional APR / price hints, so swallow errors.
+      }
+    }
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [refreshKey]);
 
   if (!account) {
     return (
@@ -52,7 +83,21 @@ export default function LendingPage() {
       </header>
       <PoolStats />
       <PositionPanel account={account} refreshKey={refreshKey} />
-      <ActionPanel onSuccess={() => setRefreshKey((k) => k + 1)} />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <LendCard
+          account={account}
+          supplyAprWad={snap?.supplyAprWad ?? null}
+          refreshKey={refreshKey}
+          onSuccess={() => setRefreshKey((k) => k + 1)}
+        />
+        <BorrowCard
+          account={account}
+          borrowAprWad={snap?.borrowAprWad ?? null}
+          btcPriceWad={snap?.btcPriceWad ?? null}
+          refreshKey={refreshKey}
+          onSuccess={() => setRefreshKey((k) => k + 1)}
+        />
+      </div>
     </div>
   );
 }

@@ -294,3 +294,46 @@ export async function readAUsdcBalance(user: Address): Promise<bigint> {
     args: [user],
   })) as bigint;
 }
+
+/** Wallet ERC20 balance for USDC. Used by the lending UI to populate MAX buttons. */
+export async function readUsdcWalletBalance(user: Address): Promise<bigint> {
+  return (await publicClient.readContract({
+    address: TOKENS.USDC.address,
+    abi: READ_ABI,
+    functionName: "balanceOf",
+    args: [user],
+  })) as bigint;
+}
+
+/** Wallet ERC20 balance for cirBTC. Used to populate the "Deposit collateral" MAX. */
+export async function readCirBtcWalletBalance(user: Address): Promise<bigint> {
+  const cfg = getLendingConfig();
+  return (await publicClient.readContract({
+    address: cfg.cirBtc,
+    abi: READ_ABI,
+    functionName: "balanceOf",
+    args: [user],
+  })) as bigint;
+}
+
+/** Locked collateral inside the pool (separate from the user's wallet cirBTC). */
+export async function readUserCollateral(user: Address): Promise<bigint> {
+  const cfg = getLendingConfig();
+  return (await publicClient.readContract({
+    address: cfg.pool,
+    abi: READ_ABI,
+    functionName: "collateral",
+    args: [user],
+  })) as bigint;
+}
+
+/** Live USDC debt incl. accrued interest. Always > the indexer cache near tip. */
+export async function readUserDebt(user: Address): Promise<bigint> {
+  const cfg = getLendingConfig();
+  return (await publicClient.readContract({
+    address: cfg.pool,
+    abi: READ_ABI,
+    functionName: "userDebtUsdc",
+    args: [user],
+  })) as bigint;
+}
