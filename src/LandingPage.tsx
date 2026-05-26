@@ -73,7 +73,7 @@ export default function LandingPage() {
   const reduceMotion = Boolean(useReducedMotion());
 
   return (
-    <div className="landing-root min-h-screen bg-[#0a0b0e] font-sans text-[#e6e8ed] antialiased selection:bg-emerald-500/25 selection:text-white">
+    <div className="landing-root min-h-screen bg-[#000000] font-sans text-[#ffffff] antialiased selection:bg-white/20 selection:text-white">
       <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
 
       <Nav urls={urls} />
@@ -109,7 +109,7 @@ function Nav({ urls }: { urls: Urls }) {
       className={[
         "fixed inset-x-0 top-0 z-50 transition-colors duration-300",
         scrolled
-          ? "border-b border-white/[0.06] bg-[#0a0b0e]/92 backdrop-blur-md"
+          ? "border-b border-white/[0.06] bg-[#0a0a0a]/92 backdrop-blur-md"
           : "border-b border-transparent bg-transparent",
       ].join(" ")}
     >
@@ -117,7 +117,7 @@ function Nav({ urls }: { urls: Urls }) {
         <a href="/" className="flex items-center gap-2.5" aria-label="Disburse home">
           <img src="/favicon.png" alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
           <span className="text-[13px] font-semibold tracking-[-0.01em]">Disburse</span>
-          <span className="ml-1 rounded-sm border border-white/10 bg-white/[0.02] px-1.5 py-[1px] font-mono text-[8.5px] uppercase leading-none tracking-[0.16em] text-white/45">
+          <span className="ml-1 rounded-sm border border-white/10 bg-white/[0.02] px-1.5 py-[1px] text-[11.5px] font-medium leading-none text-white/55">
             Testnet
           </span>
         </a>
@@ -138,14 +138,14 @@ function Nav({ urls }: { urls: Urls }) {
           </a>
           <a
             href={urls.appUrl}
-            style={{ color: "#0a0b0e" }}
+            style={{ color: "#0a0a0a" }}
             className="group ml-2 inline-flex items-center gap-1.5 rounded-[4px] bg-white px-3 py-1.5 text-[12px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
           >
             Launch app
             <ArrowRight
               size={12}
               strokeWidth={2.25}
-              style={{ color: "#0a0b0e" }}
+              style={{ color: "#0a0a0a" }}
               className="transition-transform group-hover:translate-x-0.5"
             />
           </a>
@@ -177,9 +177,9 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
               transition={
                 reduceMotion ? { duration: 0 } : { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
               }
-              className="mb-8 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-white/40"
+              className="mb-8 flex items-center gap-3 text-[12.5px] font-medium text-white/55"
             >
-              <span className="h-[1px] w-6 bg-[var(--primary-bg,#2fb37f)]/60" aria-hidden="true" />
+              <span className="h-[1px] w-6 bg-[#ffffff]/70" aria-hidden="true" />
               Arc Testnet settlement proofs
             </motion.p>
 
@@ -195,7 +195,7 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
             >
               Stablecoin invoices
               <br />
-              <span className="italic font-normal text-white/55" style={{ fontFamily: "var(--font-serif)" }}>
+              <span className="font-normal text-white/55">
                 with receipts you can verify.
               </span>
             </motion.h1>
@@ -227,14 +227,14 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
             >
               <a
                 href={urls.appUrl}
-                style={{ color: "#0a0b0e" }}
+                style={{ color: "#0a0a0a" }}
                 className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
               >
                 Launch the console
                 <ArrowRight
                   size={14}
                   strokeWidth={2.25}
-                  style={{ color: "#0a0b0e" }}
+                  style={{ color: "#0a0a0a" }}
                   className="transition-transform group-hover:translate-x-0.5"
                 />
               </a>
@@ -285,7 +285,7 @@ function Hero({ urls, reduceMotion }: { urls: Urls; reduceMotion: boolean }) {
                   i !== 0 ? "border-t border-white/[0.04]" : "",
                 ].join(" ")}
               >
-                <dt className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-white/35">
+                <dt className="text-[12px] font-medium text-white/50">
                   {row.k}
                 </dt>
                 <dd className="text-[12.5px] text-white/85">{row.v}</dd>
@@ -314,12 +314,12 @@ function TrustStrip() {
     { label: "Prediction Markets", sub: "Beta" },
   ];
   return (
-    <section className="border-b border-white/[0.05] bg-[#08090c]">
+    <section className="border-b border-white/[0.05] bg-[#000000]">
       <div
         ref={ref}
         className="reveal mx-auto flex max-w-[1180px] flex-col items-start gap-5 px-6 py-8 md:flex-row md:items-center md:justify-between md:px-10"
       >
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.26em] text-white/35">
+        <p className="text-[12px] font-medium text-white/50">
           Built on the USDC ecosystem
         </p>
         <ul className="flex flex-wrap items-center gap-x-7 gap-y-3">
@@ -329,7 +329,7 @@ function TrustStrip() {
               className="flex items-baseline gap-1.5 text-[12.5px] text-white/70"
             >
               <span className="font-semibold tracking-[-0.01em] text-white/90">{r.label}</span>
-              <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">
+              <span className="text-[11.5px] font-medium text-white/45">
                 {r.sub}
               </span>
             </li>
@@ -355,7 +355,7 @@ function ConsolePreview() {
         {/* Section prelude. Keeps the screenshot from feeling marketing-y. */}
         <div className="mb-7 flex items-end justify-between gap-6">
           <div>
-            <p className="mb-3 font-mono text-[9.5px] uppercase tracking-[0.22em] text-white/40">
+            <p className="mb-3 text-[12px] font-medium text-white/55">
               The console
             </p>
             <h2 className="max-w-[30ch] text-[clamp(1.35rem,2.2vw,1.8rem)] font-medium leading-[1.2] tracking-[-0.02em] text-white/95">
@@ -371,7 +371,7 @@ function ConsolePreview() {
           </a>
         </div>
 
-        <div className="relative overflow-hidden rounded-[8px] border border-white/[0.07] bg-[#0a0b0e]">
+        <div className="relative overflow-hidden rounded-[8px] border border-white/[0.07] bg-[#0a0a0a]">
           <div className="flex items-center justify-between border-b border-white/[0.05] px-4 py-2.5">
             <div className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-white/10" />
@@ -390,11 +390,11 @@ function ConsolePreview() {
               <div className="mb-5 flex items-center gap-2">
                 <img src="/favicon.png" alt="" className="h-[16px] w-[16px] opacity-80" aria-hidden="true" />
                 <span className="text-[12px] font-semibold tracking-[-0.01em]">Disburse</span>
-                <span className="ml-auto rounded-sm border border-white/10 bg-white/[0.02] px-1.5 py-[1px] font-mono text-[8.5px] uppercase leading-none tracking-[0.16em] text-white/40">
+                <span className="ml-auto rounded-sm border border-white/10 bg-white/[0.02] px-1.5 py-[1px] text-[11.5px] font-medium leading-none text-white/55">
                   Testnet
                 </span>
               </div>
-              <p className="mb-1.5 px-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-white/30">
+              <p className="mb-1.5 px-2.5 text-[11.5px] font-medium text-white/45">
                 Operate
               </p>
               <ul className="space-y-0 text-[11.5px]">
@@ -411,13 +411,13 @@ function ConsolePreview() {
                     ].join(" ")}
                   >
                     {i.active && (
-                      <span className="absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-r bg-emerald-500/70" aria-hidden="true" />
+                      <span className="absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-r bg-[#ffffff]" aria-hidden="true" />
                     )}
                     {i.label}
                   </li>
                 ))}
               </ul>
-              <p className="mt-5 mb-1.5 px-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-white/30">
+              <p className="mt-5 mb-1.5 px-2.5 text-[11.5px] font-medium text-white/45">
                 Reference
               </p>
               <ul className="space-y-0 text-[11.5px]">
@@ -428,10 +428,10 @@ function ConsolePreview() {
             {/* Main area */}
             <div className="col-span-12 p-5 md:col-span-9">
               {/* Headline metric */}
-              <div className="rounded-[6px] border border-white/[0.06] bg-[#0f1115]">
+              <div className="rounded-[6px] border border-white/[0.06] bg-[#141414]">
                 <div className="flex items-start justify-between gap-4 p-5 pb-4">
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">
+                    <p className="text-[11.5px] font-medium text-white/55">
                       Requested volume
                     </p>
                     <p className="mt-0.5 text-[10.5px] text-white/40">
@@ -441,13 +441,13 @@ function ConsolePreview() {
                       <span className="text-[1.9rem] font-semibold leading-none tracking-[-0.025em] text-white tabular-nums">
                         12,480.00
                       </span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+                      <span className="text-[12.5px] font-medium text-white/55">
                         USDC
                       </span>
                     </div>
                   </div>
                   <div className="rounded-sm border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
-                    <p className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-white/40">
+                    <p className="text-[11.5px] font-medium text-white/55">
                       Signing account
                     </p>
                     <p className="mt-0.5 font-mono text-[10.5px] text-white/85">
@@ -457,10 +457,10 @@ function ConsolePreview() {
                 </div>
                 <dl className="grid grid-cols-4 border-t border-white/[0.06]">
                   {[
-                    { l: "Verified", v: "9,820.00", u: "USDC", t: "text-emerald-400/90" },
+                    { l: "Verified", v: "9,820.00", u: "USDC", t: "text-white/90" },
                     { l: "Pending", v: "2,660.00", u: "USDC", t: "text-white/90" },
                     { l: "Requests", v: "42", t: "text-white/90" },
-                    { l: "Settlement rate", v: "96%", t: "text-emerald-400/90" },
+                    { l: "Settlement rate", v: "96%", t: "text-white/90" },
                   ].map((m, i) => (
                     <div
                       key={m.l}
@@ -469,7 +469,7 @@ function ConsolePreview() {
                         i !== 0 ? "border-l border-white/[0.06]" : "",
                       ].join(" ")}
                     >
-                      <dt className="font-mono text-[8.5px] uppercase tracking-[0.2em] text-white/40">
+                      <dt className="text-[11.5px] font-medium text-white/55">
                         {m.l}
                       </dt>
                       <dd className="mt-1 flex items-baseline gap-1.5">
@@ -477,7 +477,7 @@ function ConsolePreview() {
                           {m.v}
                         </span>
                         {m.u && (
-                          <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">
+                          <span className="text-[11.5px] font-medium text-white/55">
                             {m.u}
                           </span>
                         )}
@@ -488,10 +488,10 @@ function ConsolePreview() {
               </div>
 
               {/* Ledger */}
-              <div className="mt-4 overflow-hidden rounded-[6px] border border-white/[0.06] bg-[#0f1115]">
+              <div className="mt-4 overflow-hidden rounded-[6px] border border-white/[0.06] bg-[#141414]">
                 <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">
+                    <p className="text-[11.5px] font-medium text-white/55">
                       Ledger
                     </p>
                     <p className="mt-0.5 text-[12px] font-semibold text-white">
@@ -507,7 +507,7 @@ function ConsolePreview() {
                         <th
                           key={h}
                           className={[
-                            "px-5 py-2 font-mono text-[8.5px] uppercase tracking-[0.18em] text-white/40",
+                            "px-5 py-2 text-[11.5px] font-medium text-white/55",
                             i === 3 ? "text-right" : "",
                           ].join(" ")}
                         >
@@ -518,9 +518,9 @@ function ConsolePreview() {
                   </thead>
                   <tbody>
                     {[
-                      { s: "Paid", d: "bg-emerald-400/90", c: "text-emerald-400/90", ref: "Invoice 042", r: "0x7e\u2026a81c", a: "1,250.00" },
-                      { s: "Open", d: "bg-sky-400/80", c: "text-sky-300/90", ref: "Invoice 041", r: "0x4b\u202659e3", a: "480.00" },
-                      { s: "Paid", d: "bg-emerald-400/90", c: "text-emerald-400/90", ref: "Retainer Q2", r: "0xa1\u20262f7d", a: "4,500.00" },
+                      { s: "Paid", d: "bg-white", c: "text-white", ref: "Invoice 042", r: "0x7e\u2026a81c", a: "1,250.00" },
+                      { s: "Open", d: "bg-white/40", c: "text-white/70", ref: "Invoice 041", r: "0x4b\u202659e3", a: "480.00" },
+                      { s: "Paid", d: "bg-white", c: "text-white", ref: "Retainer Q2", r: "0xa1\u20262f7d", a: "4,500.00" },
                     ].map((row) => (
                       <tr key={row.ref} className="border-b border-white/[0.04] last:border-b-0">
                         <td className="px-5 py-2.5">
@@ -589,7 +589,7 @@ function HowItWorks() {
             return (
               <li
                 key={s.n}
-                className="bg-[#0a0b0e] p-7 transition-colors hover:bg-[#0e0f13]"
+                className="bg-[#0a0a0a] p-7 transition-colors hover:bg-[#1a1a1a]"
               >
                 <div className="mb-5 flex items-center justify-between">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/10 bg-white/[0.02] text-white/80">
@@ -677,7 +677,7 @@ function FeatureCard({
 }) {
   const ref = useReveal<HTMLDivElement>();
   return (
-    <div ref={ref} className="reveal bg-[#0a0b0e] p-7 transition-colors hover:bg-[#0e0f13]">
+    <div ref={ref} className="reveal bg-[#0a0a0a] p-7 transition-colors hover:bg-[#1a1a1a]">
       <span className="mb-5 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-white/[0.02] text-white/75">
         {icon}
       </span>
@@ -715,7 +715,7 @@ function CrossChain() {
                 <>
                   Payers pick their chain.
                   <br />
-                  <span className="italic font-normal text-white/50" style={{ fontFamily: "var(--font-serif)" }}>
+                  <span className="font-normal text-white/50">
                     Recipients receive on Arc.
                   </span>
                 </>
@@ -727,18 +727,18 @@ function CrossChain() {
           <div className="md:col-span-7">
             <div className="grid grid-cols-1 gap-px bg-white/[0.05] sm:grid-cols-3">
               {routes.map((r) => (
-                <div key={r.chain} className="bg-[#0a0b0e] p-5">
-                  <p className="mb-3 font-mono text-[9.5px] uppercase tracking-[0.18em] text-white/40">
+                <div key={r.chain} className="bg-[#0a0a0a] p-5">
+                  <p className="mb-3 text-[12px] font-medium text-white/55">
                     {r.route}
                   </p>
                   <h4 className="mb-5 text-[14.5px] font-medium tracking-[-0.005em] text-white">{r.chain}</h4>
                   <dl className="space-y-2 text-[11px]">
                     <div className="flex justify-between border-t border-white/[0.04] pt-2">
-                      <dt className="font-mono uppercase tracking-[0.16em] text-white/35">Settle</dt>
+                      <dt className="font-medium text-white/50">Settle</dt>
                       <dd className="tabular-nums text-white/80">{r.speed}</dd>
                     </div>
                     <div className="flex justify-between border-t border-white/[0.04] pt-2">
-                      <dt className="font-mono uppercase tracking-[0.16em] text-white/35">Gas</dt>
+                      <dt className="font-medium text-white/50">Gas</dt>
                       <dd className="tabular-nums text-white/80">{r.gas}</dd>
                     </div>
                   </dl>
@@ -773,7 +773,7 @@ function PredictionMarkets() {
                 <>
                   Prediction Markets.
                   <br />
-                  <span className="italic font-normal text-white/50" style={{ fontFamily: "var(--font-serif)" }}>
+                  <span className="font-normal text-white/50">
                     Trade on binary outcomes.
                   </span>
                 </>
@@ -784,14 +784,14 @@ function PredictionMarkets() {
 
           <div className="md:col-span-6">
             <div className="grid grid-cols-1 gap-px bg-white/[0.05] sm:grid-cols-2">
-              <div className="bg-[#0a0b0e] p-5 transition-colors hover:bg-[#0e0f13]">
+              <div className="bg-[#0a0a0a] p-5 transition-colors hover:bg-[#1a1a1a]">
                 <span className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-white/[0.02] text-white/75">
                   <Layers size={14} strokeWidth={1.5} />
                 </span>
                 <h4 className="mb-2 text-[14.5px] font-medium tracking-[-0.005em] text-white">Central Limit Orderbook</h4>
                 <p className="text-[12.5px] leading-relaxed text-white/55">Submit limit orders for YES or NO shares. Trades are matched fully on-chain with 1e6 fixed-point scaling.</p>
               </div>
-              <div className="bg-[#0a0b0e] p-5 transition-colors hover:bg-[#0e0f13]">
+              <div className="bg-[#0a0a0a] p-5 transition-colors hover:bg-[#1a1a1a]">
                 <span className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-white/[0.02] text-white/75">
                   <ShieldCheck size={14} strokeWidth={1.5} />
                 </span>
@@ -898,7 +898,7 @@ function FinalCta({ urls }: { urls: Urls }) {
     <section className="border-b border-white/[0.05]">
       <div className="relative mx-auto max-w-[1180px] overflow-hidden px-6 py-24 md:px-10 md:py-28">
         <div className="relative mx-auto max-w-xl text-center">
-          <p className="mb-5 font-mono text-[10px] uppercase tracking-[0.22em] text-white/40">
+          <p className="mb-5 text-[12.5px] font-medium text-white/55">
             Ready when you are
           </p>
           <h2 className="text-[clamp(1.75rem,3.75vw,2.75rem)] font-medium leading-[1.1] tracking-[-0.025em] text-white">
@@ -911,11 +911,11 @@ function FinalCta({ urls }: { urls: Urls }) {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
             <a
               href={urls.appUrl}
-              style={{ color: "#0a0b0e" }}
+              style={{ color: "#0a0a0a" }}
               className="group inline-flex items-center gap-1.5 rounded-[4px] bg-white px-5 py-3 text-[13px] font-semibold tracking-[-0.005em] shadow-sm transition-colors hover:bg-neutral-200"
             >
               Open the console
-              <ArrowRight size={14} strokeWidth={2.25} style={{ color: "#0a0b0e" }} className="transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight size={14} strokeWidth={2.25} style={{ color: "#0a0a0a" }} className="transition-transform group-hover:translate-x-0.5" />
             </a>
             <a
               href={urls.docsUrl}
@@ -937,7 +937,7 @@ function FinalCta({ urls }: { urls: Urls }) {
 
 function Footer() {
   return (
-    <footer className="bg-[#08090c]">
+    <footer className="bg-[#000000]">
       <div className="mx-auto flex max-w-[1180px] flex-col gap-7 px-6 py-10 md:flex-row md:items-start md:justify-between md:px-10">
         <div className="max-w-sm">
           <div className="mb-3 flex items-center gap-2">
@@ -979,10 +979,10 @@ function Footer() {
       </div>
       <div className="border-t border-white/[0.04]">
         <div className="mx-auto flex max-w-[1180px] flex-col items-start justify-between gap-2 px-6 py-4 text-[10.5px] text-white/30 md:flex-row md:items-center md:px-10">
-          <span className="font-mono uppercase tracking-[0.18em]">
+          <span className="font-medium">
             Disburse 2026
           </span>
-          <span className="font-mono uppercase tracking-[0.18em]">
+          <span className="font-medium">
             Testnet build, not for production
           </span>
         </div>
@@ -1000,7 +1000,7 @@ function FooterColumn({
 }) {
   return (
     <div>
-      <p className="mb-3 font-mono text-[9.5px] uppercase tracking-[0.22em] text-white/35">
+      <p className="mb-3 text-[12px] font-medium text-white/50">
         {title}
       </p>
       <ul className="space-y-2">
@@ -1040,7 +1040,7 @@ function SectionHeader({
   const ref = useReveal<HTMLDivElement>();
   return (
     <div ref={ref} className="reveal max-w-xl">
-      <p className="mb-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-white/40">
+      <p className="mb-4 flex items-center gap-3 text-[12.5px] font-medium text-white/55">
         <span className="h-[1px] w-6 bg-white/20" aria-hidden="true" />
         {eyebrow}
       </p>

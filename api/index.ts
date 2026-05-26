@@ -8,6 +8,7 @@ import lendingIndexCron from "../api-handlers/lending-index-cron.js";
 import lendingPoolState from "../api-handlers/lending-pool-state.js";
 import lendingPosition from "../api-handlers/lending-position.js";
 import lendingPositions from "../api-handlers/lending-positions.js";
+import lendingTvlHistory from "../api-handlers/lending-tvl-history.js";
 import markets from "../api-handlers/markets.js";
 import marketsClaims from "../api-handlers/markets-claims.js";
 import marketsDetail from "../api-handlers/markets-detail.js";
@@ -42,6 +43,7 @@ const handlers: Record<string, Handler> = {
   "lending-pool-state": lendingPoolState,
   "lending-position": lendingPosition,
   "lending-positions": lendingPositions,
+  "lending-tvl-history": lendingTvlHistory,
   markets,
   "markets-claims": marketsClaims,
   "markets-detail": marketsDetail,

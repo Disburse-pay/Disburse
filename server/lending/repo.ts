@@ -198,3 +198,35 @@ export async function getLatestPoolSnapshot() {
   if (error) throw new HttpError(500, error.message);
   return data;
 }
+
+/**
+ * Load timestamped pool snapshots covering the requested window. The indexer
+ * inserts a new row every ~5 minutes, so even a 30-day window can produce
+ * 8.6k rows. We downsample with a modulo skip so the wire stays under a
+ * couple hundred points — plenty for a smooth area chart.
+ */
+export async function getPoolSnapshotHistory(opts: {
+  windowHours: number;
+  maxPoints?: number;
+}) {
+  const supabase = getSupabaseAdmin();
+  const maxPoints = Math.max(2, opts.maxPoints ?? 240);
+  const since = new Date(Date.now() - opts.windowHours * 3_600_000).toISOString();
+  const { data, error } = await supabase
+    .from("lending_pool_snapshots")
+    .select("observed_at, cash_usdc, total_borrows_usdc")
+    .gte("observed_at", since)
+    .order("observed_at", { ascending: true })
+    .limit(5000);
+  if (error) throw new HttpError(500, error.message);
+  const rows = data ?? [];
+  if (rows.length <= maxPoints) return rows;
+  // Even-spaced downsample. Always retain first + last so the chart's left
+  // and right edges remain anchored at the true window boundaries.
+  const step = (rows.length - 1) / (maxPoints - 1);
+  const out: typeof rows = [];
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(rows[Math.round(i * step)]);
+  }
+  return out;
+}

@@ -55,41 +55,35 @@ export default function PoolStats() {
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px] font-medium text-[var(--ink)]">Pool</h2>
-        <span className="text-[10.5px] text-[var(--muted-soft)]">
+        <span className="text-[10.5px] tabular-nums text-[var(--muted-soft)]">
           As of {new Date(snap.observedAt).toLocaleTimeString()}
-          {snap.btcPriceWad === null && <span className="ml-2 text-[var(--red-text)]">price stale</span>}
+          {snap.btcPriceWad === null && (
+            <span className="ml-2 font-medium uppercase tracking-wider text-[var(--ink-soft)]">price stale</span>
+          )}
         </span>
       </div>
       <dl className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Cash" value={`$${formatUsdc(snap.cashUsdc)}`} />
         <Stat label="Total borrowed" value={`$${formatUsdc(snap.totalBorrowsUsdc)}`} />
         <Stat label="Utilization" value={`${utilPct.toFixed(1)}%`} />
-        <Stat label="Supply APR" value={formatApr(snap.supplyAprWad)} accent="green" />
-        <Stat label="Borrow APR" value={formatApr(snap.borrowAprWad)} accent="red" />
+        <Stat label="Supply APR" value={formatApr(snap.supplyAprWad)} prefix="↑" />
+        <Stat label="Borrow APR" value={formatApr(snap.borrowAprWad)} prefix="↓" />
       </dl>
       {btcUsd !== null && (
         <p className="mt-3 text-[11.5px] text-[var(--muted)]">
-          cirBTC priced from Pyth BTC/USD: <span className="font-mono">${btcUsd.toLocaleString()}</span>
+          cirBTC priced from Pyth BTC/USD: <span className="font-mono tabular-nums text-[var(--ink-soft)]">${btcUsd.toLocaleString()}</span>
         </p>
       )}
     </div>
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "green" | "red" }) {
+function Stat({ label, value, prefix }: { label: string; value: string; prefix?: string }) {
   return (
     <div>
       <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">{label}</dt>
-      <dd
-        className={
-          "text-[14px] font-medium " +
-          (accent === "green"
-            ? "text-[var(--green-text)]"
-            : accent === "red"
-              ? "text-[var(--red-text)]"
-              : "text-[var(--ink)]")
-        }
-      >
+      <dd className="text-[14px] font-medium tabular-nums text-[var(--ink)]">
+        {prefix && <span className="mr-1 text-[var(--muted)]">{prefix}</span>}
         {value}
       </dd>
     </div>

@@ -60,8 +60,8 @@ export default function PositionPanel({ account, refreshKey }: { account: Addres
   const debtUsdc = pos?.cachedDebtUsdc ?? 0n;
   const collateralUsdc = pos?.cachedCollateralUsdc ?? 0n;
   const hf = pos?.cachedHealthFactor ?? null;
-  const hfAccent: "green" | "red" | undefined =
-    hf === null ? undefined : hf < WAD ? "red" : hf < 2n * WAD ? undefined : "green";
+  const hfStatus: "At risk" | "Healthy" | "Strong" | null =
+    hf === null ? null : hf < WAD ? "At risk" : hf < 2n * WAD ? "Healthy" : "Strong";
   const liquidatable = pos?.isLiquidatable ?? false;
 
   return (
@@ -69,20 +69,14 @@ export default function PositionPanel({ account, refreshKey }: { account: Addres
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px] font-medium text-[var(--ink)]">Your position</h2>
         {liquidatable && (
-          <span className="rounded-md bg-[var(--red-bg,#fee)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--red-text)]">
-            LIQUIDATABLE
-          </span>
+          <span className="status-badge failed">Liquidatable</span>
         )}
       </div>
       <dl className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="cirBTC collateral" value={`${formatCirBtc(collateralBtc, 4)} cirBTC`} sub={`≈ $${formatUsdc(collateralUsdc)}`} />
-        <Stat label="USDC debt" value={`$${formatUsdc(debtUsdc)}`} accent={debtUsdc > 0n ? "red" : undefined} />
-        <Stat label="Health factor" value={formatHealthFactor(hf)} accent={hfAccent} />
-        <Stat
-          label="Supplied (aUSDC)"
-          value={aUsdcShares !== null ? `${formatUsdc(aUsdcShares)} aUSDC` : "—"}
-          accent="green"
-        />
+        <Stat label="USDC debt" value={`$${formatUsdc(debtUsdc)}`} emphasis={debtUsdc > 0n} />
+        <Stat label="Health factor" value={formatHealthFactor(hf)} sub={hfStatus ?? undefined} emphasis={hfStatus === "At risk"} />
+        <Stat label="Supplied (aUSDC)" value={aUsdcShares !== null ? `${formatUsdc(aUsdcShares)} aUSDC` : "—"} />
       </dl>
     </div>
   );
@@ -92,28 +86,19 @@ function Stat({
   label,
   value,
   sub,
-  accent,
+  emphasis,
 }: {
   label: string;
   value: string;
   sub?: string;
-  accent?: "green" | "red";
+  emphasis?: boolean;
 }) {
   return (
     <div>
       <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">{label}</dt>
-      <dd
-        className={
-          "text-[14px] font-medium " +
-          (accent === "green"
-            ? "text-[var(--green-text)]"
-            : accent === "red"
-              ? "text-[var(--red-text)]"
-              : "text-[var(--ink)]")
-        }
-      >
+      <dd className={"text-[14px] tabular-nums " + (emphasis ? "font-semibold text-[var(--ink)]" : "font-medium text-[var(--ink)]")}>
         {value}
-        {sub && <span className="ml-1 font-mono text-[10.5px] opacity-80">{sub}</span>}
+        {sub && <span className="ml-1.5 text-[10.5px] font-medium uppercase tracking-wider text-[var(--muted)]">{sub}</span>}
       </dd>
     </div>
   );

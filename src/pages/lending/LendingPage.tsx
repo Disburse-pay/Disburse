@@ -5,6 +5,7 @@ import PoolStats from "../../components/lending/PoolStats";
 import PositionPanel from "../../components/lending/PositionPanel";
 import LendCard from "../../components/lending/LendCard";
 import BorrowCard from "../../components/lending/BorrowCard";
+import TvlChart from "../../components/lending/TvlChart";
 import { fetchLendingPoolSnapshot } from "../../lib/lending/api";
 import type { LendingPoolSnapshot } from "../../lib/lending/types";
 
@@ -82,6 +83,7 @@ export default function LendingPage() {
         </p>
       </header>
       <PoolStats />
+      <TvlChart />
       <PositionPanel account={account} refreshKey={refreshKey} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <LendCard

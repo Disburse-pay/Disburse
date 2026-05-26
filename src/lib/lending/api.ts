@@ -97,6 +97,20 @@ export async function fetchLendingPosition(address: string): Promise<LendingPosi
   };
 }
 
+export type TvlPoint = { t: string; tvl: bigint };
+export type TvlWindow = "1d" | "7d" | "30d" | "all";
+
+export async function fetchLendingTvlHistory(
+  window: TvlWindow = "7d"
+): Promise<TvlPoint[]> {
+  type Wire = {
+    window: TvlWindow;
+    points: Array<{ t: string; tvl: string }>;
+  };
+  const { points } = await fetchJson<Wire>(`/api/lending-tvl-history?window=${window}`);
+  return points.map((p) => ({ t: p.t, tvl: BigInt(p.tvl) }));
+}
+
 export async function fetchLendingHistory(
   opts: { address?: string; limit?: number } = {}
 ): Promise<LendingEvent[]> {

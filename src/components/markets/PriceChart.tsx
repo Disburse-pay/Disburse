@@ -39,7 +39,7 @@ export default function PriceChart({ fills }: Props) {
 
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-4">
-      <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+      <p className="mb-3 text-[11.5px] font-medium uppercase tracking-wider text-[var(--muted)]">
         YES price
       </p>
       <div className="h-[200px] w-full">
@@ -47,8 +47,8 @@ export default function PriceChart({ fills }: Props) {
           <AreaChart data={data} margin={{ top: 5, right: 12, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id="yesPriceFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--green-text)" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="var(--green-text)" stopOpacity={0.02} />
+                <stop offset="5%" stopColor="var(--ink)" stopOpacity={0.22} />
+                <stop offset="95%" stopColor="var(--ink)" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke="var(--line-soft)" strokeDasharray="3 3" />
@@ -74,7 +74,8 @@ export default function PriceChart({ fills }: Props) {
                 background: "var(--paper)",
                 border: "1px solid var(--line)",
                 borderRadius: 6,
-                fontSize: 11
+                fontSize: 11,
+                color: "var(--ink)"
               }}
               formatter={(v) => [`$${Number(v).toFixed(3)}`, "YES"]}
               labelFormatter={(l) => String(l ?? "")}
@@ -82,7 +83,7 @@ export default function PriceChart({ fills }: Props) {
             <Area
               type="monotone"
               dataKey="yes"
-              stroke="var(--green-text)"
+              stroke="var(--ink)"
               strokeWidth={1.5}
               fill="url(#yesPriceFill)"
             />
