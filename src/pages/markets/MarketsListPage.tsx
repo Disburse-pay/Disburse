@@ -88,7 +88,7 @@ export default function MarketsListPage({ onNavigate }: Props) {
     <div className="mx-auto max-w-[1180px] pb-16">
       {/* Hero */}
       <section className="border-b border-[var(--line)] pb-10">
-        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+        <p className="mb-4 text-[12px] font-medium text-[var(--muted)]">
           Prediction markets
         </p>
         <h1 className="max-w-[24ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
@@ -117,9 +117,9 @@ export default function MarketsListPage({ onNavigate }: Props) {
               type="button"
               onClick={() => setStatusFilter(s)}
               className={cn(
-                "rounded px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors",
+                "rounded px-3 py-1 text-[12px] font-medium transition-colors",
                 statusFilter === s
-                  ? "bg-[var(--ink)] text-[var(--canvas)]"
+                  ? "bg-[var(--ink)] text-[color:var(--canvas)]"
                   : "text-[var(--muted)] hover:text-[var(--ink)]"
               )}
             >
@@ -195,7 +195,7 @@ function matchesStatus(status: MarketStatus, filter: StatusFilter): boolean {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+      <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </dt>
       <dd className="truncate text-[13px] font-medium text-[var(--ink)]">{value}</dd>

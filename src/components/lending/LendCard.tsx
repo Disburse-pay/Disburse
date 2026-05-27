@@ -159,7 +159,7 @@ export default function LendCard({
         <button
           type="submit"
           disabled={submit.kind === "busy"}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submit.kind === "busy" ? submit.step : submitLabel}
         </button>
@@ -190,7 +190,7 @@ function ToggleButton({ active, onClick, icon, children }: { active: boolean; on
       onClick={onClick}
       className={cn(
         "flex flex-1 items-center justify-center gap-1.5 rounded-[3px] py-1.5 text-[12px] font-medium transition-colors",
-        active ? "bg-[var(--ink)] text-[var(--primary-text)]" : "text-[var(--muted)] hover:text-[var(--ink)]",
+        active ? "bg-[var(--ink)] text-[color:var(--primary-text)]" : "text-[var(--muted)] hover:text-[var(--ink)]",
       )}
     >
       {icon}

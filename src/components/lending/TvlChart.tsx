@@ -8,7 +8,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchLendingTvlHistory, type TvlPoint, type TvlWindow } from "../../lib/lending/api";
+import {
+  fetchLendingPoolSnapshot,
+  fetchLendingTvlHistory,
+  type TvlPoint,
+  type TvlWindow,
+} from "../../lib/lending/api";
 import { USDC_DECIMALS } from "../../lib/lending/types";
 
 /**
@@ -61,9 +66,29 @@ export default function TvlChart() {
     setLoading(true);
     async function load() {
       try {
+        // History first; if it comes back empty (snapshot table just primed,
+        // or the indexer hasn't backfilled yet) fall through to the live pool
+        // snapshot so the chart never shows an unhelpful empty state.
         const pts = await fetchLendingTvlHistory(window);
         if (cancelled) return;
-        setPoints(pts);
+        if (pts.length === 0) {
+          const snap = await fetchLendingPoolSnapshot();
+          if (cancelled) return;
+          if (snap) {
+            const tvl = snap.cashUsdc + snap.totalBorrowsUsdc;
+            const observedMs = new Date(snap.observedAt).getTime();
+            // Two identical points so recharts has a domain — chart renders
+            // as a flat line at the current TVL until history accumulates.
+            setPoints([
+              { t: new Date(observedMs - 60_000).toISOString(), tvl },
+              { t: new Date(observedMs).toISOString(), tvl },
+            ]);
+          } else {
+            setPoints([]);
+          }
+        } else {
+          setPoints(pts);
+        }
         setError(null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -132,7 +157,7 @@ export default function TvlChart() {
                 className={
                   "min-w-[36px] border px-3 py-1 text-[11px] font-semibold uppercase tabular-nums tracking-wider transition-colors " +
                   (active
-                    ? "z-10 border-[var(--ink)] bg-[var(--ink)] text-[var(--primary-text)]"
+                    ? "z-10 border-[var(--ink)] bg-[var(--ink)] text-[color:var(--primary-text)]"
                     : "border-[var(--line)] bg-transparent text-[var(--muted)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]") +
                   (idx === 0 ? " rounded-l-md" : "") +
                   (idx === WINDOWS.length - 1 ? " rounded-r-md" : "") +
@@ -156,9 +181,9 @@ export default function TvlChart() {
           <div className="flex h-full items-center justify-center text-[12px] text-[var(--muted)]">
             TVL history unavailable: {error}
           </div>
-        ) : data.length < 2 ? (
+        ) : data.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-md border border-dashed border-[var(--line)] text-[12px] text-[var(--muted)]">
-            Not enough history yet. Snapshots accumulate every 5 minutes.
+            TVL data is unavailable right now.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

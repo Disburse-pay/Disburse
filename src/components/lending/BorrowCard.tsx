@@ -250,7 +250,7 @@ export default function BorrowCard({
         <button
           type="submit"
           disabled={submit.kind === "busy"}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submit.kind === "busy" ? submit.step : ctx.submitLabel}
         </button>
@@ -290,7 +290,7 @@ function StepPicker({ step, onChange }: { step: Step; onChange: (s: Step) => voi
             className={cn(
               "relative flex flex-1 flex-col items-center justify-center gap-0 rounded-[3px] py-1.5 text-[12px] font-medium transition-colors",
               active
-                ? "bg-[var(--ink)] text-[var(--primary-text)]"
+                ? "bg-[var(--ink)] text-[color:var(--primary-text)]"
                 : "text-[var(--muted)] hover:text-[var(--ink)]",
             )}
           >
@@ -304,7 +304,7 @@ function StepPicker({ step, onChange }: { step: Step; onChange: (s: Step) => voi
             <span
               className={cn(
                 "text-[9px] font-normal opacity-80",
-                active ? "text-[var(--primary-text)]" : "text-[var(--muted-soft)]",
+                active ? "text-[color:var(--primary-text)]" : "text-[var(--muted-soft)]",
               )}
             >
               {s.asset}

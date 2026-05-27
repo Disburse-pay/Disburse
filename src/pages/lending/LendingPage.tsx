@@ -8,6 +8,7 @@ import BorrowCard from "../../components/lending/BorrowCard";
 import TvlChart from "../../components/lending/TvlChart";
 import { fetchLendingPoolSnapshot } from "../../lib/lending/api";
 import type { LendingPoolSnapshot } from "../../lib/lending/types";
+import { cn } from "../../lib/utils";
 
 /**
  * LendingPage — top-level page for the cirBTC → USDC lending product.
@@ -53,27 +54,6 @@ export default function LendingPage() {
     };
   }, [refreshKey]);
 
-  if (!account) {
-    return (
-      <div className="flex flex-col items-center gap-4 rounded-lg border border-[var(--line)] bg-[var(--paper)] p-10 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--paper-2)]">
-          <Wallet className="h-5 w-5 text-[var(--ink)]" />
-        </div>
-        <h2 className="text-[16px] font-semibold text-[var(--ink)]">Connect wallet to use Lending</h2>
-        <p className="max-w-[420px] text-[13px] text-[var(--muted)]">
-          Deposit cirBTC as collateral and borrow up to 80% of its USD value in USDC. Lenders earn interest on supplied USDC.
-        </p>
-        <button
-          type="button"
-          onClick={() => wallet.openAuthFlow?.()}
-          className="mt-2 inline-flex items-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[var(--primary-text)]"
-        >
-          Connect wallet
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -84,22 +64,53 @@ export default function LendingPage() {
       </header>
       <PoolStats />
       <TvlChart />
-      <PositionPanel account={account} refreshKey={refreshKey} />
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <LendCard
-          account={account}
-          supplyAprWad={snap?.supplyAprWad ?? null}
-          refreshKey={refreshKey}
-          onSuccess={() => setRefreshKey((k) => k + 1)}
-        />
-        <BorrowCard
-          account={account}
-          borrowAprWad={snap?.borrowAprWad ?? null}
-          btcPriceWad={snap?.btcPriceWad ?? null}
-          refreshKey={refreshKey}
-          onSuccess={() => setRefreshKey((k) => k + 1)}
-        />
+      {/* Pool + TVL render for every visitor — the action surfaces below
+          handle their own "Connect wallet" affordance for unconnected users. */}
+      {account ? (
+        <>
+          <PositionPanel account={account} refreshKey={refreshKey} />
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <LendCard
+              account={account}
+              supplyAprWad={snap?.supplyAprWad ?? null}
+              refreshKey={refreshKey}
+              onSuccess={() => setRefreshKey((k) => k + 1)}
+            />
+            <BorrowCard
+              account={account}
+              borrowAprWad={snap?.borrowAprWad ?? null}
+              btcPriceWad={snap?.btcPriceWad ?? null}
+              refreshKey={refreshKey}
+              onSuccess={() => setRefreshKey((k) => k + 1)}
+            />
+          </div>
+        </>
+      ) : (
+        <LendingConnectPrompt onConnect={() => wallet.openAuthFlow?.()} />
+      )}
+    </div>
+  );
+}
+
+function LendingConnectPrompt({ onConnect }: { onConnect: () => void }) {
+  return (
+    <div className={cn(
+      "flex flex-col items-center gap-3 rounded-lg border border-dashed border-[var(--line)] bg-[var(--paper)] p-8 text-center",
+    )}>
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--paper-2)]">
+        <Wallet className="h-4 w-4 text-[var(--ink)]" />
       </div>
+      <h2 className="text-[14.5px] font-semibold text-[var(--ink)]">Connect to lend or borrow</h2>
+      <p className="max-w-[440px] text-[12.5px] leading-relaxed text-[var(--muted)]">
+        Pool stats and TVL above are live. Connect a wallet to supply USDC for yield, or deposit cirBTC and borrow against it.
+      </p>
+      <button
+        type="button"
+        onClick={onConnect}
+        className="mt-1 inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-1.5 text-[12.5px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
+      >
+        Connect wallet
+      </button>
     </div>
   );
 }

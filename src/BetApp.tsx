@@ -46,11 +46,13 @@ export default function BetApp() {
   const wallet = useDisburseDynamicWallet();
   const account = wallet.getAccount?.();
 
-  // Open beta: any connected wallet can use the markets + lending shells.
-  // The private-beta whitelist gate was retired once the lending product
-  // launched. WhitelistPage / checkWhitelistStatus / market_whitelist_codes
-  // intentionally remain available — flip the gate back on by re-importing
-  // them here if a future surface needs invite-only access.
+  // Open beta — markets + lending are fully browsable without a wallet so
+  // visitors can see live prices, books, pool stats, and TVL. Action paths
+  // (trade / deposit / borrow / claim) prompt for Connect inline when the
+  // user takes them. The earlier connect-wall hid the product from anyone
+  // who hadn't yet authenticated, which made the surface look empty to
+  // new visitors.
+  void account;
 
   // Apply persisted theme on mount. The bet shell does not have its own
   // toggle yet — it inherits whatever the user last selected in the app.
@@ -87,38 +89,16 @@ export default function BetApp() {
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
       <BetHeader page={page} onNavigate={onNavigate} />
-
-      {!account ? (
-        <div className="mx-auto flex max-w-[1400px] flex-col items-center justify-center gap-6 px-6 pt-32 text-center md:px-10">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ink)] text-[var(--canvas)]">
-            <Wallet className="h-8 w-8" />
-          </div>
-          <h1 className="text-[24px] font-semibold tracking-[-0.018em] text-[var(--ink)]">
-            Disburse Markets
-          </h1>
-          <p className="max-w-[440px] text-[14px] leading-relaxed text-[var(--muted)]">
-            Connect your wallet to trade prediction markets and use cirBTC-backed lending on Arc Testnet.
-          </p>
-          <button
-            type="button"
-            onClick={() => wallet.openAuthFlow?.()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-5 py-2.5 text-[13.5px] font-medium text-[var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
-          >
-            Connect wallet
-          </button>
-        </div>
-      ) : (
-        <div className="mx-auto flex max-w-[1400px] gap-8 px-6 pt-6 md:px-10">
-          <BetSidebar page={page} onNavigate={onNavigate} />
-          <main className="min-w-0 flex-1 pt-2">
-            {page === "markets" && <MarketsListPage onNavigate={onNavigate} />}
-            {page === "market-detail" && <MarketDetailPage marketId={marketId} onNavigate={onNavigate} />}
-            {page === "market-positions" && <MyPositionsPage onNavigate={onNavigate} />}
-            {page === "market-history" && <HistoryPage onNavigate={onNavigate} />}
-            {page === "lending" && <LendingPage />}
-          </main>
-        </div>
-      )}
+      <div className="mx-auto flex max-w-[1400px] gap-8 px-6 pt-6 md:px-10">
+        <BetSidebar page={page} onNavigate={onNavigate} />
+        <main className="min-w-0 flex-1 pt-2">
+          {page === "markets" && <MarketsListPage onNavigate={onNavigate} />}
+          {page === "market-detail" && <MarketDetailPage marketId={marketId} onNavigate={onNavigate} />}
+          {page === "market-positions" && <MyPositionsPage onNavigate={onNavigate} />}
+          {page === "market-history" && <HistoryPage onNavigate={onNavigate} />}
+          {page === "lending" && <LendingPage />}
+        </main>
+      </div>
     </div>
   );
 }
@@ -183,7 +163,7 @@ function BetWalletButton() {
       <button
         type="button"
         onClick={() => wallet.openAuthFlow?.()}
-        className="inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
+        className="inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
       >
         <Wallet className="h-3.5 w-3.5" />
         Connect

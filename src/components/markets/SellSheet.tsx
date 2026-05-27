@@ -200,13 +200,13 @@ export default function SellSheet({
   return (
     <div className="mt-3 rounded-md border border-[var(--line)] bg-[var(--input-bg)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+        <p className="text-[11.5px] font-medium text-[var(--muted)]">
           Sell {outcome} at market
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] hover:text-[var(--ink)]"
+          className="text-[11.5px] font-medium text-[var(--muted)] hover:text-[var(--ink)]"
         >
           Close
         </button>
@@ -214,13 +214,13 @@ export default function SellSheet({
 
       <div className="mb-3">
         <div className="mb-1 flex items-baseline justify-between">
-          <label className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+          <label className="text-[11.5px] font-medium text-[var(--muted)]">
             Size
           </label>
           <button
             type="button"
             onClick={() => setSizeStr((maxShares / 1_000_000).toString())}
-            className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] hover:text-[var(--ink)]"
+            className="text-[11.5px] font-medium text-[var(--muted)] hover:text-[var(--ink)]"
           >
             Max {microsToUsdcString(maxShares)}
           </button>
@@ -241,7 +241,7 @@ export default function SellSheet({
             className="flex-1 bg-transparent text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
             placeholder="0.00"
           />
-          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+          <span className="ml-2 text-[11.5px] font-medium text-[var(--muted)]">
             {outcome}
           </span>
         </div>
@@ -265,9 +265,9 @@ export default function SellSheet({
         onClick={handleSell}
         disabled={!canSubmit}
         className={cn(
-          "mt-3 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 font-mono text-[11px] uppercase tracking-[0.18em] transition-colors",
+          "mt-3 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-[12px] font-medium transition-colors",
           canSubmit
-            ? "bg-[var(--ink)] text-[var(--canvas)] hover:opacity-90"
+            ? "bg-[var(--ink)] text-[color:var(--canvas)] hover:opacity-90"
             : "cursor-not-allowed bg-[var(--line-soft)] text-[var(--muted)]"
         )}
       >
@@ -292,7 +292,7 @@ export default function SellSheet({
         </p>
       )}
       {submit.kind === "filled" && (
-        <p className="mt-3 break-all font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--green-text)]">
+        <p className="mt-3 break-all text-[11.5px] font-medium text-[var(--green-text)]">
           Sold · {microsToUsdcString(submit.sizeMicros)} {outcome} for $
           {microsToUsdcString(submit.totalMicros)} · {submit.txHash.slice(0, 10)}…
         </p>
@@ -317,7 +317,7 @@ function Line({
 }) {
   return (
     <div className="flex items-baseline justify-between">
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+      <span className="text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </span>
       <span

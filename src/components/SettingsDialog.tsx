@@ -151,7 +151,7 @@ export default function SettingsDialog({ open, onClose, theme, onToggleTheme }: 
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md bg-[var(--primary-bg)] px-4 py-1.5 text-[13px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+          className="rounded-md bg-[var(--primary-bg)] px-4 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
         >
           {copy.done}
         </button>
@@ -406,7 +406,7 @@ function AnimatedSelect({
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0.72, opacity: 0 }}
                           transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary-bg)] text-[var(--primary-text)]"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary-bg)] text-[color:var(--primary-text)]"
                         >
                           <Check size={12} strokeWidth={2.2} />
                         </motion.span>

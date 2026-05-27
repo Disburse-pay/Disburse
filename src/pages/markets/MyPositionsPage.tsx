@@ -302,7 +302,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
     <div className="mx-auto max-w-[1180px] pb-16">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <section className="border-b border-[var(--line)] pb-10">
-        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+        <p className="mb-4 text-[12px] font-medium text-[var(--muted)]">
           Portfolio
         </p>
         <h1 className="max-w-[24ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
@@ -340,7 +340,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
             <button
               type="button"
               onClick={() => wallet.openAuthFlow?.()}
-              className="inline-flex items-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--canvas)] hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-2 text-[12.5px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
             >
               Connect wallet
             </button>
@@ -364,7 +364,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
         <>
           {activeRows.length > 0 && (
             <section className="mt-8">
-              <h2 className="mb-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
+              <h2 className="mb-4 text-[12px] font-medium text-[var(--muted)]">
                 Active positions
               </h2>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -387,22 +387,30 @@ export default function MyPositionsPage({ onNavigate }: Props) {
           {/* ── Resolved Positions ────────────────────────────────── */}
           {resolvedRows.length > 0 && (
             <section className="mt-10">
-              <h2 className="mb-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
+              <h2 className="mb-4 text-[12px] font-medium text-[var(--muted)]">
                 Resolved positions
               </h2>
               <div className="space-y-4">
                 {resolvedRows.map((row) => {
                   const claim = row.claim;
                   const pspUid = claim?.pspUid;
-                  const isClaimable = !claim && row.claimableMicros > 0n;
                   const statusMsg = claimStatus.get(row.market.id);
                   const won = row.market.winningOutcome === row.outcome;
                   const sharesHeld = row.outcome === "YES"
                     ? row.position.yesSharesMicros
                     : row.position.noSharesMicros;
-                  const payoutMicros = claim
-                    ? claim.payoutMicros
-                    : Number(row.claimableMicros);
+                  // The user is "claimable" when they won AND haven't claimed yet.
+                  // We don't require the on-chain `claimableMicros` read to be > 0n
+                  // because that call can race (e.g. position cached before the
+                  // resolution attestation lands, or RPC hiccup). The button itself
+                  // re-reads the on-chain balance at submit time, so we'd rather
+                  // let users try than gate them behind a stale read.
+                  const canAttemptClaim = !claim && won && sharesHeld > 0;
+                  // If the user has on-chain share balance, use it as the payout
+                  // hint; otherwise fall back to micros held in our cache so the
+                  // label isn't blank.
+                  const fallbackPayout = Number(row.claimableMicros) || sharesHeld;
+                  const payoutMicros = claim ? claim.payoutMicros : fallbackPayout;
 
                   return (
                     <article
@@ -410,7 +418,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
                       className="flex flex-col gap-4 rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5 md:flex-row md:items-start md:justify-between"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="mb-2 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] font-medium text-[var(--muted)]">
                           <span>Resolved</span>
                           <OutcomeBadge outcome={row.market.winningOutcome ?? "YES"} />
                           {row.market.resolvesAt && (
@@ -432,7 +440,7 @@ export default function MyPositionsPage({ onNavigate }: Props) {
                           {row.market.question}
                         </a>
                         {sharesHeld > 0 && (
-                          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                          <p className="mt-2 text-[12px] font-medium text-[var(--muted)]">
                             Held: {(sharesHeld / 1_000_000).toFixed(2)} {row.outcome} shares
                             {claim && (
                               <span className="ml-2 text-[var(--green-text)]">
@@ -447,16 +455,30 @@ export default function MyPositionsPage({ onNavigate }: Props) {
                       </div>
 
                       <div className="flex flex-col items-end gap-3">
-                        {(claim || row.claimableMicros > 0n) ? (
+                        {claim || canAttemptClaim ? (
                           <ClaimButton
-                            claimable={isClaimable}
+                            claimable={canAttemptClaim}
                             pspUid={pspUid}
                             payoutLabel={`$${microsToUsdcString(payoutMicros)}`}
-                            onClaim={() => handleClaim(row.market, row.claimableMicros)}
+                            onClaim={async () => {
+                              // Prefer the cached on-chain amount; if it's zero
+                              // (race), re-read at submit time to pick up the
+                              // latest claimable balance.
+                              let amount = row.claimableMicros;
+                              if (amount === 0n && account) {
+                                try {
+                                  amount = await readClaimableShares(account, row.market);
+                                } catch {
+                                  // Fall through with 0n — handleClaim will
+                                  // surface a clear error if the chain rejects.
+                                }
+                              }
+                              await handleClaim(row.market, amount);
+                            }}
                           />
                         ) : (
-                          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted-soft)]">
-                            {won ? "Claim available" : "No payout"}
+                          <span className="text-[11.5px] font-medium text-[var(--muted-soft)]">
+                            No payout
                           </span>
                         )}
                       </div>
@@ -492,7 +514,7 @@ function Stat({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+      <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </dt>
       <dd

@@ -302,11 +302,11 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-4 flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+        <p className="text-[11.5px] font-medium text-[var(--muted)]">
           Place a bet
         </p>
         {account && (
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+          <span className="text-[11.5px] font-medium text-[var(--muted)]">
             {`${account.slice(0, 6)}…${account.slice(-4)}`}
           </span>
         )}
@@ -389,14 +389,14 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         onClick={hasWallet ? handleSubmit : () => wallet.openAuthFlow?.()}
         disabled={hasWallet && !canSubmit}
         className={cn(
-          "mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.18em] transition-colors",
+          "mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[12px] font-medium transition-colors",
           hasWallet
             ? canSubmit
               ? outcome === "YES"
-                ? "bg-[var(--green-text)] text-[var(--canvas)] hover:opacity-90"
-                : "bg-[var(--red-text)] text-[var(--canvas)] hover:opacity-90"
+                ? "bg-[var(--green-text)] text-[color:var(--canvas)] hover:opacity-90"
+                : "bg-[var(--red-text)] text-[color:var(--canvas)] hover:opacity-90"
               : "cursor-not-allowed bg-[var(--line-soft)] text-[var(--muted)]"
-            : "bg-[var(--ink)] text-[var(--canvas)] hover:opacity-90"
+            : "bg-[var(--ink)] text-[color:var(--canvas)] hover:opacity-90"
         )}
       >
         {!hasWallet ? (
@@ -428,12 +428,12 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
         </p>
       )}
       {submit.kind === "ok" && (
-        <p className="mt-3 break-all font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--green-text)]">
+        <p className="mt-3 break-all text-[11.5px] font-medium text-[var(--green-text)]">
           Order posted · {submit.orderHash.slice(0, 10)}…
         </p>
       )}
       {submit.kind === "filled" && (
-        <p className="mt-3 break-all font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--green-text)]">
+        <p className="mt-3 break-all text-[11.5px] font-medium text-[var(--green-text)]">
           Filled · {microsToUsdcString(submit.sizeMicros)} {outcome} for $
           {microsToUsdcString(submit.totalMicros)} · {submit.txHash.slice(0, 10)}…
         </p>
@@ -449,7 +449,7 @@ export default function TradePanel({ market, outcome, onOutcomeChange, rawOrders
               setSubmit({ kind: "idle" });
               handleSubmit();
             }}
-            className="mt-2 rounded border border-[var(--red-text)]/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--red-text)] transition-colors hover:bg-[var(--red-text)]/10"
+            className="mt-2 rounded border border-[var(--red-text)]/30 px-2.5 py-1 text-[11.5px] font-medium text-[var(--red-text)] transition-colors hover:bg-[var(--red-text)]/10"
           >
             Retry
           </button>
@@ -500,7 +500,7 @@ function OutcomeButton({
           : "border-[var(--line)] text-[var(--ink)] hover:border-[var(--ink)]"
       )}
     >
-      <span className="font-mono text-[12px] font-medium uppercase tracking-[0.18em]">
+      <span className="text-[13px] font-medium">
         {label}
       </span>
       <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--muted)]">
@@ -524,8 +524,8 @@ function OrderTypeTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex-1 rounded px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors",
-        active ? "bg-[var(--ink)] text-[var(--canvas)]" : "text-[var(--muted)] hover:text-[var(--ink)]"
+        "flex-1 rounded px-3 py-1.5 text-[12px] font-medium transition-colors",
+        active ? "bg-[var(--ink)] text-[color:var(--canvas)]" : "text-[var(--muted)] hover:text-[var(--ink)]"
       )}
     >
       {label}
@@ -551,7 +551,7 @@ function Field({
   return (
     <div className="mb-3">
       <div className="mb-1 flex items-baseline justify-between">
-        <label className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+        <label className="text-[11.5px] font-medium text-[var(--muted)]">
           {label}
         </label>
         {hint && (
@@ -573,7 +573,7 @@ function Field({
           placeholder="0.00"
         />
         {suffix && (
-          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+          <span className="ml-2 text-[11.5px] font-medium text-[var(--muted)]">
             {suffix}
           </span>
         )}
@@ -595,7 +595,7 @@ function Line({
 }) {
   return (
     <div className="flex items-baseline justify-between">
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+      <span className="text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </span>
       <span

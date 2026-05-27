@@ -155,16 +155,16 @@ export default function MarketDetailPage({ marketId, onNavigate }: Props) {
       {/* Header */}
       <section className="border-b border-[var(--line)] pb-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+          <span className="text-[11.5px] font-medium text-[var(--muted)]">
             {market.category}
           </span>
           <span className="text-[var(--muted-soft)]">·</span>
           {isResolved ? (
-            <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--muted)]">
               Resolved <OutcomeBadge outcome={market.winningOutcome ?? "YES"} />
             </span>
           ) : (
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+            <span className="text-[11.5px] font-medium text-[var(--muted)]">
               Closes in {formatCloseCountdown(market.closesAt)}
             </span>
           )}
@@ -364,7 +364,7 @@ function ResolvedPanel({
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-4 flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+        <p className="text-[11.5px] font-medium text-[var(--muted)]">
           Resolved · <OutcomeBadge outcome={market.winningOutcome ?? "YES"} />
         </p>
       </div>
@@ -378,7 +378,7 @@ function ResolvedPanel({
           <button
             type="button"
             onClick={() => wallet.openAuthFlow?.()}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--canvas)] hover:opacity-90"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-2 text-[12.5px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
           >
             Connect to claim
           </button>
@@ -398,7 +398,7 @@ function ResolvedPanel({
             />
           </div>
           {statusMsg && (
-            <p className="mt-3 break-all font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+            <p className="mt-3 break-all text-[11.5px] font-medium text-[var(--muted)]">
               {statusMsg}
             </p>
           )}
@@ -425,7 +425,7 @@ function BackLink({ onNavigate }: { onNavigate: NavigateHandler }) {
     <a
       href="/markets"
       onClick={(e) => onNavigate(e, "/markets")}
-      className="mb-6 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)] transition-colors hover:text-[var(--ink)]"
+      className="mb-6 inline-flex items-center gap-2 text-[12px] font-medium text-[var(--muted)] transition-colors hover:text-[var(--ink)]"
     >
       <ArrowLeft className="h-3 w-3" /> All markets
     </a>
@@ -443,7 +443,7 @@ function Stat({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+      <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </dt>
       <dd
@@ -473,7 +473,7 @@ function Meta({
   return (
     <div className="flex items-center gap-2 truncate">
       {Icon && <Icon className="h-3 w-3 text-[var(--muted-soft)]" />}
-      <span className="font-mono uppercase tracking-[0.14em] text-[var(--muted-soft)]">
+      <span className="font-medium text-[var(--muted-soft)]">
         {label}
       </span>
       <span className="truncate font-mono text-[var(--ink)]">{value}</span>

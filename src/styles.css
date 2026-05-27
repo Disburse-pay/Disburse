@@ -4,8 +4,10 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-serif: "Source Serif 4", "Iowan Old Style", "Apple Garamond", "Baskerville", "Times New Roman", serif;
-  /* Strictly monochrome palette. Chromatic names retained for legacy callers,
-     but every value resolves to black / white / gray. */
+  /* Monochrome base palette + two restored chromatic accents:
+     green = "yes / profit / success / connected"
+     red   = "no / loss / failed"
+     Everything else stays grayscale. */
   --color-brand-blue: #ffffff;
   --color-brand-dark: #000000;
   --color-brand-surface: #0a0a0a;
@@ -14,7 +16,7 @@
   --color-white: #ffffff;
   --color-black: #000000;
   --color-amber-400: #d4d4d4;
-  --color-red-400: #ffffff;
+  --color-red-400: #ef5b5b;
 }
 
 /* Legacy aliases (kept for existing callers; both resolve to the default surface). */
@@ -47,15 +49,16 @@
   --danger-bg: #ffffff;
   --danger-text-contrast: #000000;
   --focus: #ffffff;
-  /* Semantic aliases retained for legacy callers — all map to grayscale.
-     Differentiate state with borders, glyphs, and weight, not hue. */
-  --green-bg: rgba(255, 255, 255, 0.06);
-  --green-text: #ffffff;
-  --tone-accent: #ffffff;
+  /* Trading semantics keep chromatic accents: green = yes / profit / connected /
+     success, red = no / loss / failed. All other status colors remain
+     monochrome and differentiate by border, glyph, and weight. */
+  --green-bg: rgba(46, 192, 116, 0.12);
+  --green-text: #34c97a;
+  --tone-accent: #34c97a;
   --blue-bg: rgba(255, 255, 255, 0.05);
   --blue-text: #d4d4d4;
-  --red-bg: rgba(255, 255, 255, 0.06);
-  --red-text: #ffffff;
+  --red-bg: rgba(239, 91, 91, 0.12);
+  --red-text: #ef5b5b;
   --yellow-bg: rgba(255, 255, 255, 0.05);
   --yellow-text: #d4d4d4;
   --orange-bg: rgba(255, 255, 255, 0.05);
@@ -98,13 +101,13 @@ html[data-theme="light"] {
   --danger-bg: #000000;
   --danger-text-contrast: #ffffff;
   --focus: #000000;
-  --green-bg: rgba(0, 0, 0, 0.04);
-  --green-text: #000000;
-  --tone-accent: #000000;
+  --green-bg: rgba(22, 163, 95, 0.10);
+  --green-text: #168758;
+  --tone-accent: #168758;
   --blue-bg: rgba(0, 0, 0, 0.04);
   --blue-text: #262626;
-  --red-bg: rgba(0, 0, 0, 0.04);
-  --red-text: #000000;
+  --red-bg: rgba(204, 50, 50, 0.10);
+  --red-text: #c43232;
   --yellow-bg: rgba(0, 0, 0, 0.04);
   --yellow-text: #262626;
   --orange-bg: rgba(0, 0, 0, 0.04);

@@ -65,7 +65,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
       <div className="w-full max-w-[440px] rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-8 shadow-xl">
         
         <div className="mb-10 flex flex-col items-center text-center">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ink)] text-[var(--canvas)]">
+          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ink)] text-[color:var(--canvas)]">
             <KeyRound className="h-8 w-8" />
           </div>
           <h1 className="mb-3 font-mono text-[16px] font-semibold tracking-tight text-[var(--ink)]">
@@ -79,7 +79,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
         {mode === "code" && (
           <form onSubmit={handleCodeSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <label htmlFor="code" className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <label htmlFor="code" className="text-[12px] font-medium text-[var(--muted)]">
                 Access Code
               </label>
               <input
@@ -100,7 +100,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
             <button
               type="submit"
               disabled={!code.trim() || isVerifying}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--canvas)] transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-3 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] disabled:opacity-50"
             >
               {isVerifying && <Loader2 className="h-4 w-4 animate-spin" />}
               Enter Market
@@ -121,7 +121,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
         {mode === "request" && (
           <form onSubmit={handleRequestSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <label htmlFor="name" className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <label htmlFor="name" className="text-[12px] font-medium text-[var(--muted)]">
                 Name
               </label>
               <input
@@ -135,7 +135,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
             </div>
             
             <div className="flex flex-col gap-2">
-              <label htmlFor="email" className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <label htmlFor="email" className="text-[12px] font-medium text-[var(--muted)]">
                 Email
               </label>
               <input
@@ -150,7 +150,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="twitter" className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <label htmlFor="twitter" className="text-[12px] font-medium text-[var(--muted)]">
                 Twitter / X (Optional)
               </label>
               <input
@@ -169,7 +169,7 @@ export default function WhitelistPage({ account, onRedeemed }: Props) {
             <button
               type="submit"
               disabled={!form.name.trim() || !form.email.trim() || isRequesting}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-4 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--canvas)] transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-3 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] disabled:opacity-50"
             >
               {isRequesting && <Loader2 className="h-4 w-4 animate-spin" />}
               Submit Request

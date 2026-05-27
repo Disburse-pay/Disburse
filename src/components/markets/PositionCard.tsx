@@ -92,7 +92,7 @@ export default function PositionCard({
         <ArrowRight className="h-4 w-4 flex-shrink-0 text-[var(--muted-soft)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--ink)]" />
       </a>
 
-      <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+      <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-medium text-[var(--muted)]">
         <OutcomeBadge outcome={outcome} />
         <span>·</span>
         <span>{microsToShares(sharesMicros)} shares</span>
@@ -125,7 +125,7 @@ export default function PositionCard({
         <a
           href="/markets/history"
           onClick={(e) => onNavigate(e, "/markets/history")}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--canvas)] hover:opacity-90"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--ink)] px-3 py-2 text-[12.5px] font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)]"
         >
           Claim payout
         </a>
@@ -134,7 +134,7 @@ export default function PositionCard({
         <button
           type="button"
           onClick={() => setShowSell(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--ink)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--ink)] transition-colors hover:bg-[var(--ink)] hover:text-[var(--canvas)]"
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--ink)] px-3 py-2 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
         >
           Sell {outcome} shares
         </button>
@@ -166,7 +166,7 @@ function StatCell({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+      <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">
         {label}
       </dt>
       <dd
