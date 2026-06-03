@@ -106,9 +106,16 @@ async function issuePaymentPsp(
   // Build the PSP
   const signingKey = getPspSigningKey();
   const networkMode = getNetworkMode();
-  const isCrossChain = isCrossChainPaymentRequest(request) &&
-    receipt.sourceChainId !== undefined &&
-    receipt.sourceTxHash !== undefined;
+  // Cross-chain settlement (a QrPaymentSettled event on the Arc settlement
+  // contract) only happens when funds originate on a genuinely *remote* source
+  // chain. arc_settlement requests paid directly on Arc (source == dest == Arc)
+  // settle with a plain USDC Transfer instead, so they must be read with
+  // readDirectSettlementLog. isCrossChainPaymentRequest() is true for both, so
+  // it alone is not enough — gate on the source actually being a remote chain.
+  const isCrossChain =
+    isCrossChainPaymentRequest(request) &&
+    receipt.sourceTxHash !== undefined &&
+    isRemotePaymentSourceChainId(receipt.sourceChainId);
 
   // Fetch settlement log from Arc
   const { settlement } = isCrossChain
