@@ -166,7 +166,10 @@ function truncateHash(hash: string): string {
 }
 
 function getApiUrl(): string {
-  return process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.PSP_PUBLIC_URL || "https://disburse.app";
+  // Canonical, stable public origin for the copy-paste verification commands.
+  // Deliberately NOT process.env.VERCEL_URL: on Vercel that is the per-deploy
+  // hostname (<project>-<hash>-<account>.vercel.app), which leaks the account/
+  // project name into this public page and changes on every deploy. Override
+  // with PSP_PUBLIC_URL for non-standard deployments.
+  return process.env.PSP_PUBLIC_URL || "https://app.disburse.online";
 }

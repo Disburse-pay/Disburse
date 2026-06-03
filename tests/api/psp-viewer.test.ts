@@ -64,6 +64,26 @@ describe("/api/psp-viewer", () => {
     expect(response.body).toContain("<!DOCTYPE html>");
     expect(response.body).toContain("npx @disburse/psp-verify");
   });
+
+  it("uses the canonical public origin and never leaks the Vercel deploy URL", async () => {
+    pspStore.readPspByUid.mockResolvedValue(psp);
+    const previous = process.env.VERCEL_URL;
+    process.env.VERCEL_URL = "disburse-owu67xj9c-firdans-projects.vercel.app";
+    try {
+      const response = createResponse();
+
+      await handler({ method: "GET", query: { uid } }, response.api);
+
+      expect(response.body).toContain(`https://app.disburse.online/api/psp?uid=${uid}`);
+      expect(response.body).not.toContain("vercel.app");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.VERCEL_URL;
+      } else {
+        process.env.VERCEL_URL = previous;
+      }
+    }
+  });
 });
 
 function createResponse() {
