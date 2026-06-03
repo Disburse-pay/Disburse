@@ -14,7 +14,7 @@
  */
 
 import { keccak256, type Hex } from "viem";
-import type { PspCore } from "./types";
+import type { PspCore } from "./types.js";
 
 // ---------- Domain separator ----------
 

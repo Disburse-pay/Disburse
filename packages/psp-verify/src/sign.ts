@@ -19,8 +19,8 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { computeDigest, extractCore } from "./canonical";
-import type { PspCore, PspSignature, PspV1 } from "./types";
+import { computeDigest, extractCore } from "./canonical.js";
+import type { PspCore, PspSignature, PspV1 } from "./types.js";
 
 // ---------- Key management ----------
 

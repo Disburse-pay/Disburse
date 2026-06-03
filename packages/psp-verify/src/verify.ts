@@ -12,9 +12,9 @@
  */
 
 import { isAddress, isHash, type Address } from "viem";
-import { verifyPspSignature } from "./sign";
-import { computeDigest, extractCore } from "./canonical";
-import type { PspV1, PspVerifyResult } from "./types";
+import { verifyPspSignature } from "./sign.js";
+import { computeDigest, extractCore } from "./canonical.js";
+import type { PspV1, PspVerifyResult } from "./types.js";
 
 // ---------- Structural validation ----------
 
