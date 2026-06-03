@@ -1,5 +1,5 @@
 import { assertMethod, readJsonBody, readQueryString, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
-import { generateStatement, generateCounterpartyStatement, type StatementQuery } from "../server/statements.js";
+import { generateStatement, type StatementQuery } from "../server/statements.js";
 
 /**
  * Statement Bundle API

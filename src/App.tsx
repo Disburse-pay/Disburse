@@ -1,67 +1,41 @@
-import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LucideIcon } from "lucide-react";
+import { type ComponentProps, type FormEvent, type MouseEvent, type ReactNode, type RefObject, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRightLeft,
   BookOpen,
   Check,
-  ChevronsLeftRight,
   Download,
   ExternalLink,
   FileText,
-  Home,
-  LifeBuoy,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   QrCode,
-  Search,
   Send,
-  Settings,
   ShieldCheck,
-  Sun,
-  WalletCards
+  Sun
 } from "lucide-react";
 import Sidebar from "@/src/components/Sidebar";
 import Header from "@/src/components/Header";
-import SettingsDialog from "@/src/components/SettingsDialog";
+import SidePanel from "@/src/components/ui/SidePanel";
+import SettingsPanel from "@/src/components/SettingsPanel";
 import BalanceCard from "@/src/components/BalanceCard";
 import TransactionsTable from "@/src/components/TransactionsTable";
 import MonthlyStats from "@/src/components/MonthlyStats";
 import SystemStatusCard from "@/src/components/SystemStatusCard";
-import SettlementTimeline, { buildPaymentTimeline } from "@/src/components/SettlementTimeline";
 import QrShareCard from "@/src/components/QrShareCard";
-import ReceiptDocument from "@/src/components/ReceiptDocument";
-import SettlementPipeline from "@/src/components/SettlementPipeline";
-import { PspProofPanel } from "@/src/components/PspProofPanel";
+import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
-import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice, generateReceiptFingerprint } from "./lib/compliance";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
+import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice } from "./lib/compliance";
+
+
 import { formatUnits, parseUnits, type Hash } from "viem";
 import {
   ARC_CHAIN_ID,
-  ARC_DOCS_URL,
   ARC_EXPLORER_URL,
-  ARC_FAUCET_URL,
-  ARC_RPC_ENDPOINTS,
-  ARC_RPC_URL,
-  TOKENS
+  ARC_FAUCET_URL
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
 import { I18nProvider, useI18n } from "./lib/i18n";
 import {
   type AppSettings,
-  type LanguageCode,
   loadSettings
 } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
@@ -117,7 +91,6 @@ import {
   normalizeLabel,
   normalizeNote,
   parseTokenAmount,
-  PAYMENT_VALIDITY_MINUTES,
   refreshDerivedStatus,
   shortAddress,
   toExplorerAddressUrl,
@@ -180,40 +153,24 @@ function DocsFallback() {
 import { cx } from "./lib/cx";
 import {
   THEME_KEY,
-  LEGACY_THEME_KEY,
   getInitialTheme,
   type Theme
 } from "./lib/theme";
 import {
-  LEGACY_DOCS_PATH,
-  PRODUCTION_DOCS_HOSTNAME,
-  PRODUCTION_APP_HOSTNAME,
   getInitialPage,
-  isLocalHostname,
-  isLocalAppPreview,
-  isLocalDocsPreview,
   isDocsHostname,
-  stripPublicSubdomain,
-  getDocsHostname,
-  getAppHostname,
-  getOriginForHostname,
+  isPaySurface,
   getDocsHref,
   getBetHref,
-  getAppHref,
+  getPayShareOrigin,
   getInternalTargetPath,
   shouldRedirectLegacyBetRoute,
   shouldRedirectLegacyDocsRoute,
   getCurrentRouteKey,
-  type Page,
-  type NavigateHandler
+  type Page
 } from "./lib/routing";
-import { faqItems } from "./content/faq";
-import {
-  getDocsSections,
-  getDocsSummaryItems,
-  type DocsSection,
-  type DocsSummaryItem
-} from "./content/docs";
+
+
 
 type DirectFormState = {
   recipient: string;
@@ -300,6 +257,7 @@ function App() {
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
   const [appSettings] = useState<AppSettings>(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isNavOpen, setIsNavOpen] = useState(false);
   const dynamicWallet = useDisburseDynamicWallet();
 
   const selectedRequest = useMemo(
@@ -344,8 +302,6 @@ function App() {
         ? "stale"
         : rpcHealth.activeEndpoint?.label ?? "active";
   const rpcBlockLabel = rpcHealth?.healthy && rpcHealth.blockNumber ? `block ${rpcHealth.blockNumber}` : rpcStatusLabel;
-  const rpcGasLabel =
-    rpcHealth?.healthy && rpcHealth.safeGasPrice ? `${trimDisplay(rpcHealth.safeGasPrice, 8)} USDC` : "pending";
 
   const getWalletProvider = useCallback(async (): Promise<EthereumProvider | undefined> => {
     if (dynamicWallet.enabled) {
@@ -478,6 +434,12 @@ function App() {
         },
         (payload) => {
           const event = payload.new as QrRealtimeEvent;
+          // psp_error is a backend diagnostic for a payment that already
+          // settled — it must not drive live request state or raise a
+          // (status: paid) success toast. Operators read it from the DB.
+          if (event.event_type === "psp_error") {
+            return;
+          }
           setRequests((current) => {
             const request = current.find((item) => item.id === event.request_id) ?? selectedRequest;
             return upsertRequest(current, applyQrRealtimeEvent(request, event).request);
@@ -503,7 +465,7 @@ function App() {
       setShareUrl("");
       return;
     }
-    setShareUrl(buildShareUrl(selectedRequest, window.location.origin));
+    setShareUrl(buildShareUrl(selectedRequest, getPayShareOrigin()));
   }, [
     selectedRequest?.id,
     selectedRequest?.recipient,
@@ -886,8 +848,16 @@ function App() {
       setDirectNotice({ tone: "info", text: "Transaction submitted. Waiting for confirmation." });
 
       try {
-        await waitForTransactionConfirmation(hash);
-        setDirectNotice({ tone: "success", text: "Direct payment confirmed." });
+        const txReceipt = await waitForTransactionConfirmation(hash);
+        setDirectNotice({ tone: "success", text: "Direct payment confirmed. Generating receipt." });
+        await generateDirectSendArtifacts({
+          form: directForm,
+          transfer,
+          payer: account,
+          txHash: hash,
+          blockNumber: txReceipt.blockNumber.toString()
+        });
+        setDirectNotice({ tone: "success", text: "Direct payment confirmed. PSP and PDF receipt downloaded." });
       } catch (error) {
         setDirectNotice({ tone: "info", text: errorToMessage(error) });
       }
@@ -1456,6 +1426,87 @@ function App() {
     );
   }
 
+  // pay.disburse.online — the dedicated, mobile-first hosted payment page. A
+  // scanned QR lands here and sees only a slim brand bar and a single payment
+  // card, like a hosted invoice page. The entire console shell (sidebar,
+  // header, hero) is skipped. All state/handlers are the same ones the in-app
+  // /pay route uses; only the chrome and layout differ.
+  if (isPaySurface(window.location.hostname) && page === "pay") {
+    return (
+      <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
+        <div className="pay-host">
+          <header className="pay-host-bar">
+            <a className="pay-host-brand" href="https://disburse.online">
+              <img src="/favicon.png" alt="" aria-hidden="true" />
+              <span>Disburse</span>
+            </a>
+            <div className="pay-host-bar-right">
+              {account && (
+                <span className="pay-host-wallet" title={account}>
+                  <span className="pay-host-wallet-dot" aria-hidden="true" />
+                  {shortAddress(account)}
+                </span>
+              )}
+              <button
+                type="button"
+                className="pay-host-icon"
+                onClick={handleThemeToggle}
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? <Moon size={16} strokeWidth={1.75} /> : <Sun size={16} strokeWidth={1.75} />}
+              </button>
+            </div>
+          </header>
+          <main className="pay-host-main">
+            <HostedPayPage
+              account={account}
+              wrongChain={payWrongChain}
+              hasWalletProvider={hasWalletProvider}
+              request={payRequest}
+              receipt={payReceipt}
+              status={payDisplayStatus}
+              balances={payBalances}
+              estimate={payEstimate}
+              approvalHash={payApprovalHash}
+              notice={payNotice}
+              walletNotice={walletNotice}
+              now={now}
+              isExpired={payIsExpired}
+              isPayable={payIsPayable}
+              insufficientToken={payInsufficientToken}
+              missingGas={payMissingGas}
+              isConnecting={isConnecting}
+              isEstimating={isEstimatingPay}
+              isPaying={isPayingQr}
+              lifecycle={payLifecycle}
+              isVerifying={isVerifying}
+              isGeneratingInvoice={isGeneratingInvoice}
+              onConnect={handleConnectWallet}
+              onSwitch={handleSwitchPayNetwork}
+              sourceChainId={paySourceChainId}
+              onSourceChainChange={(chainId) => {
+                setPaySourceChainId(chainId);
+                setPayBalances(undefined);
+                setPayEstimate(undefined);
+                setPayApprovalHash(undefined);
+                setPayNotice(undefined);
+              }}
+              onEstimate={handlePayEstimate}
+              onPay={handlePayQrRequest}
+              onVerify={() => handleVerifyQrRequest(payRequest)}
+              onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
+              onAttest={() => payRequest && payReceipt && handleCreateAttestation(payRequest, payReceipt)}
+              onSettlementProof={() => payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)}
+              onUBLExport={() => payRequest && payReceipt && handleDownloadUBLInvoice(payRequest, payReceipt)}
+              attestation={payAttestation}
+              onCopy={(value) => copyValue(value, setPayNotice)}
+            />
+          </main>
+        </div>
+      </I18nProvider>
+    );
+  }
+
   // Bet pages render through BetApp, not this shell, so routeMeta covers only
   // the app-shell pages.
   type AppShellPage = Exclude<
@@ -1477,15 +1528,41 @@ function App() {
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
     <div className="flex min-h-screen bg-[var(--canvas)] text-[var(--ink)] overflow-x-hidden relative">
-      <Sidebar
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-        page={page}
-        onNavigate={handleNavigate}
-        account={account}
-      />
+      {/* Desktop sidebar — hidden on mobile, where the drawer takes over. */}
+      <div className="hidden md:block">
+        <Sidebar
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
+          page={page}
+          onNavigate={handleNavigate}
+          account={account}
+        />
+      </div>
 
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "ml-[56px]" : "ml-[236px]")}>
+      {/* Mobile nav drawer — slides in from the left on <md viewports. */}
+      <SidePanel
+        open={isNavOpen}
+        onClose={() => setIsNavOpen(false)}
+        side="left"
+        width={280}
+        scrim
+        ariaLabel="Navigation"
+        hideClose
+      >
+        <Sidebar
+          isCollapsed={false}
+          setIsCollapsed={() => {}}
+          page={page}
+          onNavigate={(e, target) => {
+            handleNavigate(e, target);
+            setIsNavOpen(false);
+          }}
+          account={account}
+          inDrawer
+        />
+      </SidePanel>
+
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "md:ml-[56px]" : "md:ml-[240px]")}>
         <Header
           title={headerTitle}
           subtitle={headerSubtitle}
@@ -1499,10 +1576,11 @@ function App() {
           onSwitch={commonShellProps.onSwitch}
           onToggleTheme={handleThemeToggle}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenNav={() => setIsNavOpen(true)}
           theme={theme}
         />
 
-        <SettingsDialog
+        <SettingsPanel
           open={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           theme={theme}
@@ -1878,7 +1956,7 @@ function LedgerRowCompact({
   onCopy: (value: string) => void;
 }) {
   const { t } = useI18n();
-  const requestUrl = buildShareUrl(request, window.location.origin);
+  const requestUrl = buildShareUrl(request, getPayShareOrigin());
   const displayRequest = refreshDerivedStatus(request, now);
 
   return (
@@ -2094,21 +2172,25 @@ function QrPaymentsPage({
                   </>
                 )}
 
-                {isCrossChainPaymentRequest(displayRequest) && (
-                  <SettlementPipeline request={displayRequest} receipt={selectedReceipt} />
-                )}
-
-                {selectedReceipt && (
-                  <>
-                    <ReceiptDocument
-                      receipt={selectedReceipt}
-                      request={displayRequest}
-                      attestationUid={selectedReceipt.attestationUid}
-                      attestationFingerprint={selectedReceipt.attestationFingerprint}
-                      onCopyFingerprint={onCopy}
-                    />
-                    <PspProofPanel requestId={displayRequest.id} onCopy={onCopy} />
-                  </>
+                {(selectedReceipt || isCrossChainPaymentRequest(displayRequest)) && (
+                  <ReceiptView
+                    data={{
+                      request: displayRequest,
+                      receipt: selectedReceipt,
+                      attestation: selectedReceipt
+                        ? {
+                            uid: selectedReceipt.attestationUid,
+                            fingerprint: selectedReceipt.attestationFingerprint,
+                          }
+                        : undefined,
+                      onCopy,
+                      onCopyFingerprint: onCopy,
+                    }}
+                  >
+                    {selectedReceipt && <ReceiptView.Summary />}
+                    <ReceiptView.Timeline />
+                    {selectedReceipt && <ReceiptView.Proof />}
+                  </ReceiptView>
                 )}
               </>
             ) : hasFormInput ? (
@@ -2433,7 +2515,26 @@ function PayRequestPage({
               {hasResultBlock && (
                 <div className="form-section">
                   {(request.txHash || receipt) && (
-                    <SettlementPipeline request={request} receipt={receipt} />
+                    <ReceiptView
+                      data={{
+                        request,
+                        receipt,
+                        attestation: receipt
+                          ? {
+                              uid: attestation?.uid ?? receipt.attestationUid,
+                              fingerprint: attestation?.fingerprint ?? receipt.attestationFingerprint,
+                            }
+                          : undefined,
+                        onCopy,
+                        onCopyFingerprint: onCopy,
+                        onExportPdf: receipt && !isGeneratingInvoice ? onInvoice : undefined,
+                        onExportUbl: receipt ? onUBLExport : undefined,
+                      }}
+                    >
+                      {receipt && <ReceiptView.Summary />}
+                      <ReceiptView.Timeline />
+                      {receipt && <ReceiptView.Proof />}
+                    </ReceiptView>
                   )}
 
                   {approvalHash && !receipt && (
@@ -2472,16 +2573,6 @@ function PayRequestPage({
 
                   {receipt && (
                 <>
-                  <ReceiptDocument
-                    receipt={receipt}
-                    request={request}
-                    attestationUid={attestation?.uid ?? receipt.attestationUid}
-                    attestationFingerprint={attestation?.fingerprint ?? receipt.attestationFingerprint}
-                    onCopyFingerprint={onCopy}
-                    onExportPdf={isGeneratingInvoice ? undefined : onInvoice}
-                    onExportUbl={onUBLExport}
-                  />
-                  <PspProofPanel requestId={request.id} onCopy={onCopy} />
 
                   {/* Compliance Export Actions */}
                   <div className="compliance-actions">
@@ -2531,6 +2622,292 @@ function PayRequestPage({
         )}
       </section>
     </>
+  );
+}
+
+// Mobile-first hosted payment view rendered on the pay.* subdomain. It reuses
+// the exact props (and therefore state/handlers) of PayRequestPage, but lays
+// the flow out as a single Stripe-style invoice card instead of the desktop
+// two-pane workbench. Compliance exports are tucked into a collapsed section
+// so they never compete with the primary Pay action on a phone.
+function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
+  const {
+    account,
+    wrongChain,
+    hasWalletProvider,
+    request,
+    receipt,
+    status,
+    balances,
+    estimate,
+    approvalHash,
+    notice,
+    walletNotice,
+    now,
+    isExpired,
+    isPayable,
+    insufficientToken,
+    missingGas,
+    isConnecting,
+    isEstimating,
+    isPaying,
+    lifecycle,
+    isVerifying,
+    isGeneratingInvoice,
+    onConnect,
+    onSwitch,
+    sourceChainId,
+    onSourceChainChange,
+    onEstimate,
+    onPay,
+    onVerify,
+    onInvoice,
+    onAttest,
+    onSettlementProof,
+    onUBLExport,
+    attestation,
+    onCopy
+  } = props;
+  const { t } = useI18n();
+
+  if (!request) {
+    return (
+      <div className="pay-host-card">
+        <EmptyState title={t("noQrRequestLoaded")} text={t("noQrRequestLoadedText")} />
+      </div>
+    );
+  }
+
+  const crossChain = isCrossChainPaymentRequest(request);
+  const hasSubmittedTransaction = Boolean(request.txHash && request.status !== "paid");
+  const submittedTxHash = request.txHash;
+  const submittedTxUrl =
+    submittedTxHash && crossChain
+      ? getCrossChainExplorerTxUrl(request.settlement?.sourceChainId ?? sourceChainId, submittedTxHash)
+      : submittedTxHash
+        ? toExplorerTxUrl(submittedTxHash)
+        : undefined;
+  const approvalTxUrl = approvalHash ? getCrossChainExplorerTxUrl(sourceChainId, approvalHash) : undefined;
+  const payButtonLabel = getPayButtonLabel(isPaying, lifecycle, t);
+  const isFinal = status === "paid" || status === "expired" || status === "failed";
+  const showExpiryGrid = !isFinal;
+  const hasResultBlock = Boolean(approvalHash || submittedTxHash || receipt || request.txHash);
+  const payStage = computePayStage(account, wrongChain, request, receipt, lifecycle);
+
+  return (
+    <div className="pay-host-card">
+      <PaymentPreview
+        title={request.label}
+        note={request.note ?? t("noNote")}
+        amount={request.amount}
+        token={request.token}
+        recipient={request.recipient}
+        invoiceDate={request.invoiceDate}
+        status={status}
+      />
+
+      {crossChain && (
+        <div className="route-summary">
+          <Metric label={t("settlesOn")} value="Arc Testnet" />
+          <Metric label={t("selectedSource")} value={getCrossChainLabel(sourceChainId)} />
+        </div>
+      )}
+      {showExpiryGrid && (
+        <div className="expiry-grid">
+          <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
+          <Metric label={t("validUntil")} value={formatDateTime(request.expiresAt ?? request.dueAt)} />
+        </div>
+      )}
+
+      <p className="pay-host-locknote">{t("paymentRequestNote")}</p>
+
+      <StageStrip stage={payStage} steps={[t("connect"), t("paySign"), t("stageSettle"), t("verified")]} />
+
+      <div className="pay-host-section">
+        {walletNotice && <NoticeBar notice={walletNotice} compact />}
+        {!account && !hasWalletProvider && (
+          <NoticeBar compact notice={{ tone: "info", text: t("noWalletRequest") }} />
+        )}
+        {isExpired && !isPayable && (
+          <NoticeBar compact notice={{ tone: "error", text: t("qrExpiredNotice") }} />
+        )}
+        {hasSubmittedTransaction && (
+          <NoticeBar compact notice={{ tone: "info", text: t("txSavedNotice") }} />
+        )}
+
+        {crossChain && (
+          <Field label={t("payFrom")}>
+            <select
+              value={sourceChainId}
+              onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
+              disabled={Boolean(request.txHash)}
+            >
+              {(request.allowedSourceChainIds ?? getAllowedSourceChainIds()).map((chainId) => (
+                <option value={chainId} key={chainId}>
+                  {getCrossChainLabel(chainId)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <WalletActionBlock
+          account={account}
+          wrongChain={wrongChain}
+          hasWalletProvider={hasWalletProvider}
+          isConnecting={isConnecting}
+          walletNotice={undefined}
+          onConnect={onConnect}
+          onSwitch={onSwitch}
+          switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
+        />
+
+        {account && !wrongChain && (
+          <TransferState
+            account={account}
+            token={request.token}
+            balances={balances}
+            insufficientToken={insufficientToken}
+            missingGas={missingGas}
+            networkLabel={getCrossChainLabel(sourceChainId)}
+            nativeSymbol={getCrossChain(sourceChainId).nativeSymbol}
+          />
+        )}
+      </div>
+
+      <div className="pay-host-section pay-host-pay">
+        <button
+          className="primary-button primary-button--lg pay-host-cta"
+          type="button"
+          onClick={onPay}
+          disabled={
+            !account ||
+            wrongChain ||
+            !isPayable ||
+            insufficientToken ||
+            missingGas ||
+            isPaying ||
+            hasSubmittedTransaction ||
+            request.status === "paid"
+          }
+        >
+          {payButtonLabel}
+        </button>
+        <div className="pay-host-aux">
+          <button
+            className="text-button"
+            type="button"
+            onClick={onEstimate}
+            disabled={!account || wrongChain || !isPayable || isEstimating}
+          >
+            {isEstimating ? t("estimating") : t("calculateGas")}
+          </button>
+          {(submittedTxHash || receipt) && (
+            <button className="text-button" type="button" onClick={onVerify} disabled={isVerifying}>
+              {isVerifying ? t("verifying") : t("verify")}
+            </button>
+          )}
+        </div>
+        {estimate && <EstimateGrid estimate={estimate} />}
+        {notice && <NoticeBar notice={notice} />}
+      </div>
+
+      {hasResultBlock && (
+        <div className="pay-host-section">
+          {(request.txHash || receipt) && (
+            <ReceiptView
+              data={{
+                request,
+                receipt,
+                attestation: receipt
+                  ? {
+                      uid: attestation?.uid ?? receipt.attestationUid,
+                      fingerprint: attestation?.fingerprint ?? receipt.attestationFingerprint
+                    }
+                  : undefined,
+                onCopy,
+                onCopyFingerprint: onCopy,
+                onExportPdf: receipt && !isGeneratingInvoice ? onInvoice : undefined,
+                onExportUbl: receipt ? onUBLExport : undefined
+              }}
+            >
+              {receipt && <ReceiptView.Summary />}
+              <ReceiptView.Timeline />
+              {receipt && <ReceiptView.Proof />}
+            </ReceiptView>
+          )}
+
+          {approvalHash && !receipt && (
+            <div className="receipt-line">
+              <div>
+                <span>{t("usdcApproval")}</span>
+                <strong>{shortAddress(approvalHash, 10, 8)}</strong>
+              </div>
+              <div className="receipt-actions">
+                <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
+                  {t("copyTx")}
+                </button>
+                <a href={approvalTxUrl} target="_blank" rel="noreferrer">
+                  {t("openTx")}
+                </a>
+              </div>
+            </div>
+          )}
+
+          {submittedTxHash && !receipt && (
+            <div className="receipt-line">
+              <div>
+                <span>{t("submittedTransaction")}</span>
+                <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
+              </div>
+              <div className="receipt-actions">
+                <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
+                  {t("copyTx")}
+                </button>
+                <a href={submittedTxUrl} target="_blank" rel="noreferrer">
+                  {t("openTx")}
+                </a>
+              </div>
+            </div>
+          )}
+
+          {receipt && (
+            <details className="pay-host-exports">
+              <summary>
+                <span>{t("settlementExports")}</span>
+                {attestation && <span className="attestation-badge">VSR: {attestation.uid}</span>}
+              </summary>
+              <div className="compliance-buttons">
+                {!attestation && onAttest && (
+                  <button className="compliance-button" type="button" onClick={onAttest}>
+                    <ShieldCheck size={14} strokeWidth={1.5} />
+                    {t("createAttestation")}
+                  </button>
+                )}
+                {attestation && (
+                  <button className="compliance-button attested" type="button" disabled>
+                    <Check size={14} strokeWidth={1.75} />
+                    {t("attested")}
+                  </button>
+                )}
+                {onSettlementProof && (
+                  <button className="compliance-button" type="button" onClick={onSettlementProof}>
+                    <FileText size={14} strokeWidth={1.5} />
+                    {t("settlementProof")}
+                  </button>
+                )}
+                {onUBLExport && (
+                  <button className="compliance-button" type="button" onClick={onUBLExport}>
+                    <Download size={14} strokeWidth={1.5} />
+                    {t("ublInvoiceXml")}
+                  </button>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2738,7 +3115,7 @@ function DocsTopNav({
           <span className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
             Disburse
           </span>
-          <span className="ml-1 rounded-full border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
+          <span className="ml-1 rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--muted)]">
             {t("docsTitle")}
           </span>
         </a>
@@ -2762,7 +3139,12 @@ function DocsTopNav({
           </button>
           <a
             href={appHref}
-            className="group inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[12px] font-medium text-[var(--primary-text)] transition-opacity hover:opacity-90"
+            // `text-[color:var(--primary-text)]` is explicit — without the
+            // `color:` hint Tailwind v4 sees this token sitting next to
+            // `text-[13px]` (a size) and refuses to apply it as a color, so
+            // the label rendered as `currentColor` against the white button
+            // background and looked invisible.
+            className="group inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
           >
             {t("launchConsole")}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-0.5">
@@ -2776,108 +3158,6 @@ function DocsTopNav({
   );
 }
 
-function FAQSection() {
-  const [openIndex, setOpenIndex] = useState(0);
-
-  return (
-    <section id="faq" className="faq-section" aria-labelledby="faq-heading">
-      <header className="section-header">
-        <h2 id="faq-heading">FAQ</h2>
-      </header>
-      <div className="faq-list">
-        {faqItems.map((item, index) => (
-          <article className={`faq-item ${openIndex === index ? "open" : ""}`} key={item.question}>
-            <button
-              className="faq-trigger"
-              type="button"
-              aria-expanded={openIndex === index}
-              aria-controls={`faq-answer-${index}`}
-              onClick={() => setOpenIndex((current) => (current === index ? -1 : index))}
-            >
-              <span>{item.question}</span>
-            </button>
-            <div className="faq-answer" id={`faq-answer-${index}`}>
-              <div>
-                <p>{item.answer}</p>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function SiteFooter({ onNavigate }: { onNavigate: NavigateHandler }) {
-  const dashHref = getAppHref("/");
-  const paymentsHref = getAppHref("/payments");
-  const qrPaymentsHref = getAppHref("/qr-payments");
-  const ieHref = getAppHref("/import-export");
-  const docsHref = getDocsHref();
-
-  return (
-    <footer className="site-footer">
-      <strong>Disburse</strong>
-      <nav aria-label="Footer">
-        <a href={dashHref} onClick={(event) => onNavigate(event, dashHref)}>
-          Dashboard
-        </a>
-        <a href={paymentsHref} onClick={(event) => onNavigate(event, paymentsHref)}>
-          Payments
-        </a>
-        <a href={qrPaymentsHref} onClick={(event) => onNavigate(event, qrPaymentsHref)}>
-          QR Payments
-        </a>
-        <a href={ieHref} onClick={(event) => onNavigate(event, ieHref)}>
-          Import / Export
-        </a>
-        <a href={docsHref} onClick={(event) => onNavigate(event, docsHref)}>
-          Docs
-        </a>
-        <a href={ARC_DOCS_URL} target="_blank" rel="noreferrer">
-          Arc docs
-        </a>
-      </nav>
-    </footer>
-  );
-}
-
-function WalletPill({
-  account,
-  chainId,
-  expectedChainId,
-  expectedChainLabel,
-  isConnecting,
-  onConnect,
-  onSwitch
-}: {
-  account?: string;
-  chainId?: number;
-  expectedChainId: number;
-  expectedChainLabel: string;
-  isConnecting: boolean;
-  onConnect: () => void;
-  onSwitch: () => void;
-}) {
-  if (!account) {
-    return (
-      <button className="wallet-pill" type="button" onClick={onConnect} disabled={isConnecting}>
-        {isConnecting ? "Connecting..." : "Connect"}
-      </button>
-    );
-  }
-
-  if (chainId !== expectedChainId) {
-    return (
-      <button className="wallet-pill warning" type="button" onClick={onSwitch} disabled={isConnecting}>
-        Switch to {expectedChainLabel}
-      </button>
-    );
-  }
-
-  return <span className="wallet-pill connected">{shortAddress(account)}</span>;
-}
-
 function Field({
   label,
   helper,
@@ -2887,7 +3167,6 @@ function Field({
   helper?: string;
   children: ReactNode;
 }) {
-  const { t } = useI18n();
   return (
     <label className="field">
       <span>{label}</span>
@@ -2968,17 +3247,6 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
     possible_match: "review",
   };
   return <span className={`status-badge ${status}`}>{t(keyByStatus[status])}</span>;
-}
-
-function formatPayLifecycle(lifecycle: PayLifecycle, t?: (key: string, params?: Record<string, string | number>) => string): string {
-  switch (lifecycle) {
-    case "awaiting_wallet":
-      return t ? t("awaitingWallet") : "awaiting wallet";
-    case "proving":
-      return t ? t("generatingProof") : "generating proof";
-    default:
-      return lifecycle.replace("_", " ");
-  }
 }
 
 function remoteConfirmationToLifecycle(confirmation: QrConfirmationPayload): PayLifecycle {
@@ -3102,6 +3370,57 @@ function buildTokenTransfer(form: DirectFormState): TokenTransfer {
     token,
     amount
   };
+}
+
+async function generateDirectSendArtifacts(input: {
+  form: DirectFormState;
+  transfer: TokenTransfer;
+  payer: `0x${string}`;
+  txHash: Hash;
+  blockNumber: string;
+}): Promise<void> {
+  const { transfer, payer, txHash, blockNumber } = input;
+  const nowIso = new Date().toISOString();
+  const requestId = `direct-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)}`;
+
+  const request: PaymentRequest = {
+    id: requestId,
+    recipient: transfer.recipient,
+    token: transfer.token,
+    amount: transfer.amount,
+    label: `Direct send · ${transfer.token}`,
+    invoiceDate: todayInputValue(),
+    createdAt: nowIso,
+    startBlock: blockNumber,
+    status: "paid",
+    txHash
+  };
+
+  const receipt: Receipt = {
+    requestId,
+    txHash,
+    from: payer,
+    to: transfer.recipient,
+    token: transfer.token,
+    amount: transfer.amount,
+    blockNumber,
+    confirmedAt: nowIso,
+    explorerUrl: toExplorerTxUrl(txHash)
+  };
+
+  const proof = generateSettlementProof(request, receipt);
+  downloadSettlementProof(proof);
+
+  const bytes = await generateInvoicePdf({ request, receipt });
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const blob = new Blob([buffer], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = buildInvoiceFilename({ request, receipt });
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function hasTransferInput(form: DirectFormState): boolean {
@@ -3418,20 +3737,14 @@ function DashboardPage({
   );
 }
 
-/** Section divider — a hairline rule with a small-caps eyebrow label.
- *  Visual rhythm cue between dashboard zones; quiet, not assertive. */
-function SectionRule({ label }: { label: string }) {
-  return (
-    <div className="ql-section-rule" role="presentation">
-      <span className="ql-section-rule-label">{label}</span>
-      <span className="ql-section-rule-line" />
-    </div>
-  );
+/** Section divider — bare hairline. No eyebrow label; rhythm only. */
+function SectionRule(_props: { label?: string }) {
+  return <div className="ql-section-rule" role="presentation" />;
 }
 
-/** Dashboard hero — top-of-page band.
- *  Left: date eyebrow, serif greeting, lifetime ledger counts.
- *  Right: period selector + RPC status pill. */
+/** Dashboard hero — borderless top band.
+ *  Date · greeting · inline counts. RPC degraded state surfaces inline only
+ *  when not healthy; the healthy case shows no chrome. */
 function DashboardHero({
   now,
   account,
@@ -3461,61 +3774,32 @@ function DashboardHero({
 
   return (
     <section className="ql-hero">
-      <div className="ql-hero-main">
-        <p className="ql-hero-eyebrow">{dateLabel}</p>
-        <h1 className="ql-hero-title">
-          {greeting}
-          {account ? "." : ", connect a wallet to begin."}
-        </h1>
-        <p className="ql-hero-meta">
-          <span><strong>{requestCount}</strong> requests</span>
-          <span className="ql-hero-meta-sep">·</span>
-          <span><strong>{receiptCount}</strong> receipts</span>
-          <span className="ql-hero-meta-sep">·</span>
-          <span><strong>{paidCount}</strong> settled</span>
-          <span className="ql-hero-meta-sep">·</span>
-          <span><strong>{openCount}</strong> open</span>
-          {expiredCount > 0 ? (
-            <>
-              <span className="ql-hero-meta-sep">·</span>
-              <span><strong>{expiredCount}</strong> expired</span>
-            </>
-          ) : null}
-        </p>
-      </div>
-
-      <div className="ql-hero-aside">
-        <div
-          role="tablist"
-          aria-label="Period"
-          className="ql-period-tabs"
-        >
-          {(["7D", "30D", "90D", "All"] as const).map((p) => {
-            const active = p === "All";
-            return (
-              <button
-                key={p}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                disabled={!active}
-                className={cn("ql-period-tab", active && "is-active")}
-                title={active ? undefined : "Coming soon"}
-              >
-                {p}
-              </button>
-            );
-          })}
-        </div>
-        <span
-          className={cn("ql-rpc-pill", rpcHealthy ? "is-healthy" : "is-starting")}
-          title="RPC health"
-        >
-          <span className="ql-rpc-dot" />
-          {rpcHealthy ? "Healthy" : "Starting"}
-        </span>
-      </div>
+      <p className="ql-hero-eyebrow">{dateLabel}</p>
+      <h1 className="ql-hero-title">
+        {greeting}
+        {account ? "." : ", connect a wallet to begin."}
+      </h1>
+      <p className="ql-hero-meta">
+        <span><strong>{requestCount}</strong> requests</span>
+        <span className="ql-hero-meta-sep">·</span>
+        <span><strong>{receiptCount}</strong> receipts</span>
+        <span className="ql-hero-meta-sep">·</span>
+        <span><strong>{paidCount}</strong> settled</span>
+        <span className="ql-hero-meta-sep">·</span>
+        <span><strong>{openCount}</strong> open</span>
+        {expiredCount > 0 ? (
+          <>
+            <span className="ql-hero-meta-sep">·</span>
+            <span><strong>{expiredCount}</strong> expired</span>
+          </>
+        ) : null}
+        {rpcHealthy === false ? (
+          <>
+            <span className="ql-hero-meta-sep">·</span>
+            <span className="ql-hero-meta-degraded">RPC starting</span>
+          </>
+        ) : null}
+      </p>
     </section>
   );
 }
@@ -3551,24 +3835,14 @@ function QuickActionsCard({
   hasData: boolean;
 }) {
   const { t } = useI18n();
+  // Card-shell with no header label — the four action tiles speak for themselves.
   return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
-        <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            {t("actions")}
-          </p>
-          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            {t("quickActions")}
-          </h3>
-        </div>
-      </div>
-      <div className="grid grid-cols-2">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
+      <div className="grid grid-cols-2 md:grid-cols-4">
         <QuickActionTile
           onClick={() => onNavigate("/qr-payments")}
           icon={<QrCode size={15} strokeWidth={1.6} />}
           label={t("createQrRequest")}
-          tone="accent"
         />
         <QuickActionTile
           onClick={() => onNavigate("/payments")}
@@ -3596,34 +3870,24 @@ function QuickActionTile({
   href,
   external,
   icon,
-  label,
-  tone
+  label
 }: {
   onClick?: () => void;
   href?: string;
   external?: boolean;
   icon: ReactNode;
   label: string;
-  tone?: "accent";
 }) {
   const body = (
-    <div className="flex h-full items-center gap-3 px-4 py-3">
-      <span
-        className={cn(
-          "inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[3px] border",
-          tone === "accent"
-            ? "border-[var(--primary-bg)]/25 bg-[var(--panel-accent)] text-[var(--green-text)]"
-            : "border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]"
-        )}
-      >
+    <div className="flex h-full items-center gap-3 px-4 py-3.5">
+      <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--paper-2)] text-[var(--muted)] transition-colors group-hover:border-[var(--ink-soft)] group-hover:text-[var(--ink)]">
         {icon}
       </span>
-      <span className="flex-1 truncate text-[12px] font-medium text-[var(--ink)]">{label}</span>
-      <ArrowRightLeft size={11} strokeWidth={1.6} className="text-[var(--muted)]/0 transition-colors group-hover:text-[var(--muted)]" />
+      <span className="flex-1 truncate text-[12.5px] font-medium text-[var(--ink)]">{label}</span>
     </div>
   );
   const className =
-    "group block border-b border-r border-[var(--line-soft)] text-left transition-colors hover:bg-[var(--line-soft)]/60 focus-visible:bg-[var(--line-soft)]/60 focus-visible:outline-none [&:nth-child(2n)]:border-r-0 last:border-b-0 [&:nth-last-child(-n+2)]:border-b-0";
+    "group block border-b border-r border-[var(--line-soft)] text-left transition-colors hover:bg-[var(--paper-2)] focus-visible:bg-[var(--paper-2)] focus-visible:outline-none md:border-b-0 [&:nth-child(2n)]:border-r-0 md:[&:nth-child(2n)]:border-r md:last:border-r-0 [&:nth-last-child(-n+2)]:border-b-0";
   if (href) {
     return (
       <a
@@ -3660,34 +3924,30 @@ function ProofInboxCard({
     .filter((item) => Boolean(item.request))
     .slice(0, 3);
   return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
       <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
         <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            Proof inbox
-          </p>
-          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            Arc Testnet PSPs
-          </h3>
+          <p className="text-[13px] font-medium text-[var(--ink)]">Proof inbox</p>
+          <p className="mt-0.5 text-[12px] text-[var(--muted)]">Arc Testnet PSPs</p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--green-text)]/25 bg-[var(--green-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--green-text)]">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--muted)]">
           <ShieldCheck size={11} strokeWidth={1.7} />
           {receipts.length}
         </span>
       </div>
 
-      <div className="px-5 py-3">
-        <p className="text-[11.5px] leading-relaxed text-[var(--muted)]">
+      <div className="px-5 py-4">
+        <p className="text-[12px] leading-relaxed text-[var(--muted)]">
           Settled receipts are ready for PSP lookup, CLI verification, statement bundles, and webhook delivery.
         </p>
         <dl className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-sm border border-[var(--line-soft)] bg-[var(--input-bg)] px-2.5 py-2">
-            <dt className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--muted)]">Webhook</dt>
-            <dd className="mt-1 font-mono text-[10px] text-[var(--ink)]">/api/webhooks</dd>
+          <div className="rounded-md border border-[var(--line-soft)] bg-[var(--paper-2)] px-2.5 py-2">
+            <dt className="text-[11.5px] text-[var(--muted)]">Webhook</dt>
+            <dd className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">/api/webhooks</dd>
           </div>
-          <div className="rounded-sm border border-[var(--line-soft)] bg-[var(--input-bg)] px-2.5 py-2">
-            <dt className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--muted)]">Failures</dt>
-            <dd className="mt-1 font-mono text-[10px] text-[var(--ink)]">events table</dd>
+          <div className="rounded-md border border-[var(--line-soft)] bg-[var(--paper-2)] px-2.5 py-2">
+            <dt className="text-[11.5px] text-[var(--muted)]">Failures</dt>
+            <dd className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">events table</dd>
           </div>
         </dl>
       </div>
@@ -3699,14 +3959,14 @@ function ProofInboxCard({
               <button
                 type="button"
                 onClick={() => request && onNavigate(`/pay?r=${encodeRequestPayload(request)}`)}
-                className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-[var(--line-soft)]/50"
+                className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-[var(--paper-2)]"
               >
                 <FileText size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[12px] font-medium text-[var(--ink)]">
                     {request?.label ?? receipt.requestId}
                   </span>
-                  <span className="block font-mono text-[10px] text-[var(--muted)]">
+                  <span className="block font-mono text-[11.5px] text-[var(--muted)]">
                     {shortAddress(receipt.txHash, 8, 6)}
                   </span>
                 </span>
@@ -3729,14 +3989,14 @@ function ProofInboxCard({
         <button
           type="button"
           onClick={() => onNavigate("/statements")}
-          className="px-4 py-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)]/50"
+          className="px-4 py-2.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
         >
           Statements
         </button>
         <button
           type="button"
           onClick={() => onNavigate("/docs")}
-          className="px-4 py-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--line-soft)]/50"
+          className="px-4 py-2.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
         >
           Verify docs
         </button>
@@ -3759,24 +4019,22 @@ function GettingStartedCard({
   const { t } = useI18n();
   const allDone = completed === total;
   return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
         <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            {t("onboarding")}
-          </p>
-          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+          <p className="text-[13px] font-medium text-[var(--ink)]">
             {allDone ? t("allStepsComplete") : t("gettingStarted")}
-          </h3>
+          </p>
+          <p className="mt-0.5 text-[12px] text-[var(--muted)]">{t("onboarding")}</p>
         </div>
-        <span className="font-mono text-[10px] tabular-nums text-[var(--muted)]">
+        <span className="text-[12px] text-[var(--muted)]">
           {completed}/{total}
         </span>
       </div>
-      {/* Progress bar */}
+      {/* Progress hairline */}
       <div className="h-[2px] w-full bg-[var(--line-soft)]">
         <div
-          className="h-full bg-[var(--primary-bg)] transition-all duration-500"
+          className="h-full bg-[var(--ink)] transition-all duration-500"
           style={{ width: `${progressPct}%` }}
         />
       </div>
@@ -3787,19 +4045,19 @@ function GettingStartedCard({
               href={step.href}
               target={step.href.startsWith("http") ? "_blank" : undefined}
               rel={step.href.startsWith("http") ? "noreferrer" : undefined}
-              className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-[var(--line-soft)]/50"
+              className="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-[var(--paper-2)]"
             >
               <span
                 aria-hidden="true"
                 className={cn(
                   "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
                   step.done
-                    ? "border-[var(--primary-bg)] bg-[var(--primary-bg)]"
+                    ? "border-[var(--ink)] bg-[var(--ink)]"
                     : "border-[var(--line-strong)] bg-transparent"
                 )}
               >
                 {step.done && (
-                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 stroke-[var(--primary-text)] stroke-[2]">
+                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 stroke-[var(--paper)] stroke-[2]">
                     <path d="M2 5l2 2 4-4.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
@@ -3812,78 +4070,10 @@ function GettingStartedCard({
               >
                 {step.label}
               </span>
-              <ArrowRightLeft size={11} strokeWidth={1.6} className="text-[var(--muted)]" />
             </a>
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function StatusDigestCard({
-  paidCount,
-  openCount,
-  expiredCount,
-  rpcHealthy
-}: {
-  paidCount: number;
-  openCount: number;
-  expiredCount: number;
-  rpcHealthy?: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
-        <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            {t("status")}
-          </p>
-          <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            {t("atGlance")}
-          </h3>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--line)] bg-[var(--input-bg)] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              rpcHealthy ? "bg-[var(--green-text)]" : "bg-[var(--yellow-text)]"
-            )}
-          />
-          {rpcHealthy ? t("operational") : t("initializing")}
-        </span>
-      </div>
-      <div className="grid grid-cols-3 divide-x divide-[var(--line-soft)]">
-        <DigestCell label={t("paid")}    value={paidCount}    tone="accent" />
-        <DigestCell label={t("open")}    value={openCount}    tone="info" />
-        <DigestCell label={t("expired")} value={expiredCount} tone="muted" />
-      </div>
-    </div>
-  );
-}
-
-function DigestCell({
-  label,
-  value,
-  tone
-}: {
-  label: string;
-  value: number;
-  tone: "accent" | "info" | "muted";
-}) {
-  const toneClass =
-    tone === "accent"
-      ? "text-[var(--green-text)]"
-      : tone === "info"
-        ? "text-[var(--blue-text)]"
-        : "text-[var(--muted)]";
-  return (
-    <div className="px-3 py-4 text-center">
-      <p className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--muted)]">
-        {label}
-      </p>
-      <p className={cn("text-[18px] font-semibold tabular-nums", toneClass)}>{value}</p>
     </div>
   );
 }
@@ -3897,14 +4087,10 @@ function ResourcesCard() {
     { label: t("sourceGithub"), href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
   ];
   return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
       <div className="border-b border-[var(--line)] px-5 py-3.5">
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-          {t("referenceSection")}
-        </p>
-        <h3 className="mt-0.5 text-[13px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          {t("resources")}
-        </h3>
+        <p className="text-[13px] font-medium text-[var(--ink)]">{t("resources")}</p>
+        <p className="mt-0.5 text-[12px] text-[var(--muted)]">{t("referenceSection")}</p>
       </div>
       <ul>
         {links.map((link) => {
@@ -3915,11 +4101,11 @@ function ResourcesCard() {
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noreferrer" : undefined}
-                className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/50"
+                className="group flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-[var(--paper-2)]"
               >
                 <Icon size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
                 <span className="flex-1 text-[12px] text-[var(--ink)]">{link.label}</span>
-                <span className="font-mono text-[10px] text-[var(--muted)]">
+                <span className="font-mono text-[11px] text-[var(--muted)]">
                   {link.external ? "\u2197" : "\u2192"}
                 </span>
               </a>
@@ -3998,42 +4184,6 @@ function ImportExportPage({
         </aside>
       </section>
     </>
-  );
-}
-
-function RiskCheckPanel({ request, account, wrongChain, isExpired, requests }: {
-  request: PaymentRequest;
-  account?: `0x${string}`;
-  wrongChain: boolean;
-  isExpired: boolean;
-  requests: PaymentRequest[];
-}) {
-  const networkOk = !wrongChain && Boolean(account);
-  const recipientOk = Boolean(request.recipient);
-  const tokenOk = request.token === "USDC" || request.token === "EURC";
-  const amountOk = Number(request.amount) > 0;
-  const notExpired = !isExpired;
-  const noDuplicate = !requests.some(r => r.id !== request.id && r.txHash && r.recipient === request.recipient && r.amount === request.amount && r.token === request.token && r.status === "paid");
-
-  const checks = [
-    { label: "Correct network", ok: networkOk },
-    { label: "Recipient matches request", ok: recipientOk },
-    { label: "Token matches request", ok: tokenOk },
-    { label: "Amount matches request", ok: amountOk },
-    { label: "Request not expired", ok: notExpired },
-    { label: "No duplicate payment detected", ok: noDuplicate }
-  ];
-
-  return (
-    <div className="risk-panel">
-      <div className="risk-panel-title">Pre-payment checks</div>
-      {checks.map(c => (
-        <div className="risk-row" key={c.label}>
-          <span className={`risk-icon ${c.ok ? "pass" : "fail"}`}>{c.ok ? "✓" : "✗"}</span>
-          <span>{c.label}</span>
-        </div>
-      ))}
-    </div>
   );
 }
 

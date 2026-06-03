@@ -6,7 +6,6 @@ import {
   getAddress,
   http,
   numberToHex,
-  parseUnits,
   type Address,
   type Hash
 } from "viem";

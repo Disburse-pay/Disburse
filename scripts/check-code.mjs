@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbi, getAddress, keccak256, encodeAbiParameters, formatUnits } from "viem";
+import { createPublicClient, http, parseAbi, getAddress } from "viem";
 
 const client = createPublicClient({
   transport: http("https://rpc.testnet.arc.network"),

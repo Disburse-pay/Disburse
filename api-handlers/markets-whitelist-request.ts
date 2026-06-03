@@ -41,7 +41,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     // or you can use the default testing domain provided by Resend (onboarding@resend.dev).
     // Using onboarding@resend.dev only allows sending to the email registered to your Resend account.
     // If notify@disburse.online is your verified domain, you can send from something like no-reply@disburse.online.
-    const { data, error } = await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: "Disburse <notify@disburse.online>", // Make sure to verify this domain in Resend
       to: ["notify@disburse.online"],
       subject: "New Whitelist Request",

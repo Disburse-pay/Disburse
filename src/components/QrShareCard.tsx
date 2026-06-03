@@ -62,14 +62,14 @@ export default function QrShareCard({
   onDownload,
 }: Props) {
   const tone = STATUS_TONE[request.status] ?? STATUS_TONE.open;
-  const shortAddr = `${request.recipient.slice(0, 6)}  ${request.recipient.slice(-4)}`;
+  const shortAddr = `${request.recipient.slice(0, 6)}…${request.recipient.slice(-4)}`;
   const isWatching = request.status === "open" && !request.txHash;
 
   return (
     <section className="rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-3.5 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+          <p className="text-[11.5px] font-medium text-[var(--muted)]">
             Active request
           </p>
           <h3 className="mt-1.5 truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)]">
@@ -102,7 +102,7 @@ export default function QrShareCard({
           {qrDataUrl ? (
             <img src={qrDataUrl} alt="QR payment code" className="h-full w-full" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+            <div className="flex h-full w-full items-center justify-center text-[11.5px] font-medium text-[var(--muted)]">
               Generating
             </div>
           )}
@@ -110,21 +110,21 @@ export default function QrShareCard({
 
         <div className="flex flex-col gap-3.5">
           <div>
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            <p className="text-[11.5px] font-medium text-[var(--muted)]">
               Amount
             </p>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="font-mono text-[26px] font-semibold leading-none text-[var(--ink)] tabular-nums">
                 {request.amount}
               </span>
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
+              <span className="text-[12px] font-medium text-[var(--muted)]">
                 {request.token}
               </span>
             </div>
           </div>
 
           <div>
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            <p className="text-[11.5px] font-medium text-[var(--muted)]">
               Recipient
             </p>
             <p className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">{shortAddr}</p>
@@ -149,7 +149,7 @@ export default function QrShareCard({
                 style={{ background: "currentColor" }}
               />
             </span>
-            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--muted)]">
+            <span className="text-[12px] font-medium text-[var(--muted)]">
               {liveStatusLabel}
             </span>
           </div>

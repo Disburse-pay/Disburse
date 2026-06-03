@@ -3,7 +3,6 @@ import type { Hash, Log, TransactionReceipt } from "viem";
 import { ARC_CHAIN_ID, publicClient, TOKENS } from "../src/lib/arc.js";
 import {
   ARC_DESTINATION_CHAIN_ID,
-  getAllowedSourceChainIds,
   isPaymentSourceChainId,
   isRemotePaymentSourceChainId
 } from "../src/lib/crosschain.js";

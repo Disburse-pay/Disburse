@@ -182,7 +182,7 @@ export default function HistoryPage({ onNavigate }: Props) {
   return (
     <div className="mx-auto max-w-[1180px] pb-16">
       <section className="border-b border-[var(--line)] pb-10">
-        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+        <p className="mb-4 text-[12px] font-medium text-[var(--muted)]">
           History
         </p>
         <h1 className="max-w-[26ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
@@ -235,7 +235,7 @@ export default function HistoryPage({ onNavigate }: Props) {
                 className="flex flex-col gap-4 rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5 md:flex-row md:items-start md:justify-between"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] font-medium text-[var(--muted)]">
                     <span>Resolved</span>
                     <OutcomeBadge outcome={row.market.winningOutcome ?? "YES"} />
                     {row.market.resolvesAt && (
@@ -253,7 +253,7 @@ export default function HistoryPage({ onNavigate }: Props) {
                     {row.market.question}
                   </a>
                   {(claim || row.claimableMicros > 0n) && (
-                    <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                    <p className="mt-2 text-[12px] font-medium text-[var(--muted)]">
                       Held: {sharesLabel} {row.outcome} shares
                     </p>
                   )}
@@ -271,7 +271,7 @@ export default function HistoryPage({ onNavigate }: Props) {
                       onClaim={() => handleClaim(row.market, row.claimableMicros)}
                     />
                   ) : (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted-soft)]">
+                    <span className="text-[11.5px] font-medium text-[var(--muted-soft)]">
                       No position
                     </span>
                   )}

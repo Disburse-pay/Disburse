@@ -44,8 +44,8 @@ type Props = {
   setIsCollapsed: (v: boolean) => void;
   page: Page;
   onNavigate: (e: React.MouseEvent<HTMLAnchorElement>, target: string) => void;
-  /** Optional connected wallet address; enables the footer status row. */
   account?: string;
+  inDrawer?: boolean;
 };
 
 const navItems: NavItem[] = [
@@ -59,34 +59,38 @@ const navItems: NavItem[] = [
 ];
 
 const GROUP_LABEL: Record<NavItem["group"], string> = {
-  operate: "operate",
-  manage: "manage",
-  reference: "referenceSection",
+  operate: "Operate",
+  manage: "Manage",
+  reference: "Reference",
 };
 
 /**
- * Primary navigation rail. Fixed width, never collapses by accident.
- * Grouped into three simple categories so the nav feels curated, not
- * arbitrary. A small wallet status row lives in the footer when a
- * wallet address is provided.
+ * Primary navigation rail. Quiet, plain-language group headings, calm
+ * active state, no mono-uppercase chrome.
  */
-export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate, account }: Props) {
+export default function Sidebar({ isCollapsed: rawCollapsed, setIsCollapsed, page, onNavigate, account, inDrawer = false }: Props) {
   const { t } = useI18n();
   const groups: NavItem["group"][] = ["operate", "manage", "reference"];
-  const shortAddr = account ? `${account.slice(0, 6)}\u2009\u2009${account.slice(-4)}` : null;
+  const shortAddr = account ? `${account.slice(0, 6)}…${account.slice(-4)}` : null;
+  const isCollapsed = inDrawer ? false : rawCollapsed;
 
   return (
     <nav
       className={cn(
-        "fixed left-0 top-0 z-30 flex h-[100dvh] flex-col border-r border-[var(--line)] bg-[var(--paper)] transition-[width] duration-300",
-        isCollapsed ? "w-[56px]" : "w-[236px]",
+        "flex flex-col bg-[var(--paper)]",
+        inDrawer
+          ? "h-full w-full"
+          : cn(
+              "fixed left-0 top-0 z-30 h-[100dvh] border-r border-[var(--line)] transition-[width] duration-300",
+              isCollapsed ? "w-[56px]" : "w-[240px]",
+            ),
       )}
       aria-label="Primary"
     >
       {/* Brand */}
       <div
         className={cn(
-          "flex h-[56px] items-center border-b border-[var(--line)]",
+          "flex h-[64px] items-center border-b border-[var(--line)]",
           isCollapsed ? "justify-center" : "px-5",
         )}
       >
@@ -96,33 +100,25 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate,
           className="flex items-center gap-2.5 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
           aria-label="Disburse home"
         >
-          <img src="/favicon.png" alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
+          <img src="/favicon.png" alt="" className="h-[20px] w-[20px]" aria-hidden="true" />
           {!isCollapsed && (
-            <span className="flex items-baseline gap-2">
-              <span className="text-[13px] font-semibold leading-none tracking-[-0.01em] text-[var(--ink)]">
-                Disburse
-              </span>
-              <span className="rounded-sm border border-[var(--line)] bg-[var(--input-bg)] px-1.5 py-[1px] font-mono text-[8.5px] uppercase leading-none tracking-[0.16em] text-[var(--muted)]">
-                Testnet
-              </span>
+            <span className="text-[15px] font-semibold leading-none tracking-[-0.012em] text-[var(--ink)]">
+              Disburse
             </span>
           )}
         </a>
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-3">
+      <div className="flex-1 overflow-y-auto py-4">
         {(() => {
-          // Cross-subdomain link to the prediction-markets shell. Rendered as a
-          // peer of the main nav groups but visually separated as a sibling
-          // product surface, not an in-app route.
           const betHref = getBetHref("/");
-          const betLabel = "Bet";
+          const betLabel = "Markets";
           return (
-            <div className="border-b border-[var(--line-soft)] pb-3">
+            <div className="mb-2 border-b border-[var(--line-soft)] pb-3">
               {!isCollapsed && (
-                <p className="mb-1.5 px-5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--muted-soft)]">
-                  products
+                <p className="mb-2 px-5 text-[11.5px] font-medium text-[var(--muted)]">
+                  Products
                 </p>
               )}
               <a
@@ -130,37 +126,28 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate,
                 onClick={(e) => onNavigate(e, betHref)}
                 title={isCollapsed ? betLabel : undefined}
                 className={cn(
-                  "relative mx-2 flex items-center gap-3 rounded-[var(--btn-radius)] px-3 py-[7px] text-[12.5px] text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)]/70 hover:text-[var(--ink)]",
+                  "mx-2 flex items-center gap-3 rounded-md px-3 py-[7px] text-[13.5px] text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]",
                   isCollapsed && "mx-2 justify-center px-0",
                 )}
               >
-                <BarChart3
-                  size={15}
-                  strokeWidth={1.6}
-                  className="flex-shrink-0 text-[var(--muted)] transition-colors"
-                />
+                <BarChart3 size={16} strokeWidth={1.75} className="flex-shrink-0" />
                 {!isCollapsed && (
                   <>
                     <span className="font-medium">{betLabel}</span>
-                    <ExternalLink
-                      size={11}
-                      strokeWidth={1.6}
-                      className="ml-auto text-[var(--muted-soft)]"
-                      aria-hidden="true"
-                    />
+                    <ExternalLink size={12} strokeWidth={1.75} className="ml-auto text-[var(--muted-soft)]" aria-hidden="true" />
                   </>
                 )}
               </a>
             </div>
           );
         })()}
-        {groups.map((group) => {
+        {groups.map((group, gi) => {
           const items = navItems.filter((i) => i.group === group);
           return (
-            <div key={group} className={cn("py-1.5", group !== "operate" && "border-t border-[var(--line-soft)] mt-1.5 pt-3")}>
+            <div key={group} className={cn("py-1.5", gi > 0 && "mt-2 border-t border-[var(--line-soft)] pt-3")}>
               {!isCollapsed && (
-                <p className="mb-1.5 px-5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--muted-soft)]">
-                  {t(GROUP_LABEL[group])}
+                <p className="mb-2 px-5 text-[11.5px] font-medium text-[var(--muted)]">
+                  {GROUP_LABEL[group]}
                 </p>
               )}
               {items.map((item) => {
@@ -178,29 +165,29 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate,
                     title={isCollapsed ? itemLabel : undefined}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "relative mx-2 flex items-center gap-3 rounded-[var(--btn-radius)] px-3 py-[7px] text-[12.5px] transition-colors",
+                      "relative mx-2 flex items-center gap-3 rounded-md px-3 py-[7px] text-[13.5px] transition-colors",
                       isCollapsed && "mx-2 justify-center px-0",
                       isActive
-                        ? "bg-[var(--line-soft)] text-[var(--ink)]"
-                        : "text-[var(--muted)] hover:bg-[var(--line-soft)]/70 hover:text-[var(--ink)]",
+                        ? "bg-[var(--paper-2)] text-[var(--ink)] font-medium"
+                        : "text-[var(--muted)] hover:bg-[var(--paper-2)] hover:text-[var(--ink)]",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-r transition-all",
-                        isActive ? "bg-[var(--primary-bg)]" : "bg-transparent",
-                      )}
-                      aria-hidden="true"
-                    />
+                    {/* Subtle indigo bar for active. */}
+                    {isActive && !isCollapsed && (
+                      <span
+                        className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-r bg-[var(--primary-bg)]"
+                        aria-hidden="true"
+                      />
+                    )}
                     <Icon
-                      size={15}
-                      strokeWidth={1.6}
+                      size={16}
+                      strokeWidth={1.75}
                       className={cn(
                         "flex-shrink-0 transition-colors",
                         isActive ? "text-[var(--ink)]" : "text-[var(--muted)]",
                       )}
                     />
-                    {!isCollapsed && <span className="font-medium">{itemLabel}</span>}
+                    {!isCollapsed && <span>{itemLabel}</span>}
                   </a>
                 );
               })}
@@ -209,55 +196,44 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, page, onNavigate,
         })}
       </div>
 
-      {/* Footer: wallet status + network hint + collapse toggle */}
-      <div className="border-t border-[var(--line)] p-2">
+      {/* Footer: wallet status + collapse toggle */}
+      <div className="border-t border-[var(--line)] p-3">
         {!isCollapsed && (
-          <div className="mb-2 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] px-3 py-2">
+          <div className="mb-2 rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-3 py-2.5">
             <div className="flex items-center justify-between">
-              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--muted)]">
-                {t("network")}
-              </p>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.16em]",
-                  account ? "text-[var(--green-text)]" : "text-[var(--muted)]",
-                )}
-              >
+              <p className="text-[11.5px] font-medium text-[var(--muted)]">Network</p>
+              <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--muted)]">
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    account ? "bg-[var(--green-text)]" : "bg-[var(--muted-soft)]",
+                    account ? "bg-[var(--ink)]" : "bg-[var(--muted-soft)]",
                   )}
                   aria-hidden="true"
                 />
                 {account ? "Live" : "Idle"}
               </span>
             </div>
-            <p className="mt-1 text-[11px] text-[var(--ink)]">
-              Arc Testnet
-              <span className="mx-1.5 text-[var(--line-strong)]">&middot;</span>
-              <span className="font-mono text-[var(--muted)]">5042002</span>
-            </p>
+            <p className="mt-1.5 text-[12.5px] text-[var(--ink)]">Arc Testnet</p>
             {shortAddr && (
-              <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">
-                {shortAddr}
-              </p>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--muted)]">{shortAddr}</p>
             )}
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex w-full items-center justify-center gap-2 rounded-[var(--btn-radius)] py-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
-          aria-label={isCollapsed ? t("expandSidebar") : t("collapseSidebar")}
-        >
-          <ChevronsLeft
-            size={13}
-            strokeWidth={1.6}
-            className={cn("transition-transform duration-300", isCollapsed && "rotate-180")}
-          />
-          {!isCollapsed && <span className="text-[10.5px] font-medium">{t("collapse")}</span>}
-        </button>
+        {!inDrawer && (
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="flex w-full items-center justify-center gap-2 rounded-md py-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+            aria-label={isCollapsed ? t("expandSidebar") : t("collapseSidebar")}
+          >
+            <ChevronsLeft
+              size={14}
+              strokeWidth={1.75}
+              className={cn("transition-transform duration-300", isCollapsed && "rotate-180")}
+            />
+            {!isCollapsed && <span className="text-[12px] font-medium">{t("collapse")}</span>}
+          </button>
+        )}
       </div>
     </nav>
   );

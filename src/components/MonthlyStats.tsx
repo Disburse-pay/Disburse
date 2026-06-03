@@ -21,64 +21,49 @@ type Props = {
 };
 
 /**
- * 7-day request activity card.
- *
- * Structure: an eyebrow label and a large figure, a matched sub-label,
- * and a hairline chart below. No decorative gradients larger than the
- * series itself.
+ * 7-day request activity card. Plain-language labels, large headline number.
  */
 export default function MonthlyStats({ activityData }: Props) {
   const { t, formatCurrency } = useI18n();
   const totalCount = activityData.reduce((s, d) => s + d.count, 0);
   const totalVolume = activityData.reduce((s, d) => s + d.volume, 0);
 
-  // Trend delta: compare the last 3 days to the previous 3 so a single zero
-  // day doesn't drive a wild swing.
   const delta = computeWindowDelta(activityData.map((d) => d.volume));
   const showDelta = delta !== null && totalVolume > 0;
   const deltaPositive = (delta ?? 0) >= 0;
 
   return (
-    <section className="flex h-full flex-col rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+    <section className="flex h-full flex-col rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
       {/* Heading */}
-      <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-3.5">
+      <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
         <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            {t("activity")}
-          </p>
-          <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-            {t("last7Days")}
-          </p>
+          <p className="text-[13px] font-medium text-[var(--ink)]">{t("activity")}</p>
+          <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">{t("last7Days")}</p>
         </div>
         <div className="text-right">
           <div className="flex items-center justify-end gap-2">
-            <p className="text-[15px] font-semibold leading-none text-[var(--ink)] tabular-nums">
+            <p className="text-[18px] font-semibold leading-none text-[var(--ink)] tabular-nums">
               {totalCount}
-              <span className="ml-1.5 font-mono text-[9.5px] uppercase tracking-[0.18em] font-normal text-[var(--muted)]">
+              <span className="ml-1.5 text-[12px] font-normal text-[var(--muted)]">
                 {totalCount === 1 ? t("req") : t("reqs")}
               </span>
             </p>
             {showDelta && (
               <span
-                className={[
-                  "inline-flex items-center gap-0.5 rounded-sm border px-1.5 py-0.5 font-mono text-[9.5px] font-medium tabular-nums",
-                  deltaPositive
-                    ? "border-[var(--green-text)]/25 bg-[var(--green-bg)] text-[var(--green-text)]"
-                    : "border-[var(--red-text)]/25 bg-[var(--red-bg)] text-[var(--red-text)]",
-                ].join(" ")}
+                className="inline-flex items-center gap-0.5 text-[11.5px] font-medium text-[var(--muted)]"
                 title="vs previous 3 days"
               >
                 {deltaPositive ? (
-                  <ArrowUpRight size={9} strokeWidth={2} />
+                  <ArrowUpRight size={10} strokeWidth={2} />
                 ) : (
-                  <ArrowDownRight size={9} strokeWidth={2} />
+                  <ArrowDownRight size={10} strokeWidth={2} />
                 )}
                 {deltaPositive ? "+" : ""}
                 {(delta as number).toFixed(0)}%
               </span>
             )}
           </div>
-          <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[var(--green-text)]">
+          <p className="mt-1.5 text-[12px] text-[var(--muted)]">
             {formatCurrency(totalVolume)}
           </p>
         </div>
@@ -103,7 +88,7 @@ export default function MonthlyStats({ activityData }: Props) {
               dataKey="name"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+              tick={{ fill: "var(--muted)", fontSize: 11 }}
               dy={8}
             />
             <YAxis hide />
@@ -111,13 +96,13 @@ export default function MonthlyStats({ activityData }: Props) {
               contentStyle={{
                 background: "var(--paper)",
                 border: "1px solid var(--line)",
-                borderRadius: 4,
-                fontSize: 11,
-                padding: "6px 9px",
+                borderRadius: 6,
+                fontSize: 12,
+                padding: "8px 10px",
                 color: "var(--ink)",
-                boxShadow: "none",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
               }}
-              labelStyle={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)", marginBottom: 2 }}
+              labelStyle={{ color: "var(--muted)", fontSize: 11, marginBottom: 2 }}
               itemStyle={{ color: "var(--ink)", padding: 0 }}
               formatter={(value) => [formatCurrency(Number(value)), t("settledVolume")]}
               cursor={{ stroke: "var(--line-strong)", strokeWidth: 1, strokeDasharray: "2 3" }}
@@ -126,7 +111,7 @@ export default function MonthlyStats({ activityData }: Props) {
               type="monotone"
               dataKey="volume"
               stroke="var(--primary-bg)"
-              strokeWidth={1.5}
+              strokeWidth={1.75}
               fill="url(#activityGradient)"
               name={t("settledVolume")}
               dot={false}

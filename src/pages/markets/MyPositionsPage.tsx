@@ -201,15 +201,11 @@ export default function MyPositionsPage({ onNavigate }: Props) {
 
   // ─── Portfolio summary ────────────────────────────────────────────────
   const portfolio = useMemo(() => {
-    const marketById = new Map(markets.map((m) => [m.id, m] as const));
-
     let unrealizedPnl = 0;
-    let totalCost = 0;
     for (const row of activeRows) {
       const priceMicros = row.outcome === "YES" ? row.market.yesPriceMicros : row.market.noPriceMicros;
       const markValue = Math.floor((row.sharesMicros * priceMicros) / 1_000_000);
       unrealizedPnl += markValue - row.costBasisMicros;
-      totalCost += row.costBasisMicros;
     }
 
     // Realized = sum of realized PnL from positions + claim payouts

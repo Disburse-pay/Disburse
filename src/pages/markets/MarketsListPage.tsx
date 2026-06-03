@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowUpDown, Search, SearchX } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { fetchMarkets, MarketsApiError } from "../../lib/markets/api";
 import {
@@ -9,12 +9,21 @@ import {
 } from "../../lib/markets/types";
 import type { NavigateHandler } from "../../lib/routing";
 import MarketCard from "../../components/markets/MarketCard";
+import AnimatedNumber from "../../components/ui/AnimatedNumber";
 
 type Props = {
   onNavigate: NavigateHandler;
 };
 
 type StatusFilter = "open" | "resolved";
+
+type SortKey = "trending" | "closing" | "newest";
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "trending", label: "Trending" },
+  { key: "closing", label: "Closing soon" },
+  { key: "newest", label: "Newest" }
+];
 
 export default function MarketsListPage({ onNavigate }: Props) {
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -24,6 +33,7 @@ export default function MarketsListPage({ onNavigate }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
   const [category, setCategory] = useState<string>("All");
   const [query, setQuery] = useState<string>("");
+  const [sort, setSort] = useState<SortKey>("trending");
 
   // Load markets once on mount. The list is small and changes infrequently
   // (admin-only creates) so we don't need realtime here — markets-detail
@@ -78,6 +88,25 @@ export default function MarketsListPage({ onNavigate }: Props) {
     });
   }, [markets, statusFilter, category, query]);
 
+  // Sort runs after filtering so the chosen order applies to whatever the
+  // status/category/search filters leave behind. "Trending" (volume desc) is
+  // the default because it surfaces the most active markets first.
+  const sortedMarkets = useMemo(() => {
+    const next = [...filteredMarkets];
+    next.sort((a, b) => {
+      switch (sort) {
+        case "closing":
+          return new Date(a.closesAt).getTime() - new Date(b.closesAt).getTime();
+        case "newest":
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case "trending":
+        default:
+          return b.volumeMicros - a.volumeMicros;
+      }
+    });
+    return next;
+  }, [filteredMarkets, sort]);
+
   const totalOpenVol = useMemo(
     () => markets.filter((m) => m.status === "open").reduce((acc, m) => acc + m.volumeMicros, 0),
     [markets]
@@ -101,8 +130,17 @@ export default function MarketsListPage({ onNavigate }: Props) {
         </p>
 
         <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[var(--line-soft)] pt-6 sm:grid-cols-4">
-          <Stat label="Markets" value={loadState === "ready" ? openCount.toString() : "—"} />
-          <Stat label="Open volume" value={loadState === "ready" ? `$${microsToUsdcCompact(totalOpenVol)}` : "—"} />
+          <Stat label="Markets" value={loadState === "ready" ? <AnimatedNumber value={openCount} /> : "—"} />
+          <Stat
+            label="Open volume"
+            value={
+              loadState === "ready" ? (
+                <AnimatedNumber value={totalOpenVol} format={(n) => `$${microsToUsdcCompact(n)}`} />
+              ) : (
+                "—"
+              )
+            }
+          />
           <Stat label="Resolution" value="Admin · v1" />
           <Stat label="Network" value="Arc Testnet" />
         </dl>
@@ -146,38 +184,90 @@ export default function MarketsListPage({ onNavigate }: Props) {
           ))}
         </div>
 
-        <div className="relative ml-auto w-full max-w-[280px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search markets…"
-            className="w-full rounded-md border border-[var(--line)] bg-[var(--paper)] py-1.5 pl-9 pr-3 text-[12px] text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[var(--ink)] focus:outline-none"
-          />
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" />
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              aria-label="Sort markets"
+              className="cursor-pointer appearance-none rounded-md border border-[var(--line)] bg-[var(--paper)] py-1.5 pl-9 pr-7 text-[12px] text-[var(--ink)] focus:border-[var(--ink)] focus:outline-none"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 12 12"
+              className="pointer-events-none absolute right-2.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-[var(--muted)]"
+            >
+              <path
+                d="M2.5 4.5 6 8l3.5-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div className="relative w-full max-w-[220px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search markets…"
+              className="w-full rounded-md border border-[var(--line)] bg-[var(--paper)] py-1.5 pl-9 pr-3 text-[12px] text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[var(--ink)] focus:outline-none"
+            />
+          </div>
         </div>
       </section>
 
       {/* Results */}
       <section className="mt-6">
         {loadState === "loading" && (
-          <p className="rounded-lg border border-dashed border-[var(--line)] p-10 text-center text-[13px] text-[var(--muted)]">
-            Loading markets…
-          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, i) => (
+              <MarketCardSkeleton key={i} />
+            ))}
+            <span className="sr-only">Loading markets…</span>
+          </div>
         )}
         {loadState === "error" && (
           <p className="rounded-lg border border-dashed border-[var(--red-text)]/40 bg-[var(--red-text)]/5 p-10 text-center text-[13px] text-[var(--red-text)]">
             {errorMsg}
           </p>
         )}
-        {loadState === "ready" && filteredMarkets.length === 0 && (
-          <p className="rounded-lg border border-dashed border-[var(--line)] p-10 text-center text-[13px] text-[var(--muted)]">
-            No markets match these filters.
+        {loadState === "ready" && (
+          <p className="mb-4 text-[12px] text-[var(--muted)]">
+            {sortedMarkets.length} {sortedMarkets.length === 1 ? "market" : "markets"}
           </p>
         )}
-        {loadState === "ready" && filteredMarkets.length > 0 && (
+        {loadState === "ready" && sortedMarkets.length === 0 && (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-[var(--line)] p-12 text-center">
+            <SearchX className="h-6 w-6 text-[var(--muted)]" />
+            <p className="text-[13px] text-[var(--muted)]">No markets match these filters.</p>
+            {(query.trim() || category !== "All") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setCategory("All");
+                }}
+                className="text-[12px] font-medium text-[var(--ink)] underline-offset-4 hover:underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+        {loadState === "ready" && sortedMarkets.length > 0 && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredMarkets.map((m) => (
+            {sortedMarkets.map((m) => (
               <MarketCard key={m.id} market={m} onNavigate={onNavigate} />
             ))}
           </div>
@@ -192,7 +282,35 @@ function matchesStatus(status: MarketStatus, filter: StatusFilter): boolean {
   return status === "resolved" || status === "closed";
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// Loading placeholder that mirrors MarketCard's structure so the grid keeps
+// its rhythm while markets load — no layout shift when real cards arrive.
+function MarketCardSkeleton() {
+  return (
+    <div className="flex animate-pulse flex-col gap-4 rounded-lg border border-[var(--line)] bg-[var(--paper)] p-5">
+      <div className="flex items-center justify-between">
+        <div className="h-3 w-16 rounded bg-[var(--line-soft)]" />
+        <div className="h-3 w-12 rounded bg-[var(--line-soft)]" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-3.5 w-full rounded bg-[var(--line-soft)]" />
+        <div className="h-3.5 w-2/3 rounded bg-[var(--line-soft)]" />
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="h-3 w-16 rounded bg-[var(--line-soft)]" />
+          <div className="h-3 w-16 rounded bg-[var(--line-soft)]" />
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-[var(--line-soft)]" />
+      </div>
+      <div className="flex items-center justify-between border-t border-[var(--line-soft)] pt-3">
+        <div className="h-3 w-20 rounded bg-[var(--line-soft)]" />
+        <div className="h-3 w-14 rounded bg-[var(--line-soft)]" />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="mb-1 text-[11.5px] font-medium text-[var(--muted)]">

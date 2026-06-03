@@ -5014,3 +5014,187 @@ html[data-theme="light"] .ql-section-rule {
 
 /* END Gitbook docs ═══════════════════════════════════════════════════════════ */
 
+/* ═══ Hosted pay page (pay.disburse.online) ═══════════════════════════════════
+   Mobile-first, single-column payment surface served on the pay.* subdomain.
+   Deliberately minimal — no console chrome — so a scanned QR opens straight
+   into a focused, Stripe-like hosted invoice. Reuses the shared button,
+   receipt, and compliance classes; only the layout shell is new here.
+*/
+.pay-host {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.pay-host-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-translucent);
+  backdrop-filter: blur(14px);
+}
+
+.pay-host-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.pay-host-brand img {
+  width: 20px;
+  height: 20px;
+}
+
+.pay-host-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pay-host-wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.74rem;
+  color: var(--ink);
+}
+
+.pay-host-wallet-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--green-text);
+}
+
+.pay-host-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--btn-radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pay-host-icon:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.pay-host-main {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.pay-host-card {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* The shared PaymentPreview renders inside the card; drop its desktop divider
+   so it reads as the top of one flowing column rather than a bordered pane. */
+.pay-host-card .request-summary {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.pay-host-locknote {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.pay-host-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.pay-host-cta {
+  width: 100%;
+  justify-content: center;
+}
+
+/* The amount due is the focal point of a hosted invoice — keep it prominent on
+   phones rather than inheriting the desktop pane's shrunk small-screen size. */
+.pay-host-card .amount-lockup strong {
+  font-size: clamp(2.1rem, 9vw, 2.6rem);
+  line-height: 1.05;
+}
+
+/* Primary actions (connect, switch network, pay) all read as full-width,
+   touch-friendly CTAs. */
+.pay-host-card .primary-button,
+.pay-host-card .danger-button {
+  width: 100%;
+}
+
+.pay-host-aux {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+}
+
+/* Compliance exports stay collapsed by default so they never compete with the
+   primary Pay action; they expand only after a payer wants the proof bundle. */
+.pay-host-exports {
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+.pay-host-exports > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+  list-style: none;
+}
+
+.pay-host-exports > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pay-host-exports[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.pay-host-exports .compliance-buttons {
+  padding: 14px 16px;
+}
+

@@ -18,7 +18,7 @@
  *   insertPoolSnapshot(snapshot)
  *   setLastScannedBlock(toBlock)
  */
-import { decodeEventLog, getAddress, parseAbiItem, type Address, type Hex } from "viem";
+import { decodeEventLog, getAddress, type Address, type Hex } from "viem";
 import { createServerArcPublicClient } from "../markets/rpc.js";
 import {
   LENDING_POOL_ABI,

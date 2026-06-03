@@ -15,7 +15,8 @@ export type QrRealtimeEventType =
   | "paid"
   | "failed"
   | "expired"
-  | "psp_issue";
+  | "psp_issue"
+  | "psp_error";
 
 export type PaymentRequestRow = {
   id: string;

@@ -23,10 +23,7 @@ type Props = {
 };
 
 /**
- * Network status and 6-month volume.
- *
- * The top block is a compact key-value table; the bottom block is a bar
- * chart of monthly volume. Hairline grid only, no decorative gradients.
+ * Network status and 6-month volume. Plain-language labels, calm status pill.
  */
 export default function SystemStatusCard({
   monthlyData,
@@ -36,40 +33,23 @@ export default function SystemStatusCard({
 }: Props) {
   const { t, formatCurrency } = useI18n();
   return (
-    <section className="flex h-full flex-col rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
-      <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-3.5">
+    <section className="flex h-full flex-col rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
+      <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
         <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
-            {t("network")}
-          </p>
-          <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-            {t("liveTelemetry")}
-          </p>
+          <p className="text-[13px] font-medium text-[var(--ink)]">{t("network")}</p>
+          <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">{t("liveTelemetry")}</p>
         </div>
-        <span
-          className={[
-            "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[10px] font-medium",
-            rpcHealthy
-              ? "border-[var(--green-text)]/25 bg-[var(--green-bg)] text-[var(--green-text)]"
-              : "border-[var(--yellow-text)]/30 bg-[var(--yellow-bg)] text-[var(--yellow-text)]",
-          ].join(" ")}
-        >
-          <span
-            className="relative flex h-1.5 w-1.5 items-center justify-center"
-            aria-hidden="true"
-          >
-            {rpcHealthy && (
-              <span className="absolute h-full w-full animate-ping rounded-full bg-[var(--green-text)] opacity-50" />
-            )}
-            <span
-              className={[
-                "relative h-1.5 w-1.5 rounded-full",
-                rpcHealthy ? "bg-[var(--green-text)]" : "bg-[var(--yellow-text)]",
-              ].join(" ")}
-            />
+        {/* Status: monochrome. Only the degraded state shows any chrome. */}
+        {rpcHealthy ? (
+          <span className="text-[11.5px] text-[var(--muted)]">
+            {t("operational")}
           </span>
-          {rpcHealthy ? t("operational") : t("degraded")}
-        </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium italic text-[var(--muted)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-soft)]" aria-hidden="true" />
+            {t("degraded")}
+          </span>
+        )}
       </header>
 
       {/* Key-value rows */}
@@ -81,7 +61,7 @@ export default function SystemStatusCard({
 
       {/* Monthly volume */}
       <div className="flex min-h-[104px] flex-1 flex-col px-5 py-4">
-        <p className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+        <p className="mb-2 text-[12.5px] font-medium text-[var(--muted)]">
           {t("sixMonthVolume")}
         </p>
         <div className="flex-1">
@@ -96,7 +76,7 @@ export default function SystemStatusCard({
                 dataKey="month"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+                tick={{ fill: "var(--muted)", fontSize: 11 }}
                 dy={4}
               />
               <YAxis hide />
@@ -104,13 +84,13 @@ export default function SystemStatusCard({
                 contentStyle={{
                   background: "var(--paper)",
                   border: "1px solid var(--line)",
-                  borderRadius: 4,
-                  fontSize: 11,
-                  padding: "6px 9px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  padding: "8px 10px",
                   color: "var(--ink)",
-                  boxShadow: "none",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
                 }}
-                labelStyle={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)", marginBottom: 2 }}
+                labelStyle={{ color: "var(--muted)", fontSize: 11, marginBottom: 2 }}
                 itemStyle={{ color: "var(--ink)", padding: 0 }}
                 formatter={(value) => [formatCurrency(Number(value)), t("settledVolume")]}
                 cursor={{ fill: "var(--line-soft)" }}
@@ -119,7 +99,7 @@ export default function SystemStatusCard({
                 dataKey="volume"
                 fill="var(--primary-bg)"
                 fillOpacity={0.85}
-                radius={[2, 2, 0, 0]}
+                radius={[3, 3, 0, 0]}
                 name={t("settledVolume")}
                 maxBarSize={22}
               />
@@ -141,13 +121,11 @@ function StatusRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between py-2.5">
-      <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
-        {label}
-      </dt>
+    <div className="flex items-center justify-between py-3">
+      <dt className="text-[12.5px] text-[var(--muted)]">{label}</dt>
       <dd
         className={[
-          "max-w-[60%] truncate text-[11.5px] text-[var(--ink)]",
+          "max-w-[60%] truncate text-[12.5px] text-[var(--ink)]",
           mono ? "font-mono" : "",
         ].join(" ")}
       >

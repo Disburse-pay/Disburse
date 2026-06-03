@@ -8,24 +8,21 @@
 import {
   decodeEventLog,
   getAddress,
+  keccak256,
+  toBytes,
   type Address,
   type Hash,
   type Hex,
-  type Log,
-  type PublicClient,
-  type TransactionReceipt,
 } from "viem";
 import { publicClient, ARC_CHAIN_ID, TOKENS } from "../../src/lib/arc.js";
 import {
-  ARC_DESTINATION_CHAIN_ID,
   qrPaymentInitiatedEvent,
-  qrPaymentSettlementAbi,
   type RemotePaymentSourceChainId,
 } from "../../src/lib/crosschain.js";
 import { createCrossChainPublicClient } from "../../src/lib/crosschainOnchain.js";
 import type { MarketClaim } from "../../src/lib/markets/types.js";
 import type { PaymentRequest, Receipt } from "../../src/lib/payments.js";
-import type { PspSettlement, PspSettlementEvent, PspSource } from "../../src/lib/psp/types.js";
+import type { PspSettlement, PspSource } from "../../src/lib/psp/types.js";
 
 // ---------- Constants ----------
 
@@ -69,20 +66,7 @@ const TRANSFER_EVENT = {
   ],
 } as const;
 
-const QR_PAYMENT_SETTLED_TOPIC =
-  "0x" + Buffer.from(
-    Array.from(
-      new Uint8Array(
-        // keccak256("QrPaymentSettled(bytes32,bytes32,address,uint32,address,address,address,uint256,uint256)")
-        // Precomputed for determinism:
-        Buffer.from("a]we compute at runtime below", "utf-8")
-      )
-    )
-  ).toString("hex");
-
-// We'll compute topics from the ABI at runtime using viem utilities
-import { keccak256, toBytes, encodeEventTopics } from "viem";
-
+// Event topic selectors, computed from the ABI at runtime via viem.
 const QR_PAYMENT_SETTLED_SELECTOR = keccak256(
   toBytes("QrPaymentSettled(bytes32,bytes32,address,uint32,address,address,address,uint256,uint256)")
 );

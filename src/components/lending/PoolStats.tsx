@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchLendingPoolSnapshot } from "../../lib/lending/api";
-import { formatApr, formatUsdc, type LendingPoolSnapshot, WAD } from "../../lib/lending/types";
+import { formatApr, formatUsdc, type LendingPoolSnapshot } from "../../lib/lending/types";
 
 /**
  * PoolStats — top-of-page summary card. Polls the latest snapshot every 15s.

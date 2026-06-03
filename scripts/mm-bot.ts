@@ -141,7 +141,7 @@ async function main() {
   // Long-running mode. Crash-on-error is intentional: a process supervisor
   // (pm2 / systemd) restarts cleanly, and a stuck-but-alive bot is worse
   // than a dead one we can notice.
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     try {
       await runTick(cfg);

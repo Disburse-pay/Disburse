@@ -13,15 +13,13 @@
 
 import {
   hashMessage,
-  keccak256,
   recoverAddress,
   toBytes,
   type Address,
-  type Hash,
   type Hex,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { canonicalBytes, computeDigest, extractCore } from "./canonical";
+import { computeDigest, extractCore } from "./canonical";
 import type { PspCore, PspSignature, PspV1 } from "./types";
 
 // ---------- Key management ----------

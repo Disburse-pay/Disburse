@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, QrCode } from "lucide-react";
+import { ChevronRight, QrCode, ShieldCheck } from "lucide-react";
 import type { PaymentRequest, Receipt, PaymentStatus } from "../lib/payments";
 import {
   encodeRequestPayload,
@@ -17,15 +17,22 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
+/* Monochrome status: state is read from the label text, not the color.
+ *   paid    → filled ink dot
+ *   open    → ring-only (hollow) dot
+ *   expired → muted-soft hollow dot
+ *   failed  → filled ink dot, italic label
+ *   review  → ring-only dot, italic label
+ */
 const STATUS_CONFIG: Record<
   PaymentStatus,
-  { labelKey: string; dot: string; text: string; ring: string }
+  { labelKey: string; dot: string; text: string }
 > = {
-  open:           { labelKey: "open",    dot: "bg-[var(--blue-text)]",   text: "text-[var(--blue-text)]",   ring: "ring-[var(--blue-text)]/20 bg-[var(--blue-bg)]" },
-  paid:           { labelKey: "paid",    dot: "bg-[var(--green-text)]",  text: "text-[var(--green-text)]",  ring: "ring-[var(--green-text)]/20 bg-[var(--green-bg)]" },
-  expired:        { labelKey: "expired", dot: "bg-[var(--muted)]",       text: "text-[var(--muted)]",       ring: "ring-[var(--line)] bg-[var(--gray-bg)]" },
-  failed:         { labelKey: "failed",  dot: "bg-[var(--red-text)]",    text: "text-[var(--red-text)]",    ring: "ring-[var(--red-text)]/20 bg-[var(--red-bg)]" },
-  possible_match: { labelKey: "review",  dot: "bg-[var(--yellow-text)]", text: "text-[var(--yellow-text)]", ring: "ring-[var(--yellow-text)]/20 bg-[var(--yellow-bg)]" },
+  open:           { labelKey: "open",    dot: "bg-transparent ring-1 ring-inset ring-[var(--ink-soft)]",  text: "text-[var(--muted)]" },
+  paid:           { labelKey: "paid",    dot: "bg-[var(--ink)]",                                           text: "text-[var(--ink)]" },
+  expired:        { labelKey: "expired", dot: "bg-transparent ring-1 ring-inset ring-[var(--muted-soft)]", text: "text-[var(--muted)]" },
+  failed:         { labelKey: "failed",  dot: "bg-[var(--ink)]",                                           text: "text-[var(--ink)] italic" },
+  possible_match: { labelKey: "review",  dot: "bg-transparent ring-1 ring-inset ring-[var(--ink-soft)]",  text: "text-[var(--muted)] italic" },
 };
 
 const FILTERS = ["all", "open", "paid", "expired", "failed"] as const;
@@ -38,11 +45,8 @@ const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = {
 };
 
 /**
- * Ledger of recent payment requests.
- *
- * Designed to read like a statement: a quiet header row, a dense hairline
- * grid, tabular numerals, monospace references. Rows reveal a chevron on
- * hover so it's clear they're navigable.
+ * Ledger of recent payment requests. Plain-language column headers, calm
+ * status pills, navigable rows.
  */
 export default function TransactionsTable({
   requests,
@@ -72,26 +76,26 @@ export default function TransactionsTable({
   }, [requests, now]);
 
   return (
-    <section className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)]">
+    <section className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
       {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
         <div className="flex items-baseline gap-3">
           <div>
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+            <p className="text-[15px] font-semibold tracking-[-0.012em] text-[var(--ink)]">
+              {t("recentRequestsLower")}
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">
               {t("ledger")}
             </p>
-            <h3 className="mt-0.5 text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
-              {t("recentRequestsLower")}
-            </h3>
           </div>
           {requests.length > 0 && (
-            <span className="font-mono text-[10px] text-[var(--muted)]">
+            <span className="text-[12px] text-[var(--muted)]">
               {requests.length} {requests.length === 1 ? t("record") : t("records")}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] p-0.5">
+        <div className="flex items-center gap-0.5 rounded-md border border-[var(--line)] bg-[var(--paper-2)] p-0.5">
           {FILTERS.map((f) => {
             const count = statusCounts[f] ?? 0;
             const active = filter === f;
@@ -102,7 +106,7 @@ export default function TransactionsTable({
                 onClick={() => setFilter(f)}
                 aria-pressed={active}
                 className={[
-                  "rounded-[3px] px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
+                  "rounded px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
                   active
                     ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
                     : "text-[var(--muted)] hover:text-[var(--ink)]",
@@ -112,7 +116,7 @@ export default function TransactionsTable({
                 {count > 0 && f !== "all" && (
                   <span
                     className={[
-                      "ml-1 font-mono text-[9.5px] tabular-nums",
+                      "ml-1 text-[11px] tabular-nums",
                       active ? "text-[var(--muted)]" : "text-[var(--muted-soft)]",
                     ].join(" ")}
                   >
@@ -129,7 +133,7 @@ export default function TransactionsTable({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper-2)]/50">
+              <tr className="border-b border-[var(--line)] bg-[var(--paper-2)]">
                 <Th>{t("status")}</Th>
                 <Th>{t("reference")}</Th>
                 <Th>{t("recipient")}</Th>
@@ -143,70 +147,73 @@ export default function TransactionsTable({
               {displayRequests.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] ?? STATUS_CONFIG.open;
                 const receipt = receipts.find((rec) => rec.requestId === r.id);
-                void receipt;
                 return (
                   <tr
                     key={r.id}
-                    className="group cursor-pointer border-b border-[var(--line-soft)] transition-colors last:border-b-0 hover:bg-[var(--line-soft)]/60"
+                    className="group cursor-pointer border-b border-[var(--line-soft)] transition-colors last:border-b-0 hover:bg-[var(--paper-2)]"
                     onClick={() =>
                       onNavigate(`/pay?r=${encodeRequestPayload(r)}`)
                     }
                   >
                     <Td>
-                      <span
-                        className={[
-                          "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 ring-1 ring-inset",
-                          cfg.ring,
-                        ].join(" ")}
-                      >
+                      <span className="inline-flex items-center gap-1.5">
                         <span
                           className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}
                           aria-hidden="true"
                         />
-                        <span className={`text-[10.5px] font-medium uppercase tracking-[0.08em] ${cfg.text}`}>
+                        <span className={`text-[12px] font-medium ${cfg.text}`}>
                           {t(cfg.labelKey)}
                         </span>
+                        {receipt && (
+                          <span
+                            className="inline-flex text-[var(--muted)]"
+                            title={t("verified")}
+                            aria-label={t("verified")}
+                          >
+                            <ShieldCheck size={13} strokeWidth={1.75} aria-hidden="true" />
+                          </span>
+                        )}
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-[12.5px] font-medium text-[var(--ink)]">
+                      <span className="text-[13.5px] font-medium text-[var(--ink)]">
                         {r.label}
                       </span>
                       {r.note && (
-                        <span className="ml-2 hidden max-w-[24ch] truncate align-middle text-[11px] text-[var(--muted)] md:inline-block">
+                        <span className="ml-2 hidden max-w-[24ch] truncate align-middle text-[12px] text-[var(--muted)] md:inline-block">
                           {r.note}
                         </span>
                       )}
                     </Td>
                     <Td>
-                      <span className="font-mono text-[11px] text-[var(--muted)]">
+                      <span className="font-mono text-[12px] text-[var(--muted)]">
                         {shortAddress(r.recipient)}
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-[11.5px] text-[var(--muted)]">
+                      <span className="text-[12.5px] text-[var(--muted)]">
                         {isCrossChainPaymentRequest(r) ? t("crossChain") : t("arcDirect")}
                       </span>
                     </Td>
                     <Td align="right">
-                      <span className="text-[12.5px] font-medium text-[var(--ink)] tabular-nums">
+                      <span className="text-[13.5px] font-medium text-[var(--ink)] tabular-nums">
                         {r.amount}
                       </span>
-                      <span className="ml-1 font-mono text-[10px] text-[var(--muted)]">
+                      <span className="ml-1 text-[11.5px] text-[var(--muted)]">
                         {r.token}
                       </span>
                     </Td>
                     <Td align="right">
-                      <span className="font-mono text-[11px] text-[var(--muted)]">
+                      <span className="text-[12.5px] text-[var(--muted)]">
                         {formatRelative(r.createdAt, now)}
                       </span>
-                      <span className="block font-mono text-[9.5px] text-[var(--muted-soft)]">
+                      <span className="block text-[11px] text-[var(--muted-soft)]">
                         {formatInvoiceDate(r.invoiceDate)}
                       </span>
                     </Td>
                     <td className="pr-4 text-right">
                       <ChevronRight
-                        size={14}
+                        size={15}
                         strokeWidth={1.75}
                         className="text-[var(--muted-soft)] opacity-0 transition-opacity group-hover:opacity-100"
                         aria-hidden="true"
@@ -235,7 +242,7 @@ function Th({
   return (
     <th
       className={[
-        "px-5 py-2.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]",
+        "px-5 py-3 text-[12px] font-medium text-[var(--muted)]",
         align === "right" ? "text-right" : "text-left",
       ].join(" ")}
     >
@@ -254,7 +261,7 @@ function Td({
   return (
     <td
       className={[
-        "px-5 py-3",
+        "px-5 py-3.5",
         align === "right" ? "text-right" : "text-left",
       ].join(" ")}
     >
@@ -274,13 +281,13 @@ function EmptyState({
   const isFiltered = filter !== "all";
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] text-[var(--muted)]">
-        <QrCode size={18} strokeWidth={1.5} />
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--paper-2)] text-[var(--muted)]">
+        <QrCode size={20} strokeWidth={1.5} />
       </div>
-      <p className="mb-1 text-[13px] font-medium text-[var(--ink)]">
+      <p className="mb-1 text-[14px] font-medium text-[var(--ink)]">
         {isFiltered ? t("noFilteredRequests", { filter: t(FILTER_LABEL[filter]).toLowerCase() }) : t("noRequests")}
       </p>
-      <p className="mb-4 max-w-[32ch] text-[11.5px] leading-relaxed text-[var(--muted)]">
+      <p className="mb-4 max-w-[32ch] text-[12.5px] leading-relaxed text-[var(--muted)]">
         {isFiltered
           ? t("changeFilter")
           : t("createQrStartCollecting")}
@@ -289,7 +296,7 @@ function EmptyState({
         <button
           type="button"
           onClick={onCreate}
-          className="rounded-[var(--btn-radius)] bg-[var(--primary-bg)] px-3 py-1.5 text-[11.5px] font-semibold text-[var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+          className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
         >
           {t("createFirstRequest")}
         </button>
@@ -301,7 +308,7 @@ function EmptyState({
 /** Lightweight, locale-agnostic "N d ago" formatter. */
 function formatRelative(iso: string, now: Date): string {
   const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "\u2014";
+  if (!Number.isFinite(t)) return "—";
   const diffMs = now.getTime() - t;
   const sec = Math.floor(diffMs / 1000);
   if (sec < 60) return "just now";

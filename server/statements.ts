@@ -17,7 +17,6 @@ import type { PspInvoice, PspV1 } from "../src/lib/psp/types.js";
 // Statements are invoice-centric — market-claim PSPs (v1.1) are filtered out
 // upstream, so within this module a "proof" always has `invoice` present.
 type PaymentPsp = PspV1 & { invoice: PspInvoice };
-import type { Address } from "viem";
 
 // ---------- Types ----------
 

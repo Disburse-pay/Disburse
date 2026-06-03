@@ -22,6 +22,7 @@ export const LEGACY_DOCS_PATH = "/docs";
 export const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
 export const PRODUCTION_APP_HOSTNAME = "app.disburse.online";
 export const PRODUCTION_BET_HOSTNAME = "bet.disburse.online";
+export const PRODUCTION_PAY_HOSTNAME = "pay.disburse.online";
 
 export const MARKET_DETAIL_PATH_PREFIX = "/markets/";
 export const MARKETS_PATH = "/markets";
@@ -42,6 +43,13 @@ export function getInitialPage(): Page {
   // Bet subdomain's homepage is the markets list, not a separate landing.
   if (isBetHostname(hostname) || isLocalBetPreview(hostname, p)) {
     return resolveBetPage(p);
+  }
+
+  // Dedicated pay subdomain (or local ?pay=1 preview): the hosted, mobile-first
+  // QR-payment page. Its homepage IS the pay page — the request payload is read
+  // from the ?r= query param, so any path maps to "pay".
+  if (isPaySurface(hostname)) {
+    return "pay";
   }
 
   const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
@@ -99,6 +107,26 @@ export function isBetHostname(hostname = window.location.hostname): boolean {
   return hostname === "bet.localhost" || hostname === PRODUCTION_BET_HOSTNAME;
 }
 
+export function isPayHostname(hostname = window.location.hostname): boolean {
+  return hostname === "pay.localhost" || hostname === PRODUCTION_PAY_HOSTNAME;
+}
+
+// Naked-localhost preview of the hosted pay page via ?pay=1. Unlike the bet
+// preview, this does NOT also trigger on the /pay path: a plain /pay on
+// localhost stays the in-shell desktop preview, so devs can still see both.
+export function isLocalPayPreview(hostname = window.location.hostname): boolean {
+  if (!isLocalHostname(hostname)) {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get("pay") === "1";
+}
+
+// True when the current surface should render the dedicated mobile-first pay
+// page instead of the full app shell.
+export function isPaySurface(hostname = window.location.hostname): boolean {
+  return isPayHostname(hostname) || isLocalPayPreview(hostname);
+}
+
 export function isLocalBetPreview(hostname: string, pathname: string): boolean {
   if (!isLocalHostname(hostname)) {
     return false;
@@ -148,6 +176,9 @@ export function stripPublicSubdomain(hostname: string): string {
   if (hostname.startsWith("bet.")) {
     return hostname.slice("bet.".length);
   }
+  if (hostname.startsWith("pay.")) {
+    return hostname.slice("pay.".length);
+  }
   if (hostname.startsWith("www.")) {
     return hostname.slice("www.".length);
   }
@@ -182,6 +213,27 @@ export function getBetHostname(hostname: string): string {
     return "bet.localhost";
   }
   return PRODUCTION_BET_HOSTNAME;
+}
+
+export function getPayHostname(hostname: string): string {
+  if (hostname.startsWith("pay.")) {
+    return hostname;
+  }
+  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
+    return "pay.localhost";
+  }
+  return PRODUCTION_PAY_HOSTNAME;
+}
+
+// Origin a freshly generated QR / share link should point at, so a scanned
+// code opens the hosted mobile pay page. Naked localhost has no product
+// subdomain in its origin, so we keep the current origin there and let the
+// in-shell /pay route serve the link locally.
+export function getPayShareOrigin(hostname = window.location.hostname): string {
+  if (isLocalHostname(hostname)) {
+    return window.location.origin;
+  }
+  return getOriginForHostname(getPayHostname(hostname));
 }
 
 export function getOriginForHostname(hostname: string): string {

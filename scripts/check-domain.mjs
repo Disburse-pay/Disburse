@@ -1,4 +1,4 @@
-import { keccak256, encodeAbiParameters, stringToBytes, toHex } from "viem";
+import { keccak256, encodeAbiParameters, stringToBytes } from "viem";
 
 const domainTypehash = keccak256(stringToBytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"));
 const nameHash = keccak256(stringToBytes("Disburse Markets"));

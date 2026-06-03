@@ -43,7 +43,7 @@ export default function OrderbookDepth({ orderbook, outcome, onOutcomeChange }: 
     <div className="rounded-lg border border-[var(--line)] bg-[var(--paper)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-4 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">
+        <p className="text-[11.5px] font-medium text-[var(--muted)]">
           Orderbook
         </p>
         <div className="inline-flex rounded-md border border-[var(--line)] p-0.5">
@@ -53,7 +53,7 @@ export default function OrderbookDepth({ orderbook, outcome, onOutcomeChange }: 
               type="button"
               onClick={() => onOutcomeChange(o)}
               className={cn(
-                "rounded px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+                "rounded px-2.5 py-0.5 text-[11.5px] font-medium transition-colors",
                 outcome === o
                   ? o === "YES"
                     ? "bg-[var(--green-text)]/15 text-[var(--green-text)]"
@@ -68,7 +68,7 @@ export default function OrderbookDepth({ orderbook, outcome, onOutcomeChange }: 
       </div>
 
       {/* Column header */}
-      <div className="grid grid-cols-3 gap-2 border-b border-[var(--line-soft)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted-soft)]">
+      <div className="grid grid-cols-3 gap-2 border-b border-[var(--line-soft)] px-4 py-2 text-[11.5px] font-medium text-[var(--muted-soft)]">
         <span>Price</span>
         <span className="text-right">Size</span>
         <span className="text-right">Total</span>
@@ -90,7 +90,7 @@ export default function OrderbookDepth({ orderbook, outcome, onOutcomeChange }: 
 
       {/* Spread */}
       <div className="flex items-center justify-between border-y border-[var(--line-soft)] bg-[var(--input-bg)] px-4 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+        <span className="text-[11.5px] font-medium text-[var(--muted)]">
           Spread
         </span>
         <span className="font-mono text-[11px] text-[var(--ink)]">

@@ -347,8 +347,8 @@ async function requestWalletTransaction(
   return hash as Hash;
 }
 
-export async function waitForTransactionConfirmation(hash: Hash): Promise<void> {
-  await withTimeout(
+export async function waitForTransactionConfirmation(hash: Hash) {
+  return await withTimeout(
     publicClient.waitForTransactionReceipt({
       hash,
       confirmations: 1

@@ -49,7 +49,7 @@ export default function SettlementTimeline({ stages, compact = false }: Props) {
   return (
     <div className="rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-4 flex items-center justify-between">
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)]">
+        <p className="text-[11.5px] font-medium text-[var(--muted)]">
           Settlement pipeline
         </p>
       </div>
@@ -63,7 +63,7 @@ export default function SettlementTimeline({ stages, compact = false }: Props) {
             return (
               <div key={stage.label} className="flex items-center gap-2">
                 <div className={`h-2 w-2 rounded-full border ${styles.dot}`} />
-                <span className={`font-mono text-[10px] uppercase tracking-[0.14em] ${styles.label}`}>
+                <span className={`text-[11.5px] font-medium ${styles.label}`}>
                   {stage.label}
                 </span>
                 {!isLast && <div className={`h-px w-5 ${styles.line}`} />}

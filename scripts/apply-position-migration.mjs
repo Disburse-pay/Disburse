@@ -3,7 +3,6 @@
  * Apply the missing apply_market_position_delta function to Supabase.
  * Uses the Supabase client's rpc to execute raw SQL via a temporary function.
  */
-import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
