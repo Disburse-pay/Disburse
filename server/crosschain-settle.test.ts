@@ -40,7 +40,7 @@ const sourcePayment: CrossChainSourcePayment = {
   sourceLogIndex: 0,
   payer: "0x2222222222222222222222222222222222222222",
   recipient: "0x1111111111111111111111111111111111111111",
-  token: "0x3600000000000000000000000000000000000000",
+  sourceToken: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   amount: 5_000_000n,
   destinationChainId: ARC_DESTINATION_CHAIN_ID,
   nonce: 1n
