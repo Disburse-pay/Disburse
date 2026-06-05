@@ -37,6 +37,7 @@ import {
   type LendingPosition,
   type LendingPoolSnapshot,
 } from "./repo.js";
+import { readContractValue } from "../viemRead.js";
 
 /** Max blocks per getLogs call. Arc public RPC accepts up to ~10k cleanly. */
 const CHUNK_SIZE = 5_000n;
@@ -85,12 +86,14 @@ export async function runLendingIndexer(options: { client?: ReturnType<typeof cr
     const blockTimes = new Map<bigint, Date>();
 
     for (const log of logs) {
+      const topics = (log as { topics?: readonly Hex[] }).topics;
+      if (!topics?.length) continue;
       let decoded;
       try {
         decoded = decodeEventLog({
           abi: LENDING_POOL_ABI,
           data: log.data,
-          topics: log.topics,
+          topics: topics as [Hex, ...Hex[]],
         });
       } catch {
         // Unknown event signature (e.g. governance event added later) — skip.
@@ -252,9 +255,9 @@ async function readPosition(
   blockNumber: bigint
 ): Promise<LendingPosition> {
   const [collateral, scaledBorrow, debtUsdc] = await Promise.all([
-    client.readContract({ address: pool, abi: LENDING_POOL_ABI, functionName: "collateral", args: [user] }) as Promise<bigint>,
-    client.readContract({ address: pool, abi: LENDING_POOL_ABI, functionName: "scaledBorrow", args: [user] }) as Promise<bigint>,
-    client.readContract({ address: pool, abi: LENDING_POOL_ABI, functionName: "userDebtUsdc", args: [user] }) as Promise<bigint>,
+    readContractValue<bigint>(client, { address: pool, abi: LENDING_POOL_ABI, functionName: "collateral", args: [user] }),
+    readContractValue<bigint>(client, { address: pool, abi: LENDING_POOL_ABI, functionName: "scaledBorrow", args: [user] }),
+    readContractValue<bigint>(client, { address: pool, abi: LENDING_POOL_ABI, functionName: "userDebtUsdc", args: [user] }),
   ]);
 
   let collateralUsdc = 0n;
@@ -262,8 +265,8 @@ async function readPosition(
   let isLiquidatable = false;
   try {
     const [c, hf] = await Promise.all([
-      client.readContract({ address: pool, abi: LENDING_POOL_ABI, functionName: "collateralValueUsdc", args: [user] }) as Promise<bigint>,
-      client.readContract({ address: pool, abi: LENDING_POOL_ABI, functionName: "healthFactor", args: [user] }) as Promise<bigint>,
+      readContractValue<bigint>(client, { address: pool, abi: LENDING_POOL_ABI, functionName: "collateralValueUsdc", args: [user] }),
+      readContractValue<bigint>(client, { address: pool, abi: LENDING_POOL_ABI, functionName: "healthFactor", args: [user] }),
     ]);
     collateralUsdc = c;
     healthFactor = hf;
@@ -294,41 +297,41 @@ async function readPoolSnapshot(
   blockNumber: bigint
 ): Promise<LendingPoolSnapshot> {
   const [cash, borrows, reserves, supplyIdx, borrowIdx] = await Promise.all([
-    client.readContract({ address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "availableCash" }) as Promise<bigint>,
-    client.readContract({ address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "totalBorrows" }) as Promise<bigint>,
-    client.readContract({ address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "totalReserves" }) as Promise<bigint>,
-    client.readContract({ address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "supplyIndex" }) as Promise<bigint>,
-    client.readContract({ address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "borrowIndex" }) as Promise<bigint>,
+    readContractValue<bigint>(client, { address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "availableCash" }),
+    readContractValue<bigint>(client, { address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "totalBorrows" }),
+    readContractValue<bigint>(client, { address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "totalReserves" }),
+    readContractValue<bigint>(client, { address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "supplyIndex" }),
+    readContractValue<bigint>(client, { address: addrs.pool, abi: LENDING_POOL_ABI, functionName: "borrowIndex" }),
   ]);
 
   const [util, borrowApr, supplyApr] = await Promise.all([
-    client.readContract({
+    readContractValue<bigint>(client, {
       address: addrs.irm,
       abi: IRM_ABI,
       functionName: "utilization",
       args: [cash, borrows, reserves],
-    }) as Promise<bigint>,
-    client.readContract({
+    }),
+    readContractValue<bigint>(client, {
       address: addrs.irm,
       abi: IRM_ABI,
       functionName: "getBorrowRatePerYear",
       args: [cash, borrows, reserves],
-    }) as Promise<bigint>,
-    client.readContract({
+    }),
+    readContractValue<bigint>(client, {
       address: addrs.irm,
       abi: IRM_ABI,
       functionName: "getSupplyRatePerYear",
       args: [cash, borrows, reserves, LENDING_RESERVE_FACTOR_BPS],
-    }) as Promise<bigint>,
+    }),
   ]);
 
   let btcPriceWad: bigint | null = null;
   try {
-    btcPriceWad = (await client.readContract({
+    btcPriceWad = await readContractValue<bigint>(client, {
       address: addrs.priceAdapter,
       abi: PRICE_ADAPTER_ABI,
       functionName: "getPrice",
-    })) as bigint;
+    });
   } catch {
     // Pyth stale — store null. Keeper bot pushes updates to fix.
   }

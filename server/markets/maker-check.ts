@@ -121,7 +121,8 @@ export async function assertMakerInventory(
   options: AssertMakerInventoryOptions = {}
 ): Promise<void> {
   const client: InventoryReader =
-    options.client ?? createServerArcPublicClient({ timeoutMs: 8_000 });
+    options.client ??
+    (createServerArcPublicClient({ timeoutMs: 8_000 }) as unknown as InventoryReader);
 
   if (order.side === 0) {
     // BUY: maker pays USDC on fill.
