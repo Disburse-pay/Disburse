@@ -1,0 +1,63 @@
+{
+  "deployedAt": "2026-06-05T05:36:39.649Z",
+  "deployer": "0xDFfac1E2149B547DC71C081ea32b78595e6153A4",
+  "mode": "settlement-only",
+  "prover": "0x03Fb5bFA4EB2Cba072A477A372bB87880A60fC96",
+  "settlement": {
+    "chainId": 5042002,
+    "address": "0x9ffB8e4402f26428D984252A16A3A361FA235eE5",
+    "txHash": "0x8b669d9c593eb8a879df50fffc7556e7b6455e2b714b12193a7c5f02530ce19f"
+  },
+  "arcUsdc": "0x3600000000000000000000000000000000000000",
+  "configuration": {
+    "allowedSources": [
+      {
+        "functionName": "setAllowedSource",
+        "label": "Base Sepolia",
+        "args": [
+          "84532",
+          "0x8c535227Ed2B2963a3c1176510BC59e7A7fEF07D",
+          "true"
+        ],
+        "txHash": "0x2db7ccd042b2dc4f9cbc1e7fe5aadceea08765c08d0db494eb9056600a9bd19f"
+      },
+      {
+        "functionName": "setAllowedSource",
+        "label": "Monad",
+        "args": [
+          "10143",
+          "0x8c535227Ed2B2963a3c1176510BC59e7A7fEF07D",
+          "true"
+        ],
+        "txHash": "0x3bb444b8947507d565e7e26e892353da2c78085c66803d1543d823098b2cd909"
+      }
+    ],
+    "tokenRoutes": [
+      {
+        "functionName": "setTokenRoute",
+        "label": "Base Sepolia",
+        "args": [
+          "84532",
+          "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+          "0x3600000000000000000000000000000000000000"
+        ],
+        "txHash": "0x33751fda9cb49f77e50d712af217bd8bcccd310e5ba52b1b1b37610f62639f61"
+      },
+      {
+        "functionName": "setTokenRoute",
+        "label": "Monad",
+        "args": [
+          "10143",
+          "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+          "0x3600000000000000000000000000000000000000"
+        ],
+        "txHash": "0x666167c5a4ef5c63a1f0c14429b31299ec2512429b2c6281dcadc0baa8d8227e"
+      }
+    ]
+  },
+  "prefund": {
+    "amount": "25",
+    "txHash": "0xd7d6305b110cb1e31d66f00b9ad502b42974e40cffb36a3b8c35727585d9ac64"
+  },
+  "ownership": null
+}
