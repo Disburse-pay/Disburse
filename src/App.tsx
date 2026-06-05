@@ -849,15 +849,15 @@ function App() {
 
       try {
         const txReceipt = await waitForTransactionConfirmation(hash);
-        setDirectNotice({ tone: "success", text: "Direct payment confirmed. Generating receipt." });
-        await generateDirectSendArtifacts({
-          form: directForm,
+        const { request, receipt } = buildDirectSendRecord({
           transfer,
           payer: account,
           txHash: hash,
           blockNumber: txReceipt.blockNumber.toString()
         });
-        setDirectNotice({ tone: "success", text: "Direct payment confirmed. PSP and PDF receipt downloaded." });
+        setRequests((current) => upsertRequest(current, request));
+        setReceipts((current) => upsertReceipt(current, receipt));
+        setDirectNotice({ tone: "success", text: "Direct payment confirmed. Receipt saved to your history." });
       } catch (error) {
         setDirectNotice({ tone: "info", text: errorToMessage(error) });
       }
@@ -3372,13 +3372,15 @@ function buildTokenTransfer(form: DirectFormState): TokenTransfer {
   };
 }
 
-async function generateDirectSendArtifacts(input: {
-  form: DirectFormState;
+// Builds the in-app record for a confirmed direct send. Intentionally does NOT
+// download anything — auto-downloading files right after a transaction reads as
+// suspicious. The receipt is saved to history; the user exports it on demand.
+function buildDirectSendRecord(input: {
   transfer: TokenTransfer;
   payer: `0x${string}`;
   txHash: Hash;
   blockNumber: string;
-}): Promise<void> {
+}): { request: PaymentRequest; receipt: Receipt } {
   const { transfer, payer, txHash, blockNumber } = input;
   const nowIso = new Date().toISOString();
   const requestId = `direct-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)}`;
@@ -3408,19 +3410,7 @@ async function generateDirectSendArtifacts(input: {
     explorerUrl: toExplorerTxUrl(txHash)
   };
 
-  const proof = generateSettlementProof(request, receipt);
-  downloadSettlementProof(proof);
-
-  const bytes = await generateInvoicePdf({ request, receipt });
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  const blob = new Blob([buffer], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = buildInvoiceFilename({ request, receipt });
-  link.click();
-  URL.revokeObjectURL(url);
+  return { request, receipt };
 }
 
 function hasTransferInput(form: DirectFormState): boolean {
