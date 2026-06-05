@@ -1,0 +1,24 @@
+[Unit]
+Description=Disburse QR settlement keeper (cross-chain Polymer proof -> Arc settle + PSP)
+Documentation=file:///opt/disburse/scripts/qr-settle-keeper.ts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/disburse
+EnvironmentFile=/etc/disburse/qr-settle-keeper.env
+Environment=QR_SETTLE_KEEPER_LOOP=1
+ExecStart=/usr/bin/node --import tsx scripts/qr-settle-keeper.ts
+Restart=always
+RestartSec=15s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qr-settle-keeper
+LimitNOFILE=4096
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

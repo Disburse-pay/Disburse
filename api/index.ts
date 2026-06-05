@@ -28,6 +28,7 @@ import pspVerify from "../api-handlers/psp-verify.js";
 import pspViewer from "../api-handlers/psp-viewer.js";
 import qrConfirmations from "../api-handlers/qr-confirmations.js";
 import qrRequests from "../api-handlers/qr-requests.js";
+import qrSettleCron from "../api-handlers/qr-settle-cron.js";
 import qrStatus from "../api-handlers/qr-status.js";
 import qrSubmissions from "../api-handlers/qr-submissions.js";
 import statements from "../api-handlers/statements.js";
@@ -63,6 +64,7 @@ const handlers: Record<string, Handler> = {
   "psp-viewer": pspViewer,
   "qr-confirmations": qrConfirmations,
   "qr-requests": qrRequests,
+  "qr-settle-cron": qrSettleCron,
   "qr-status": qrStatus,
   "qr-submissions": qrSubmissions,
   statements,

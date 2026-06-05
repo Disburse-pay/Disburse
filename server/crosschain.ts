@@ -35,7 +35,7 @@ import {
   type Receipt
 } from "../src/lib/payments.js";
 import { HttpError } from "./http.js";
-import { pollPolymerProof, requestPolymerProof } from "./polymer.js";
+import { decodePolymerProofToHex, pollPolymerProof, queryPolymerProof, requestPolymerProof } from "./polymer.js";
 
 export type CrossChainSourcePayment = {
   sourceChainId: RemotePaymentSourceChainId;
@@ -209,6 +209,73 @@ export async function relayCrossChainSettlement(
     globalLogIndex: sourcePayment.sourceLogIndex
   });
   const proof = await pollPolymerProof(proofJobId);
+  const destinationReceipt = await submitSettlement(destinationConfig, proof);
+
+  return {
+    receipt: makeCrossChainReceipt({
+      request,
+      destinationTxHash: destinationReceipt.transactionHash,
+      payer: sourcePayment.payer,
+      blockNumber: destinationReceipt.blockNumber.toString(),
+      explorerUrl: getCrossChainExplorerTxUrl(ARC_DESTINATION_CHAIN_ID, destinationReceipt.transactionHash),
+      sourceChainId: sourcePayment.sourceChainId,
+      sourceTxHash: sourcePayment.sourceTxHash
+    }),
+    settlement: {
+      destinationChainId: ARC_DESTINATION_CHAIN_ID,
+      sourceChainId: sourcePayment.sourceChainId,
+      sourceTxHash: sourcePayment.sourceTxHash,
+      sourceBlockNumber: sourcePayment.sourceBlockNumber,
+      sourceLogIndex: sourcePayment.sourceLogIndex,
+      proofJobId: String(proofJobId),
+      destinationTxHash: destinationReceipt.transactionHash,
+      destinationBlockNumber: destinationReceipt.blockNumber.toString(),
+      stage: "settled"
+    }
+  };
+}
+
+/**
+ * Request a Polymer proof for a confirmed source payment and return the job id.
+ * The proof itself can take 2–5 minutes; it is intentionally NOT awaited here.
+ * Persist the returned id and finish the settlement later via
+ * tryCompleteCrossChainSettlement (driven by the keeper / status polling), so
+ * no single request blocks past the serverless function timeout.
+ */
+export async function beginCrossChainProof(sourcePayment: CrossChainSourcePayment): Promise<number> {
+  return requestPolymerProof({
+    srcChainId: sourcePayment.sourceChainId,
+    srcBlockNumber: sourcePayment.sourceBlockNumber,
+    globalLogIndex: sourcePayment.sourceLogIndex
+  });
+}
+
+/**
+ * One non-blocking step toward settlement: query the Polymer proof exactly once.
+ *   - proof not ready -> returns null (caller keeps the request `settling`)
+ *   - proof errored   -> throws (caller fails/recovers the request)
+ *   - proof ready     -> submits settle() on Arc and returns the receipt + state
+ */
+export async function tryCompleteCrossChainSettlement(
+  request: PaymentRequest,
+  sourcePayment: CrossChainSourcePayment,
+  proofJobId: number
+): Promise<CrossChainSettlementResult | null> {
+  if (!isCrossChainPaymentRequest(request)) {
+    throw new HttpError(400, "Payment request is not an Arc-settlement QR.");
+  }
+
+  const result = await queryPolymerProof(proofJobId);
+  if (result.status === "error") {
+    throw new Error(result.failureReason || "Polymer proof generation failed.");
+  }
+  const ready = (result.status === "complete" || result.status === "completed") && Boolean(result.proof);
+  if (!ready || !result.proof) {
+    return null;
+  }
+
+  const proof = decodePolymerProofToHex(result.proof);
+  const destinationConfig = readServerRouteConfig(ARC_DESTINATION_CHAIN_ID, "destination");
   const destinationReceipt = await submitSettlement(destinationConfig, proof);
 
   return {
