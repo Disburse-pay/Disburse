@@ -97,10 +97,24 @@ async function polymerRpc<T>(method: string, params: unknown[]): Promise<T> {
       params
     })
   });
-  const body = (await response.json()) as PolymerJsonRpcResponse<T>;
+  // Read as text first: auth/gateway failures (e.g. a rejected API key) come
+  // back as plain text like "Invalid API key", and calling response.json() on
+  // those throws an opaque "Unexpected token 'I' ... is not valid JSON" error
+  // that surfaces all the way to the UI. Parse defensively and report clearly.
+  const raw = await response.text();
+  let body: PolymerJsonRpcResponse<T> | undefined;
+  try {
+    body = raw ? (JSON.parse(raw) as PolymerJsonRpcResponse<T>) : undefined;
+  } catch {
+    const detail = raw.trim().slice(0, 200) || `HTTP ${response.status}`;
+    if (response.status === 401 || response.status === 403 || /invalid api key/i.test(raw)) {
+      throw new Error(`Polymer authentication failed — check POLYMER_TESTNET_API_KEY (${detail}).`);
+    }
+    throw new Error(`Polymer ${method} returned a non-JSON response (HTTP ${response.status}: ${detail}).`);
+  }
 
-  if (!response.ok || body.error) {
-    throw new Error(body.error?.message || `Polymer ${method} failed with HTTP ${response.status}.`);
+  if (!response.ok || !body || body.error) {
+    throw new Error(body?.error?.message || `Polymer ${method} failed with HTTP ${response.status}.`);
   }
   if (body.result === undefined) {
     throw new Error(`Polymer ${method} did not return a result.`);
