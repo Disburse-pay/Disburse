@@ -1,0 +1,44 @@
+name: Contracts
+
+# Solidity tests run on their own toolchain (Foundry), separate from the JS CI.
+# Only triggered when contracts change, to save CI minutes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forge:
+    name: Forge build · test (fuzz + invariant)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout (with forge-std submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        run: forge build
+
+      - name: Test (heavier CI fuzz/invariant budget)
+        run: forge test -vvv
+        env:
+          FOUNDRY_PROFILE: ci

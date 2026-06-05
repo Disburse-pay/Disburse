@@ -27,10 +27,17 @@ contract QrPaymentSettlement {
         uint256 nonce
     );
 
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event PausedSet(bool paused);
+    event TokensRescued(address indexed token, address indexed to, uint256 amount);
+
     bytes32 public constant QR_PAYMENT_INITIATED_SELECTOR =
         keccak256("QrPaymentInitiated(bytes32,address,address,address,uint256,uint256,uint256)");
 
     address public owner;
+    address public pendingOwner;
+    bool public paused;
     ICrossL2ProverV2 public immutable prover;
     mapping(uint32 => mapping(address => bool)) public allowedSources;
     mapping(uint32 => mapping(address => address)) public destinationTokens;
@@ -42,15 +49,55 @@ contract QrPaymentSettlement {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!paused, "paused");
+        _;
+    }
+
     constructor(address proverAddress) {
         require(proverAddress != address(0), "invalid prover");
         owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
         prover = ICrossL2ProverV2(proverAddress);
     }
 
+    /**
+     * Two-step ownership transfer: the current owner nominates `nextOwner`,
+     * which must then call acceptOwnership(). This prevents handing the
+     * fund-holding contract to a mistyped or uncontrolled address — important
+     * when transferring control to a multisig.
+     */
     function transferOwnership(address nextOwner) external onlyOwner {
         require(nextOwner != address(0), "invalid owner");
-        owner = nextOwner;
+        pendingOwner = nextOwner;
+        emit OwnershipTransferStarted(owner, nextOwner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "not pending owner");
+        address previousOwner = owner;
+        owner = pendingOwner;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previousOwner, owner);
+    }
+
+    /// Pause settlement as a circuit breaker (e.g. if the prover or a route is
+    /// found compromised). Owner-only. Source escrows are unaffected; payers
+    /// can still be made whole once unpaused or via off-chain remediation.
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        emit PausedSet(_paused);
+    }
+
+    /// Recover tokens held by this contract (prefunded settlement liquidity or
+    /// tokens sent here by mistake). Owner-only. Combined with a multisig owner
+    /// this is the intended path to rebalance or decommission the pool — without
+    /// it, prefunded liquidity can only ever leave via settle().
+    function rescueTokens(address token, address to, uint256 amount) external onlyOwner {
+        require(token != address(0), "invalid token");
+        require(to != address(0), "invalid recipient");
+        require(IERC20(token).transfer(to, amount), "rescue failed");
+        emit TokensRescued(token, to, amount);
     }
 
     function setAllowedSource(uint32 sourceChainId, address sourceContract, bool allowed) external onlyOwner {
@@ -66,7 +113,7 @@ contract QrPaymentSettlement {
         emit TokenRouteUpdated(sourceChainId, sourceToken, destinationToken);
     }
 
-    function settle(bytes calldata proof) external returns (bytes32 settlementId) {
+    function settle(bytes calldata proof) external whenNotPaused returns (bytes32 settlementId) {
         (
             uint32 sourceChainId,
             address sourceContract,
