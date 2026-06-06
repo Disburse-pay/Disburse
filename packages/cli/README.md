@@ -21,6 +21,24 @@ DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli send --to 0x... --amount 10 --label
 
 After `npm install -g @disburse/cli` you can also use the `disburse` command directly.
 
+### Install from GitHub (before npm publish)
+
+```bash
+# Install directly from the monorepo (auto-builds via prepare script)
+npm install github:Disburse-pay/Disburse#main --workspace=packages/cli
+# Or globally
+npm install -g github:Disburse-pay/Disburse#main
+```
+
+For agents that just need to run it once without installing globally:
+
+```bash
+git clone https://github.com/Disburse-pay/Disburse.git /tmp/disburse
+cd /tmp/disburse/packages/cli && npm install && npm run build
+node bin/cli.mjs send --to 0x... --amount 10 --label "Payout" \
+  --private-key $DISBURSE_PRIVATE_KEY
+```
+
 ## Example agent flow (as described by users)
 
 ```text
