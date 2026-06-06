@@ -4,6 +4,7 @@ import {
   BASE_SEPOLIA_CHAIN_ID,
   MONAD_TESTNET_CHAIN_ID,
   buildCrossChainNonce,
+  getAllowedSourceChainIds,
   getCrossChain,
   requestIdToBytes32
 } from "./crosschain";
@@ -77,6 +78,10 @@ describe("cross-chain QR payloads", () => {
       explorerUrl: "https://testnet.monadscan.com",
       nativeSymbol: "MON"
     });
+  });
+
+  it("does not advertise Monad while Polymer leaves Monad proof jobs pending", () => {
+    expect(getAllowedSourceChainIds()).toEqual([ARC_DESTINATION_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID]);
   });
 
   it("rejects cross-chain routes without supported source chains", () => {

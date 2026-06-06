@@ -180,5 +180,7 @@ export function buildCrossChainNonce(
 }
 
 export function getAllowedSourceChainIds(): PaymentSourceChainId[] {
-  return [...PAYMENT_SOURCE_CHAIN_IDS];
+  // Polymer currently accepts Monad proof jobs but leaves them pending
+  // indefinitely. Only advertise sources that can complete settlement.
+  return [ARC_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID];
 }
