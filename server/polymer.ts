@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 
 export const POLYMER_TESTNET_ENDPOINT =
-  process.env.POLYMER_TESTNET_ENDPOINT?.trim() || "https://api.testnet.polymer.zone/v1/";
+  process.env.POLYMER_TESTNET_ENDPOINT?.trim() || "https://api.devnet.polymer.zone/v1/";
 
 export type PolymerProofRequest = {
   srcChainId: number;

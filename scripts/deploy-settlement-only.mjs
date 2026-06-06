@@ -54,7 +54,7 @@ const ARC_CHAIN_ID = 5_042_002;
 const BASE_SEPOLIA_CHAIN_ID = 84_532;
 const MONAD_TESTNET_CHAIN_ID = 10_143;
 const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-const POLYMER_TESTNET_PROVER_ADDRESS = "0x03Fb5bFA4EB2Cba072A477A372bB87880A60fC96";
+const POLYMER_TESTNET_PROVER_ADDRESS = "0x85e9506fd24F9B588dcf2A5AaEF7069e34D99fCE";
 
 const ERC20_ABI = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -73,6 +73,7 @@ const dryRun = hasFlag("--dry-run");
 const broadcast = hasFlag("--broadcast");
 const prefundAmount = flagValue("--prefund");
 const transferOwnershipTo = flagValue("--transfer-ownership");
+const includeMonad = hasFlag("--include-monad");
 
 loadEnvFiles([".env.deploy.local", ".env.local", ".env"]);
 
@@ -107,7 +108,7 @@ const sourcePlan = [];
 if (baseSource && baseToken) {
   sourcePlan.push({ label: "Base Sepolia", chainId: BASE_SEPOLIA_CHAIN_ID, source: baseSource, token: baseToken });
 }
-if (monadSource && monadToken) {
+if (includeMonad && monadSource && monadToken) {
   sourcePlan.push({ label: "Monad", chainId: MONAD_TESTNET_CHAIN_ID, source: monadSource, token: monadToken });
 }
 
