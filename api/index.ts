@@ -26,9 +26,11 @@ import milestones from "../api-handlers/milestones.js";
 import psp from "../api-handlers/psp.js";
 import pspVerify from "../api-handlers/psp-verify.js";
 import pspViewer from "../api-handlers/psp-viewer.js";
+import disburse from "../api-handlers/disburse.js";
 import qrConfirmations from "../api-handlers/qr-confirmations.js";
 import qrRequests from "../api-handlers/qr-requests.js";
 import qrSettleCron from "../api-handlers/qr-settle-cron.js";
+import qrSettle from "../api-handlers/qr-settle.js";
 import qrStatus from "../api-handlers/qr-status.js";
 import qrSubmissions from "../api-handlers/qr-submissions.js";
 import statements from "../api-handlers/statements.js";
@@ -62,9 +64,11 @@ const handlers: Record<string, Handler> = {
   psp,
   "psp-verify": pspVerify,
   "psp-viewer": pspViewer,
+  disburse,
   "qr-confirmations": qrConfirmations,
   "qr-requests": qrRequests,
   "qr-settle-cron": qrSettleCron,
+  "qr-settle": qrSettle,
   "qr-status": qrStatus,
   "qr-submissions": qrSubmissions,
   statements,

@@ -493,6 +493,40 @@ function readProofJobId(value: unknown): number | undefined {
  * single proof query and only settles once the proof is ready. This is what
  * makes settlement complete even if the payer closed the page.
  */
+/**
+ * Single-payment settle entrypoint for client-driven settlement.
+ * Queries the Polymer proof exactly once and, if ready, submits settle() on Arc.
+ * Returns true if settlement completed, false if the proof is still pending.
+ */
+export async function settleSingleCrossChainQrPayment(
+  requestId: string
+): Promise<{ settled: boolean }> {
+  const request = await readPaymentRequest(requestId);
+
+  if (request.status !== "open" || request.settlement?.stage !== "settling") {
+    return { settled: request.status === "paid" };
+  }
+
+  const proofJobId = readProofJobId(request.settlement?.proofJobId);
+  const sourceTxHash = request.settlement?.sourceTxHash;
+  if (proofJobId === undefined || !sourceTxHash) {
+    return { settled: false };
+  }
+
+  const sourcePayment = await resolveCrossChainSourcePayment(
+    request,
+    sourceTxHash,
+    request.settlement?.sourceChainId
+  );
+
+  const result = await tryCompleteCrossChainSettlement(request, sourcePayment, proofJobId);
+  if (!result) {
+    return { settled: false };
+  }
+  await finalizeCrossChainSettlement(request, result);
+  return { settled: true };
+}
+
 export async function settleStoredCrossChainQrPayments(
   limit = 25
 ): Promise<{ processed: number; settled: number }> {

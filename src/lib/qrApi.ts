@@ -57,6 +57,13 @@ export async function confirmRemoteQrPayment(
   });
 }
 
+export async function settleRemoteQrPayment(requestId: string): Promise<{ settled: boolean } | undefined> {
+  return requestJson<{ settled: boolean }>("/api/qr-settle", {
+    method: "POST",
+    body: JSON.stringify({ id: requestId })
+  });
+}
+
 async function requestJson<T>(url: string, init: RequestInit): Promise<T | undefined> {
   let response: Response;
   try {

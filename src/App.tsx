@@ -119,6 +119,7 @@ import {
   createRemoteQrRequest,
   fetchRemoteQrStatus,
   recordRemoteQrSubmission,
+  settleRemoteQrPayment,
   type QrConfirmationPayload
 } from "./lib/qrApi";
 import { applyQrRealtimeEvent, shouldHideQrForStatus, type QrRealtimeEvent, type QrStatusPayload } from "./lib/realtime";
@@ -176,6 +177,8 @@ type DirectFormState = {
   recipient: string;
   token: PaymentToken;
   amount: string;
+  label?: string;
+  note?: string;
 };
 
 type QrFormState = DirectFormState & {
@@ -204,7 +207,9 @@ type PayLifecycle =
 const emptyDirectForm: DirectFormState = {
   recipient: "",
   token: "USDC",
-  amount: ""
+  amount: "",
+  label: undefined,
+  note: undefined
 };
 
 const emptyQrForm: QrFormState = {
@@ -459,6 +464,48 @@ function App() {
       void supabase.removeChannel(channel);
     };
   }, [page, selectedRequest?.id]);
+
+  // Client-driven settlement: when a cross-chain payment enters the
+  // "settling" stage, poll the settle endpoint every 30 s so the
+  // Polymer proof is checked and (once ready) settlement is submitted
+  // immediately instead of waiting for the next cron run.
+  useEffect(() => {
+    if (payLifecycle !== "settling" || !payRequest?.id) {
+      return;
+    }
+
+    let isActive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = () => {
+      if (!isActive) return;
+      settleRemoteQrPayment(payRequest.id)
+        .then(async (result) => {
+          if (!isActive) return;
+          if (result?.settled) {
+            // Settlement completed — fetch the full status so the UI
+            // updates immediately without waiting for the Realtime event.
+            const payload = await fetchRemoteQrStatus(payRequest.id).catch(() => undefined);
+            if (isActive && payload) {
+              applyQrStatusPayload(payload, setRequests, setReceipts);
+            }
+            return;
+          }
+          timer = setTimeout(poll, 30_000);
+        })
+        .catch(() => {
+          if (isActive) timer = setTimeout(poll, 30_000);
+        });
+    };
+
+    // First attempt after a short delay (proof typically takes 2-5 min).
+    timer = setTimeout(poll, 30_000);
+
+    return () => {
+      isActive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [payLifecycle, payRequest?.id]);
 
   useEffect(() => {
     if (!selectedRequest) {
@@ -853,7 +900,9 @@ function App() {
           transfer,
           payer: account,
           txHash: hash,
-          blockNumber: txReceipt.blockNumber.toString()
+          blockNumber: txReceipt.blockNumber.toString(),
+          label: directForm.label,
+          note: directForm.note
         });
         setRequests((current) => upsertRequest(current, request));
         setReceipts((current) => upsertReceipt(current, receipt));
@@ -3375,13 +3424,19 @@ function buildTokenTransfer(form: DirectFormState): TokenTransfer {
 // Builds the in-app record for a confirmed direct send. Intentionally does NOT
 // download anything — auto-downloading files right after a transaction reads as
 // suspicious. The receipt is saved to history; the user exports it on demand.
+//
+// label/note may be provided for direct disbursements (agent rails / CLI use).
+// Falls back to the previous generic label when omitted so existing web direct
+// behavior is unchanged.
 function buildDirectSendRecord(input: {
   transfer: TokenTransfer;
   payer: `0x${string}`;
   txHash: Hash;
   blockNumber: string;
+  label?: string;
+  note?: string;
 }): { request: PaymentRequest; receipt: Receipt } {
-  const { transfer, payer, txHash, blockNumber } = input;
+  const { transfer, payer, txHash, blockNumber, label, note } = input;
   const nowIso = new Date().toISOString();
   const requestId = `direct-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)}`;
 
@@ -3390,7 +3445,8 @@ function buildDirectSendRecord(input: {
     recipient: transfer.recipient,
     token: transfer.token,
     amount: transfer.amount,
-    label: `Direct send · ${transfer.token}`,
+    label: (label && label.trim()) ? normalizeLabel(label) : `Direct send · ${transfer.token}`,
+    note: note ? normalizeNote(note) : undefined,
     invoiceDate: todayInputValue(),
     createdAt: nowIso,
     startBlock: blockNumber,
