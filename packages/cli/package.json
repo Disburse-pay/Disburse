@@ -1,6 +1,6 @@
 {
   "name": "@disburse/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Disburse CLI — send stablecoins from the command line and receive Invoice PDFs + signed Portable Settlement Proofs (PSP) for direct disbursements. Designed for agents and automation.",
   "type": "module",
   "bin": {

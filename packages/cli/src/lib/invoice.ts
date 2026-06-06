@@ -28,12 +28,8 @@ const PAGE_HEIGHT = 842;
 const MARGIN = 54;
 
 export function buildInvoiceFilename({ request, receipt }: InvoiceInput): string {
-  const label = request.label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 44);
-  return `disburse-invoice-${label || request.id}-${receipt.txHash.slice(2, 10)}.pdf`;
+  const id = request.id.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
+  return `disburse-invoice-${id}.pdf`;
 }
 
 export function buildInvoiceRows({ request, receipt }: InvoiceInput): InvoiceRow[] {
