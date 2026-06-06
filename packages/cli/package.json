@@ -1,0 +1,45 @@
+{
+  "name": "@disburse/cli",
+  "version": "0.1.0",
+  "description": "Disburse CLI — send stablecoins from the command line and receive Invoice PDFs + signed Portable Settlement Proofs (PSP) for direct disbursements. Designed for agents and automation.",
+  "type": "module",
+  "bin": {
+    "disburse": "./bin/cli.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "disburse",
+    "cli",
+    "payments",
+    "stablecoin",
+    "usdc",
+    "arc",
+    "psp",
+    "portable-settlement-proof",
+    "invoice",
+    "agent",
+    "automation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "viem": "^2.48.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

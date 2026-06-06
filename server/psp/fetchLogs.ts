@@ -104,11 +104,16 @@ export async function readDirectSettlementLog(
   });
 
   const tokenAddress = TOKENS[request.token].address.toLowerCase();
-  const transferLog = txReceipt.logs.find(
-    (log) =>
-      log.address.toLowerCase() === tokenAddress &&
-      (log as any).topics[0]?.toLowerCase() === TRANSFER_SELECTOR.toLowerCase()
-  );
+  const transferLog = txReceipt.logs.find((log) => {
+    if (
+      log.address.toLowerCase() !== tokenAddress ||
+      (log as any).topics[0]?.toLowerCase() !== TRANSFER_SELECTOR.toLowerCase()
+    ) {
+      return false;
+    }
+
+    return receipt.directSettlementLogIndex === undefined || log.logIndex === receipt.directSettlementLogIndex;
+  });
 
   if (!transferLog) {
     throw new Error(

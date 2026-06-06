@@ -56,6 +56,7 @@ export type Receipt = {
   sourceTxHash?: Hash;
   attestationUid?: string;
   attestationFingerprint?: string;
+  directSettlementLogIndex?: number;
 };
 
 export type SharePayload = Omit<PaymentRequest, "status" | "txHash" | "submittedAt"> & {
@@ -81,6 +82,7 @@ export type CrossChainSharePayload = {
 export type DecodedTransfer = {
   txHash: Hash;
   blockNumber: bigint;
+  logIndex?: number;
   from: Address;
   to: Address;
   value: bigint;
@@ -89,6 +91,7 @@ export type DecodedTransfer = {
 export type TransferLog = {
   transactionHash?: Hash | null;
   blockNumber: bigint | null;
+  logIndex?: number | null;
   data: Hex;
   topics: [] | [Hex, ...Hex[]];
 };
@@ -458,6 +461,7 @@ export function decodeTransferLog(log: TransferLog): DecodedTransfer | undefined
     return {
       txHash: log.transactionHash,
       blockNumber: log.blockNumber,
+      logIndex: log.logIndex ?? undefined,
       from: getAddress(args.from),
       to: getAddress(args.to),
       value: args.value
