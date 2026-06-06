@@ -14,6 +14,30 @@ Issue a QR invoice. The payer settles in USDC from any supported chain. Disburse
 
 ---
 
+## CLI
+
+Install the Disburse CLI to send stablecoin payments with verifiable invoice proofs:
+
+```bash
+npm install -g @disburse/cli
+```
+
+Send a payment:
+
+```bash
+disburse send --to 0xRecipient --amount 10 --label "Invoice 1" --private-key 0xYourPrivateKey
+```
+
+Batch payments:
+
+```bash
+disburse batch --csv payouts.csv --private-key 0xYourPrivateKey
+```
+
+More info: [packages/cli/README.md](packages/cli/README.md)
+
+---
+
 ## Technical Overview
 
 Disburse is a cryptographic receipt and settlement layer for stablecoin transactions. It validates onchain transfers of USDC across different EVM testnets and produces content-addressed, mathematically verifiable PDF, XML (UBL 2.1), and JSON documents.
