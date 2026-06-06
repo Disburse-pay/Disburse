@@ -41,14 +41,27 @@ export type SendOptions = {
   outDir?: string;
   rpc?: string;
   yes?: boolean;
+  json?: boolean;
 };
 
 export type SendResult = {
+  success: true;
   txHash: Hash;
   psp: unknown;
   proofPath: string;
   pdfPath: string;
   explorer: string;
+  pspUid?: string;
+  requestId?: string;
+  amount: string;
+  token: PaymentToken;
+  recipient: string;
+  label: string;
+  note?: string;
+  verify?: {
+    file: string;
+    curl?: string;
+  };
 };
 
 const DEFAULT_API_BASE = "https://app.disburse.online";
@@ -118,14 +131,14 @@ export async function send(opts: SendOptions): Promise<SendResult> {
 
   const explorer = `${ARC_EXPLORER_URL}/tx/${hash}`;
 
-  console.log(`Transaction submitted: ${hash}`);
-  console.log(`Explorer: ${explorer}`);
-  console.log("Waiting for confirmation (1 block)...");
+  log(opts, `Transaction submitted: ${hash}`);
+  log(opts, `Explorer: ${explorer}`);
+  log(opts, "Waiting for confirmation (1 block)...");
 
   const receipt = await pub.waitForTransactionReceipt({ hash, confirmations: 1 });
   const blockNumber = receipt.blockNumber.toString();
 
-  console.log(`Confirmed in block ${blockNumber}`);
+  log(opts, `Confirmed in block ${blockNumber}`);
 
   // Build local receipt for PDF (the server will also verify)
   const localReceipt: Receipt = makeReceipt(
@@ -209,29 +222,50 @@ export async function send(opts: SendOptions): Promise<SendResult> {
   await writeFile(pdfPath, Buffer.from(pdfBytes));
 
   // Success output for agents / humans
-  console.log("\n✓ Disbursement complete");
-  console.log(`  Tx:        ${hash}`);
-  console.log(`  Explorer:  ${explorer}`);
-  console.log(`  Proof:     ${proofPath}`);
-  console.log(`  Invoice:   ${pdfPath}`);
+  log(opts, "\n✓ Disbursement complete");
+  log(opts, `  Tx:        ${hash}`);
+  log(opts, `  Explorer:  ${explorer}`);
+  log(opts, `  Proof:     ${proofPath}`);
+  log(opts, `  Invoice:   ${pdfPath}`);
 
-  if (pspDigest) {
-    const uid = pspUid || `psp:${pspDigest.slice(2, 18)}`;
-    console.log(`  PSP UID:   ${uid}`);
-    console.log("\nVerify independently:");
-    console.log(`  npx @disburse/psp-verify ${proofPath}`);
-    console.log(`  curl -s "${apiBase}/api/psp?uid=${uid}" | npx @disburse/psp-verify --stdin`);
+  const uid = pspUid || (pspDigest ? `psp:${pspDigest.slice(2, 18)}` : undefined);
+  const requestId = pspInvoice?.requestId as string | undefined;
+  const verify = {
+    file: `npx @disburse/psp-verify ${proofPath}`,
+    ...(uid ? { curl: `curl -s "${apiBase}/api/psp?uid=${uid}" | npx @disburse/psp-verify --stdin` } : {})
+  };
+
+  if (uid) {
+    log(opts, `  PSP UID:   ${uid}`);
+    log(opts, "\nVerify independently:");
+    log(opts, `  ${verify.file}`);
+    if (verify.curl) log(opts, `  ${verify.curl}`);
   }
 
-  console.log("\nDisburse does not custody funds. Proofs are independently verifiable.");
+  log(opts, "\nDisburse does not custody funds. Proofs are independently verifiable.");
 
   return {
+    success: true,
     txHash: hash,
     psp,
     proofPath,
     pdfPath,
-    explorer
+    explorer,
+    pspUid: uid,
+    requestId,
+    amount,
+    token,
+    recipient,
+    label,
+    note,
+    verify
   };
+}
+
+function log(opts: Pick<SendOptions, "json">, message: string) {
+  if (!opts.json) {
+    console.log(message);
+  }
 }
 
 function buildDisburseAuthorizationMessage(input: {

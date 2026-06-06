@@ -3,66 +3,51 @@
 /**
  * Disburse CLI
  *
- * Primary command for agent rails:
- *   disburse send --recipient 0x... --amount 10 --label "Invoice 1" --note "Subscription" \
- *     --private-key $DISBURSE_PRIVATE_KEY
- *
- * Produces:
- *   - On-chain ERC-20 transfer (Arc Testnet USDC/EURC)
- *   - proof.json (signed PSP from Disburse)
- *   - disburse-invoice-....pdf (with label, note, PSP digest footer)
- *
- * Verification:
- *   npx @disburse/psp-verify proof.json
- *
- * The CLI never logs private keys.
+ * Agent rails:
+ *   disburse send --to 0x... --amount 10 --label "Invoice 1" --private-key $DISBURSE_PRIVATE_KEY
+ *   disburse batch --csv payouts.csv --private-key $DISBURSE_PRIVATE_KEY
  */
 
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
 const args = process.argv.slice(2);
 
 function printHelp() {
   console.log(`
-Disburse CLI — direct stablecoin disbursements with Invoice + PSP proofs
+Disburse CLI — stablecoin disbursements with Invoice + PSP proofs
 
 Usage:
   disburse send [options]
+  disburse batch --csv payouts.csv [options]
 
-Required:
+Required for send:
   --recipient, --to <address>     Destination EVM address on Arc
   --amount <number>               Human amount, e.g. 25 or 0.5
   --label <text>                  Invoice label (shown on PDF + PSP)
 
+Required for batch:
+  --csv <path>                    CSV with to,amount,label,note,token columns
+
 Optional:
-  --note <text>                   Free-text note for the invoice/PSP
-  --token <USDC|EURC>             Default: USDC
+  --note <text>                   Free-text note for single send
+  --token <USDC|EURC>             Default token: USDC
   --private-key <0x...>           Or set DISBURSE_PRIVATE_KEY env var
-  --out-dir <path>                Output directory for proof.json + PDF (default: cwd)
-  --rpc <url>                     Custom Arc RPC (default: public endpoints)
+  --out-dir <path>                Output directory for proofs + PDFs (default: cwd)
+  --rpc <url>                     Custom Arc RPC
+  --json                          Print machine-readable JSON to stdout
   --yes                           Skip any future confirmations
   --help, -h
 
 Examples:
-  # Basic agent disbursement (recommended: use env var for the key)
-  DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli send \\
-    --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8fA4c \\
-    --amount 12.5 \\
-    --label "Invoice 1" \\
+  DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli send \
+    --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8fA4c \
+    --amount 12.5 \
+    --label "Invoice 1" \
     --note "Subscription - May 2026"
 
-  # With explicit key flag (avoid in shared logs / shell history)
-  npx @disburse/cli send --to 0x... --amount 5 --label "Payout" --private-key 0x...
-
-After success the CLI prints:
-  • Transaction explorer link
-  • Paths to proof.json and the PDF invoice
-  • Exact command to independently verify the PSP with @disburse/psp-verify
-
-The returned PSP is signed by Disburse and can be verified offline or on-chain.
+  DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli batch --csv payouts.csv --json
 `);
 }
 
@@ -71,15 +56,14 @@ if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 
-if (args[0] !== "send") {
-  // Allow "disburse --to ..." as shorthand for send
+const command = args[0] === "batch" ? "batch" : "send";
+if (args[0] !== "send" && args[0] !== "batch") {
   if (!args.includes("--to") && !args.includes("--recipient")) {
-    console.error("Unknown command. Use: disburse send ...  or  disburse --help");
+    console.error("Unknown command. Use: disburse send ..., disburse batch ..., or disburse --help");
     process.exit(1);
   }
 }
 
-// Parse args (simple, no 3rd-party dep)
 function getArg(name, alias) {
   const idx = args.indexOf(`--${name}`);
   if (idx !== -1 && args[idx + 1] && !args[idx + 1].startsWith("--")) return args[idx + 1];
@@ -94,66 +78,60 @@ const recipient = getArg("recipient", "to");
 const amount = getArg("amount");
 const label = getArg("label");
 const note = getArg("note");
+const csvPath = getArg("csv");
 const token = (getArg("token") || "USDC").toUpperCase();
 const privateKey = getArg("private-key") || process.env.DISBURSE_PRIVATE_KEY;
 const outDir = getArg("out-dir") || process.cwd();
 const rpc = getArg("rpc");
 const yes = args.includes("--yes");
+const json = args.includes("--json");
 
-if (!recipient || !amount || !label) {
-  console.error("Missing required arguments: --recipient/--to, --amount, --label");
-  console.error("Run with --help for usage.");
+function fail(message) {
+  if (json) {
+    console.log(JSON.stringify({ success: false, error: message }, null, 2));
+  } else {
+    console.error(message);
+  }
   process.exit(1);
 }
 
+if (command === "send" && (!recipient || !amount || !label)) {
+  fail("Missing required arguments: --recipient/--to, --amount, --label");
+}
+if (command === "batch" && !csvPath) {
+  fail("Missing required argument: --csv <path>");
+}
 if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
-  console.error("Private key required via --private-key or DISBURSE_PRIVATE_KEY env var (0x + 64 hex chars).");
-  process.exit(1);
+  fail("Private key required via --private-key or DISBURSE_PRIVATE_KEY env var (0x + 64 hex chars).");
 }
-
 if (token !== "USDC" && token !== "EURC") {
-  console.error('token must be USDC or EURC');
-  process.exit(1);
+  fail("token must be USDC or EURC");
 }
 
-// Dynamic import the implementation (works for src during dev with tsx or after tsc to dist)
-const entry = resolve(__dirname, "../dist/send.js");
-
-let send;
+const entry = resolve(__dirname, command === "batch" ? "../dist/batch.js" : "../dist/send.js");
+let run;
 try {
   const mod = await import(pathToFileURL(entry).href);
-  send = mod.send;
+  run = command === "batch" ? mod.batch : mod.send;
 } catch (e) {
-  // Fallback for development before build (user can run with tsx)
   try {
-    const devMod = await import(pathToFileURL(resolve(__dirname, "../src/send.ts")).href);
-    send = devMod.send;
-  } catch (e2) {
-    console.error("Failed to load CLI implementation. Run `npm run build` in packages/cli or use tsx.");
-    console.error(String(e));
-    process.exit(1);
+    const devMod = await import(pathToFileURL(resolve(__dirname, command === "batch" ? "../src/batch.ts" : "../src/send.ts")).href);
+    run = command === "batch" ? devMod.batch : devMod.send;
+  } catch {
+    fail(`Failed to load CLI implementation. Run npm run build in packages/cli. ${String(e)}`);
   }
 }
 
-if (typeof send !== "function") {
-  console.error("CLI implementation missing exported send()");
-  process.exit(1);
+if (typeof run !== "function") {
+  fail(`CLI implementation missing exported ${command}()`);
 }
 
 try {
-  await send({
-    recipient,
-    amount,
-    label,
-    note,
-    token,
-    privateKey,
-    outDir,
-    rpc,
-    yes
-  });
-  process.exit(0);
+  const result = command === "batch"
+    ? await run({ csvPath, token, privateKey, outDir, rpc, yes, json })
+    : await run({ recipient, amount, label, note, token, privateKey, outDir, rpc, yes, json });
+  if (json) console.log(JSON.stringify(result, null, 2));
+  process.exit(result?.success === false ? 1 : 0);
 } catch (err) {
-  console.error("Error:", err instanceof Error ? err.message : String(err));
-  process.exit(1);
+  fail(err instanceof Error ? err.message : String(err));
 }

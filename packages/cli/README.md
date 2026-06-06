@@ -21,23 +21,28 @@ DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli send --to 0x... --amount 10 --label
 
 After `npm install -g @disburse/cli` you can also use the `disburse` command directly.
 
-### Install from GitHub (before npm publish)
+## Batch disbursements
+
+Agents can send a safe sequential batch and receive one complete batch PDF plus individual PSP JSON files:
 
 ```bash
-# Install directly from the monorepo (auto-builds via prepare script)
-npm install github:Disburse-pay/Disburse#main --workspace=packages/cli
-# Or globally
-npm install -g github:Disburse-pay/Disburse#main
+DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli batch --csv payouts.csv --json
 ```
 
-For agents that just need to run it once without installing globally:
+CSV format:
 
-```bash
-git clone https://github.com/Disburse-pay/Disburse.git /tmp/disburse
-cd /tmp/disburse/packages/cli && npm install && npm run build
-node bin/cli.mjs send --to 0x... --amount 10 --label "Payout" \
-  --private-key $DISBURSE_PRIVATE_KEY
+```csv
+to,amount,label,note,token
+0x742d35Cc6634C0532925a3b844Bc9e7595f8fA4c,10,Invoice 1,May salary,USDC
+0x1111111111111111111111111111111111111111,5,Bonus,Q2 performance,EURC
 ```
+
+Safety behavior:
+- The full CSV is validated before any transaction is sent.
+- Required token balances are summed by token and checked before the first transfer.
+- Transfers run sequentially only, avoiding nonce conflicts.
+- The batch stops on the first transfer/register failure and writes exactly what succeeded or failed.
+- One batch PDF contains summary totals and all successful payment PSP details.
 
 ## Example agent flow (as described by users)
 
@@ -93,6 +98,7 @@ Both artifacts are written to disk. The PSP is the durable, portable source of t
 --private-key <0x...>       Signing key (or use DISBURSE_PRIVATE_KEY env)
 --out-dir <path>            Where to write proof.json + PDF (default: current dir)
 --rpc <url>                 Override Arc RPC endpoint
+--json                      Print machine-readable JSON for agents
 --yes                       Skip interactive confirmations (future)
 ```
 
@@ -111,7 +117,7 @@ This CLI (and the underlying `/api/disburse` registration endpoint) exists preci
 - The server verifies the on-chain Transfer event.
 - It constructs a `PaymentRequest` + `Receipt` using the `label`/`note` you supplied.
 - It issues a normal PSP using the same signing key and canonicalization used for all other settlements.
-- The resulting documents are queryable via the normal `/api/psp?uid=...` and `/api/psp?request_id=direct-...` endpoints and verifiable with the standalone `@disburse/psp-verify` package.
+- The resulting documents are queryable via the normal `/api/psp?uid=...` endpoint and verifiable with the standalone `@disburse/psp-verify` package.
 
 ## Development (inside this repo)
 
