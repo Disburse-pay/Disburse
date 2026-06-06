@@ -47,7 +47,7 @@ function getNetworkMode(): NetworkMode {
 }
 
 function getSettlementContract(): Address {
-  const addr = process.env.ARC_SETTLEMENT_CONTRACT;
+  const addr = process.env.ARC_SETTLEMENT_CONTRACT?.trim();
   if (!addr) {
     throw new Error("ARC_SETTLEMENT_CONTRACT is not configured.");
   }
