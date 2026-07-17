@@ -28,21 +28,12 @@ export default defineConfig({
           const path = id.replace(/\\/g, "/");
           if (path.includes("/pdf-lib/")) return "pdf";
           if (path.includes("/recharts/") || path.includes("/d3-") || path.includes("/victory")) return "charts";
-          if (
-            path.includes("/@dynamic-labs/") ||
-            path.includes("/@turnkey/") ||
-            path.includes("/@walletconnect/")
-          ) {
-            return "wallet";
-          }
-          if (
-            path.includes("/viem/") ||
-            path.includes("/@noble/") ||
-            path.includes("/ox/") ||
-            path.includes("/abitype/")
-          ) {
-            return "viem";
-          }
+          // Do NOT force the wallet SDKs (@dynamic-labs/@turnkey/@walletconnect)
+          // or viem into named chunks: those packages import each other in
+          // cycles, and forcing them into manual chunks broke Rollup's module
+          // ordering ("Cannot access 'x' before initialization" at startup,
+          // which blank-screened production). Rollup's own chunking orders
+          // them correctly.
           if (
             path.includes("/react/") ||
             path.includes("/react-dom/") ||

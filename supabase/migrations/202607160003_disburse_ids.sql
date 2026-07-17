@@ -7,7 +7,7 @@
 create extension if not exists citext with schema extensions;
 
 create table public.disburse_ids (
-  handle citext primary key,
+  handle extensions.citext primary key,
   address text not null unique,
   claimed_at timestamptz not null default now(),
   -- citext's ~ matches case-insensitively; cast to text so uppercase

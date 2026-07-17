@@ -8,7 +8,7 @@
 
 create table public.notifications (
   id uuid primary key default gen_random_uuid(),
-  recipient_handle citext not null references public.disburse_ids(handle) on delete cascade,
+  recipient_handle extensions.citext not null references public.disburse_ids(handle) on delete cascade,
   kind text not null check (kind in ('payment_request', 'payment_received')),
   request_id uuid,
   payload jsonb not null default '{}'::jsonb,
