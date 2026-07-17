@@ -1,0 +1,13 @@
+# Code owners — auto-requested for review on matching paths.
+# Replace the placeholder handles with your real GitHub users/teams.
+
+# Default owner for everything
+*                       @dun999
+
+# Security-sensitive areas warrant an explicit reviewer.
+/contracts/             @dun999
+/server/psp/            @dun999
+/packages/psp-verify/   @dun999
+/server/crosschain.ts   @dun999
+/.github/               @dun999
+/SECURITY.md            @dun999

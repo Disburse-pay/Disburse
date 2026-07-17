@@ -31,24 +31,24 @@ export default function ReceiptSummary() {
       {/* Headline: amount + status. Each appears once on the whole receipt. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-medium text-[var(--muted)]">
+          <p className="text-sm font-medium text-[var(--muted)]">
             Verifiable Settlement Receipt
           </p>
-          <h3 className="mt-1.5 truncate text-[15.5px] font-semibold tracking-[-0.01em] text-[var(--ink)]">
+          <h3 className="mt-1.5 truncate text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
             {request.label || "Untitled request"}
           </h3>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <div className="flex items-baseline gap-1.5">
-            <span className="font-mono text-[24px] font-semibold tracking-[-0.01em] tabular-nums text-[var(--ink)]">
+            <span className="font-mono text-2xl font-semibold tracking-[-0.01em] tabular-nums text-[var(--ink)]">
               {receipt?.amount ?? request.amount}
             </span>
-            <span className="text-[12px] font-medium text-[var(--muted)]">
+            <span className="text-sm font-medium text-[var(--muted)]">
               {receipt?.token ?? request.token}
             </span>
           </div>
           <span
-            className="inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] tracking-[0.06em]"
+            className="inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-2xs tracking-[0.06em]"
             style={{ color: statusPill.color, background: statusPill.bg }}
           >
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusPill.color }} />
@@ -93,10 +93,10 @@ export default function ReceiptSummary() {
             <ShieldCheck size={14} strokeWidth={1.6} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[11.5px] font-medium text-[var(--muted)]">
+            <p className="text-xs font-medium text-[var(--muted)]">
               SHA-256 fingerprint
             </p>
-            <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--ink)]">
+            <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink)]">
               {shortFingerprint}
             </p>
           </div>
@@ -116,7 +116,7 @@ export default function ReceiptSummary() {
 
       {(onExportJson || onExportUbl || onExportPdf || receipt?.explorerUrl) && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-3">
-          <p className="text-[11.5px] font-medium text-[var(--muted)]">
+          <p className="text-xs font-medium text-[var(--muted)]">
             Export
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -140,7 +140,7 @@ export default function ReceiptSummary() {
                 href={receipt.explorerUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-7 items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
+                className="inline-flex h-7 items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-2.5 text-xs font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
               >
                 <ExternalLink size={12} strokeWidth={1.75} />
                 Explorer

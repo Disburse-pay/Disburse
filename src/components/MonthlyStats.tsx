@@ -37,20 +37,20 @@ export default function MonthlyStats({ activityData }: Props) {
       {/* Heading */}
       <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
         <div>
-          <p className="text-[13px] font-medium text-[var(--ink)]">{t("activity")}</p>
-          <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">{t("last7Days")}</p>
+          <p className="text-base font-medium text-[var(--ink)]">{t("activity")}</p>
+          <p className="mt-0.5 text-sm text-[var(--muted)]">{t("last7Days")}</p>
         </div>
         <div className="text-right">
           <div className="flex items-center justify-end gap-2">
-            <p className="text-[18px] font-semibold leading-none text-[var(--ink)] tabular-nums">
+            <p className="text-xl font-semibold leading-none text-[var(--ink)] tabular-nums">
               {totalCount}
-              <span className="ml-1.5 text-[12px] font-normal text-[var(--muted)]">
+              <span className="ml-1.5 text-sm font-normal text-[var(--muted)]">
                 {totalCount === 1 ? t("req") : t("reqs")}
               </span>
             </p>
             {showDelta && (
               <span
-                className="inline-flex items-center gap-0.5 text-[11.5px] font-medium text-[var(--muted)]"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-[var(--muted)]"
                 title="vs previous 3 days"
               >
                 {deltaPositive ? (
@@ -63,7 +63,7 @@ export default function MonthlyStats({ activityData }: Props) {
               </span>
             )}
           </div>
-          <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+          <p className="mt-1.5 text-sm text-[var(--muted)]">
             {formatCurrency(totalVolume)}
           </p>
         </div>

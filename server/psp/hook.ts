@@ -1,13 +1,12 @@
 /**
  * PSP — Feature-flagged issuance hook
  *
- * Called after a payment or market claim reaches terminal state. Non-fatal:
- * any failure is logged but never propagated to the parent flow.
+ * Called after a payment reaches terminal state. Non-fatal: any failure is
+ * logged but never propagated to the parent flow.
  *
  * Gated on: process.env.ENABLE_PSP === "1"
  */
 
-import type { Market, MarketClaim } from "../../src/lib/markets/types.js";
 import type { PaymentRequest, Receipt } from "../../src/lib/payments.js";
 import { issuePsp } from "./issue.js";
 import { triggerWebhooks } from "../webhooks.js";
@@ -64,39 +63,6 @@ export async function tryIssuePsp(
       // Swallow — the console line above is the fallback signal.
     }
 
-    return undefined;
-  }
-}
-
-/**
- * Attempt to issue a PSP for an on-chain market claim. Mirrors `tryIssuePsp`
- * for the market_claim variant of `IssueContext` — non-fatal, same gating,
- * same webhook fanout. Returns the PSP UID on success.
- */
-export async function tryIssueMarketClaimPsp(
-  claim: MarketClaim,
-  market: Market
-): Promise<string | undefined> {
-  if (!pspEnabled()) {
-    return undefined;
-  }
-
-  try {
-    const { psp } = await issuePsp({ kind: "market_claim", claim, market });
-
-    triggerWebhooks(psp as unknown as Record<string, unknown>).catch((err) => {
-      console.error(
-        `[PSP] Webhook delivery error for ${psp.uid}:`,
-        err instanceof Error ? err.message : err
-      );
-    });
-
-    return psp.uid;
-  } catch (error) {
-    console.error(
-      `[PSP] Failed to issue PSP for market claim ${claim.id}:`,
-      error instanceof Error ? error.message : error
-    );
     return undefined;
   }
 }

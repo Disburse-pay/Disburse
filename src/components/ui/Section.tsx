@@ -32,12 +32,12 @@ export default function Section({
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             {title && (
-              <h3 className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
+              <h3 className="text-base font-semibold tracking-tight text-[var(--ink)]">
                 {title}
               </h3>
             )}
             {description && (
-              <p className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--muted)]">
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">
                 {description}
               </p>
             )}

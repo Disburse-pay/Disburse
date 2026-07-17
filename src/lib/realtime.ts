@@ -82,6 +82,8 @@ export type QrStatusPayload = {
   event?: QrRealtimeEvent;
   message?: string;
   psp_uid?: string;
+  /** Disburse ID that received an in-app notification for this request. */
+  notified?: string;
 };
 
 export type AppliedQrEvent = {

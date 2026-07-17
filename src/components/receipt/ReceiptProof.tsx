@@ -78,14 +78,14 @@ export default function ReceiptProof() {
   return (
     <div className="px-5 pb-4 pt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--muted)]">
+        <p className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)]">
           <span className="inline-flex h-[20px] w-[20px] items-center justify-center rounded-[var(--btn-radius)] border border-[var(--green-text)] bg-[var(--green-bg)] text-[var(--green-text)]">
             <ShieldCheck size={11} strokeWidth={1.9} />
           </span>
           Portable Settlement Proof
         </p>
         <span
-          className="max-w-[50%] truncate rounded-[2px] border border-[var(--line)] bg-[var(--input-bg)] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--muted)]"
+          className="max-w-[50%] truncate rounded-[2px] border border-[var(--line)] bg-[var(--input-bg)] px-1.5 py-0.5 font-mono text-2xs text-[var(--muted)]"
           title={badge}
         >
           {badge}
@@ -93,7 +93,7 @@ export default function ReceiptProof() {
       </div>
 
       {!psp ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-[var(--muted)]">
+        <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
           {loading
             ? "Checking Arc Testnet proof issuance for this request."
             : "The receipt is verified on Arc Testnet. A PSP will appear here when the backend issuer has signed the portable proof document."}
@@ -108,10 +108,10 @@ export default function ReceiptProof() {
 
           <div className="mt-3 flex items-center gap-2.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] p-2.5">
             <div className="min-w-0 flex-1">
-              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">
+              <span className="mb-1 block text-sm font-medium text-[var(--muted)]">
                 CLI verify
               </span>
-              <code className="block truncate font-mono text-[11px] text-[var(--ink-soft)]">
+              <code className="block truncate font-mono text-xs text-[var(--ink-soft)]">
                 {buildFetchCommand(psp)}
               </code>
             </div>
@@ -137,7 +137,7 @@ export default function ReceiptProof() {
               href={`/api/psp-viewer?uid=${encodeURIComponent(psp.uid)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-7 items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-2.5 text-[11.5px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
+              className="inline-flex h-7 items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-2.5 text-xs font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
             >
               <ExternalLink size={13} strokeWidth={1.6} />
               View proof

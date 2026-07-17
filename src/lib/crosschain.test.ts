@@ -3,9 +3,7 @@ import {
   ARC_DESTINATION_CHAIN_ID,
   BASE_SEPOLIA_CHAIN_ID,
   MONAD_TESTNET_CHAIN_ID,
-  buildCrossChainNonce,
-  getAllowedSourceChainIds,
-  getCrossChain,
+  getCrossChainLabel,
   requestIdToBytes32
 } from "./crosschain";
 import {
@@ -36,7 +34,9 @@ function encodeRawPayload(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
-describe("cross-chain QR payloads", () => {
+// The Polymer settlement stack is retired, but v2 pay links and stored
+// cross-chain records must keep decoding and rendering.
+describe("legacy cross-chain QR payloads", () => {
   it("round-trips v2 QR requests without legacy Arc start block requirements", () => {
     const decoded = decodeRequestPayload(encodeRequestPayload(crossChainRequest));
 
@@ -71,19 +71,6 @@ describe("cross-chain QR payloads", () => {
     expect(decoded.allowedSourceChainIds).toEqual([BASE_SEPOLIA_CHAIN_ID]);
   });
 
-  it("exposes Monad as a remote payment source with MON gas", () => {
-    expect(getCrossChain(MONAD_TESTNET_CHAIN_ID)).toMatchObject({
-      label: "Monad Testnet",
-      rpcUrl: "https://testnet-rpc.monad.xyz",
-      explorerUrl: "https://testnet.monadscan.com",
-      nativeSymbol: "MON"
-    });
-  });
-
-  it("does not advertise Monad while Polymer leaves Monad proof jobs pending", () => {
-    expect(getAllowedSourceChainIds()).toEqual([ARC_DESTINATION_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID]);
-  });
-
   it("rejects cross-chain routes without supported source chains", () => {
     expect(() =>
       decodeRequestPayload(
@@ -102,10 +89,9 @@ describe("cross-chain QR payloads", () => {
     ).toThrow("source chains");
   });
 
-  it("uses deterministic bytes32 ids and nonces for contract calls", () => {
+  it("keeps labels and deterministic bytes32 ids for stored records", () => {
+    expect(getCrossChainLabel(BASE_SEPOLIA_CHAIN_ID)).toBe("Base Sepolia");
+    expect(getCrossChainLabel(MONAD_TESTNET_CHAIN_ID)).toBe("Monad Testnet");
     expect(requestIdToBytes32(crossChainRequest.id)).toMatch(/^0x[a-f0-9]{64}$/);
-    expect(buildCrossChainNonce(crossChainRequest.id, BASE_SEPOLIA_CHAIN_ID, ARC_DESTINATION_CHAIN_ID)).toBe(
-      buildCrossChainNonce(crossChainRequest.id, BASE_SEPOLIA_CHAIN_ID, ARC_DESTINATION_CHAIN_ID)
-    );
   });
 });

@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronDown, Moon, Sun } from "lucide-react";
-import SidePanel from "./ui/SidePanel";
+import { Check, ChevronDown, Moon, Sun, X } from "lucide-react";
 import Button from "./ui/Button";
+import { ARC_CHAIN_ID, arcTestnet } from "../lib/arc";
 import { useI18n } from "../lib/i18n";
 import {
   type AppSettings,
@@ -21,6 +21,9 @@ type Props = {
   onClose: () => void;
   theme: Theme;
   onToggleTheme: () => void;
+  rpcStatusLabel: string;
+  rpcBlockLabel: string;
+  rpcHealthy?: boolean;
 };
 
 const SETTINGS_COPY: Record<
@@ -106,11 +109,18 @@ const SETTINGS_COPY: Record<
 };
 
 /**
- * Slide-in settings panel. Slides in from the right with no dimmed backdrop
- * so the page behind stays interactive while you preview language / currency
- * / appearance changes. Closes on Esc or by clicking outside the panel.
+ * Centered floating settings dialog. Two-column layout so preferences read
+ * side by side instead of as one long stack. Closes on Esc or scrim click.
  */
-export default function SettingsPanel({ open, onClose, theme, onToggleTheme }: Props) {
+export default function SettingsPanel({
+  open,
+  onClose,
+  theme,
+  onToggleTheme,
+  rpcStatusLabel,
+  rpcBlockLabel,
+  rpcHealthy,
+}: Props) {
   const { t, setLang, setCurrency, formatCurrency } = useI18n();
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const copy = SETTINGS_COPY[settings.language] ?? SETTINGS_COPY.en;
@@ -140,73 +150,156 @@ export default function SettingsPanel({ open, onClose, theme, onToggleTheme }: P
 
   const languages = Object.entries(LANGUAGE_META) as [LanguageCode, typeof LANGUAGE_META["en"]][];
   const currencies = Object.entries(CURRENCY_META) as [CurrencyCode, typeof CURRENCY_META["USD"]][];
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   return (
-    <SidePanel
-      open={open}
-      onClose={onClose}
-      side="right"
-      width={360}
-      scrim={false}
-      ariaLabel={t("settings")}
-      title={t("settings")}
-      description={copy.description}
-    >
-      <div className="flex flex-col gap-6">
-        <Section label={copy.appearance} hint={copy.appearanceHint}>
-          <div className="grid grid-cols-2 gap-2">
-            <ThemeTile
-              active={theme === "light"}
-              label={copy.light}
-              icon={<Sun size={16} strokeWidth={1.75} />}
-              onClick={() => {
-                if (theme !== "light") onToggleTheme();
-              }}
-            />
-            <ThemeTile
-              active={theme === "dark"}
-              label={copy.dark}
-              icon={<Moon size={16} strokeWidth={1.75} />}
-              onClick={() => {
-                if (theme !== "dark") onToggleTheme();
-              }}
-            />
-          </div>
-        </Section>
-
-        <Section label={t("language")} hint={copy.languageHint}>
-          <AnimatedSelect
-            value={settings.language}
-            onChange={(value) => updateLanguage(value as LanguageCode)}
-            options={languages.map(([code, meta]) => ({
-              value: code,
-              label: `${meta.native} · ${meta.label}`,
-            }))}
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Scrim */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 bg-black/40"
+            onClick={onClose}
+            aria-hidden="true"
           />
-        </Section>
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            initial={{ opacity: 0, scale: 0.97, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 8 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="relative flex h-[min(520px,calc(100dvh-32px))] w-[720px] max-w-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)] shadow-[0_24px_64px_-24px_rgba(0,0,0,0.4)]"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-5">
+              <div>
+                <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">
+                  {t("settings")}
+                </h2>
+                <p className="mt-0.5 text-sm text-[var(--muted)]">{copy.description}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={copy.done}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+              >
+                <X size={15} strokeWidth={2} />
+              </button>
+            </div>
 
-        <Section label={t("currency")} hint={copy.currencyHint}>
-          <AnimatedSelect
-            value={settings.currency}
-            onChange={(value) => updateCurrency(value as CurrencyCode)}
-            options={currencies.map(([code, meta]) => ({
-              value: code,
-              label: `${code} · ${meta.label} (${meta.symbol})`,
-            }))}
-          />
-          <div className="mt-2 flex items-center justify-between rounded-md border border-[var(--line-soft)] bg-[var(--paper-soft-translucent)] px-3 py-2 text-[12px]">
-            <span className="text-[var(--muted)]">{copy.currencyPreview}</span>
-            <strong className="font-semibold text-[var(--ink)]">{formatCurrency(1250)}</strong>
-          </div>
-        </Section>
+            {/* Two columns: preferences left, display + diagnostics right. */}
+            <div className="grid flex-1 content-start grid-cols-1 gap-x-10 gap-y-7 overflow-y-auto px-6 py-5 md:grid-cols-2">
+              <Section label={copy.appearance} hint={copy.appearanceHint}>
+                <div className="grid grid-cols-2 gap-2">
+                  <ThemeTile
+                    active={theme === "light"}
+                    label={copy.light}
+                    icon={<Sun size={16} strokeWidth={1.75} />}
+                    onClick={() => {
+                      if (theme !== "light") onToggleTheme();
+                    }}
+                  />
+                  <ThemeTile
+                    active={theme === "dark"}
+                    label={copy.dark}
+                    icon={<Moon size={16} strokeWidth={1.75} />}
+                    onClick={() => {
+                      if (theme !== "dark") onToggleTheme();
+                    }}
+                  />
+                </div>
+              </Section>
 
-        <div className="flex justify-end pt-2">
-          <Button variant="primary" size="md" onClick={onClose}>
-            {copy.done}
-          </Button>
+              <Section label={t("language")} hint={copy.languageHint}>
+                <AnimatedSelect
+                  value={settings.language}
+                  onChange={(value) => updateLanguage(value as LanguageCode)}
+                  options={languages.map(([code, meta]) => ({
+                    value: code,
+                    label: `${meta.native} · ${meta.label}`,
+                  }))}
+                />
+              </Section>
+
+              <Section label={t("currency")} hint={copy.currencyHint}>
+                <AnimatedSelect
+                  value={settings.currency}
+                  onChange={(value) => updateCurrency(value as CurrencyCode)}
+                  options={currencies.map(([code, meta]) => ({
+                    value: code,
+                    label: `${meta.label} (${meta.symbol})`,
+                  }))}
+                />
+                <dl className="mt-2 rounded-md bg-[var(--paper-2)] px-3 py-1">
+                  <StatusRow label={copy.currencyPreview} value={formatCurrency(1250)} />
+                </dl>
+              </Section>
+
+              {/* Network diagnostics — reference info you check when something
+                  looks wrong; lives here rather than on the Overview page. */}
+              <Section label={t("network")} hint={t("liveTelemetry")}>
+                <dl className="rounded-md bg-[var(--paper-2)] px-3 py-1">
+                  <StatusRow label={t("chain")} value={`${arcTestnet.name} ${ARC_CHAIN_ID}`} />
+                  <StatusRow label={t("rpc")} value={rpcStatusLabel} mono />
+                  <StatusRow label={t("block")} value={rpcBlockLabel} mono />
+                  <StatusRow
+                    label={t("status")}
+                    value={rpcHealthy ? t("operational") : t("degraded")}
+                  />
+                </dl>
+              </Section>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end px-6 pb-5 pt-2">
+              <Button variant="primary" size="md" onClick={onClose}>
+                {copy.done}
+              </Button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </SidePanel>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function StatusRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2.5">
+      <dt className="text-sm text-[var(--muted)]">{label}</dt>
+      <dd
+        className={[
+          "max-w-[60%] truncate text-sm text-[var(--ink)]",
+          mono ? "font-mono" : "",
+        ].join(" ")}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }
 
@@ -222,11 +315,11 @@ function Section({
   return (
     <section>
       <div className="mb-2">
-        <h3 className="text-[13.5px] font-semibold text-[var(--ink)]">
+        <h3 className="text-base font-semibold text-[var(--ink)]">
           {label}
         </h3>
         {hint && (
-          <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--muted)]">
+          <p className="mt-1 text-sm leading-relaxed text-[var(--muted)]">
             {hint}
           </p>
         )}
@@ -264,7 +357,7 @@ function ThemeTile({
         <span className={active ? "text-[var(--primary-bg)]" : "text-[var(--muted)]"} aria-hidden="true">
           {icon}
         </span>
-        <span className="text-[13px] font-medium text-[var(--ink)]">{label}</span>
+        <span className="text-base font-medium text-[var(--ink)]">{label}</span>
       </span>
       {active && <Check size={14} strokeWidth={2} className="text-[var(--primary-bg)]" />}
     </button>
@@ -325,10 +418,10 @@ function AnimatedSelect({
         ].join(" ")}
       >
         <span className="flex min-w-0 items-center gap-3">
-          <span className="flex h-7 min-w-7 items-center justify-center rounded-md border border-[var(--line-soft)] bg-[var(--paper-soft-translucent)] px-2 text-[11px] font-semibold text-[var(--primary-bg)]">
+          <span className="flex h-7 min-w-7 items-center justify-center rounded-md border border-[var(--line-soft)] bg-[var(--paper-soft-translucent)] px-2 text-xs font-semibold text-[var(--primary-bg)]">
             {selected.value.toUpperCase()}
           </span>
-          <span className="block truncate text-[12.5px] font-medium text-[var(--ink)]">{selected.label}</span>
+          <span className="block truncate text-sm font-medium text-[var(--ink)]">{selected.label}</span>
         </span>
         <ChevronDown
           size={15}
@@ -349,7 +442,7 @@ function AnimatedSelect({
             animate={{ opacity: 1, height: "auto", y: 0 }}
             exit={{ opacity: 0, height: 0, y: -4 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-2 max-h-52 overflow-y-auto overflow-x-hidden rounded-lg border border-[var(--line)] bg-[var(--paper)] shadow-[0_18px_42px_-26px_rgba(0,0,0,0.55)]"
+            className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 max-h-52 overflow-y-auto overflow-x-hidden rounded-lg border border-[var(--line)] bg-[var(--paper)] shadow-[0_18px_42px_-26px_rgba(0,0,0,0.55)]"
           >
             <div className="grid gap-1 p-1">
               {options.map((option) => {
@@ -378,7 +471,7 @@ function AnimatedSelect({
                     <span className="flex min-w-0 items-center gap-3">
                       <span
                         className={[
-                          "flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[10px] font-semibold transition-colors",
+                          "flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-2xs font-semibold transition-colors",
                           active
                             ? "border-[var(--primary-bg)] bg-[var(--paper)] text-[var(--primary-bg)]"
                             : "border-[var(--line-soft)] bg-[var(--input-bg)] text-[var(--muted)] group-hover:text-[var(--ink)]",
@@ -386,7 +479,7 @@ function AnimatedSelect({
                       >
                         {option.value.toUpperCase()}
                       </span>
-                      <span className="block min-w-0 truncate text-[12.5px] font-medium">{option.label}</span>
+                      <span className="block min-w-0 truncate text-sm font-medium">{option.label}</span>
                     </span>
                     <AnimatePresence initial={false}>
                       {active && (

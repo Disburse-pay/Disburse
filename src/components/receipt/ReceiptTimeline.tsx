@@ -34,10 +34,10 @@ export default function ReceiptTimeline() {
   return (
     <div className="px-5 pb-5 pt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[12px] font-medium text-[var(--muted)]">
+        <p className="text-sm font-medium text-[var(--muted)]">
           Settlement timeline
         </p>
-        <p className="text-[11px] text-[var(--muted)]">{route}</p>
+        <p className="text-xs text-[var(--muted)]">{route}</p>
       </div>
 
       <div className="mt-4 grid items-start" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}>
@@ -114,7 +114,7 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
         ) : isActive || isFailed ? (
           stage.icon
         ) : (
-          <span className="text-[11px] tracking-[0.06em]">{String(stage.idx).padStart(2, "0")}</span>
+          <span className="text-xs tracking-[0.06em]">{String(stage.idx).padStart(2, "0")}</span>
         )}
         {isActive && (
           <span
@@ -131,10 +131,10 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
         )}
       </span>
 
-      <p className="mt-3 text-[12.5px] font-semibold tracking-[-0.005em] text-[var(--ink)]">{stage.label}</p>
-      <p className="mt-1 max-w-[22ch] text-[11px] leading-snug text-[var(--muted)]">{stage.sub}</p>
+      <p className="mt-3 text-sm font-semibold tracking-[-0.005em] text-[var(--ink)]">{stage.label}</p>
+      <p className="mt-1 max-w-[22ch] text-xs leading-snug text-[var(--muted)]">{stage.sub}</p>
       {stage.time && (
-        <p className="mt-1.5 font-mono text-[10px] tracking-[0.04em] tabular-nums" style={{ color }}>
+        <p className="mt-1.5 font-mono text-2xs tracking-[0.04em] tabular-nums" style={{ color }}>
           {stage.time}
         </p>
       )}

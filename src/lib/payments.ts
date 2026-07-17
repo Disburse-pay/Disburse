@@ -11,7 +11,6 @@ import {
 import { ARC_CHAIN_ID, ARC_EXPLORER_URL, TOKENS, erc20Abi } from "./arc.js";
 import {
   ARC_DESTINATION_CHAIN_ID,
-  getAllowedSourceChainIds,
   isPaymentSourceChainId,
   type PaymentSourceChainId,
   type CrossChainPaymentState
@@ -270,7 +269,7 @@ export function encodeRequestPayload(request: PaymentRequest): string {
       destinationChainId: ARC_DESTINATION_CHAIN_ID,
       allowedSourceChainIds: request.allowedSourceChainIds?.length
         ? request.allowedSourceChainIds
-        : getAllowedSourceChainIds()
+        : [ARC_DESTINATION_CHAIN_ID]
     };
     return encodeBase64UrlJson(payload);
   }

@@ -1,23 +1,15 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
-import { PRODUCTION_DOCS_HOSTNAME } from "../../lib/routing";
 import type { DocsSection, DocsSummaryItem } from "./types";
+import { docsSections, arcadeSections } from "./en";
 
-export const docsSectionsZh: DocsSection[] = [
-  {
-    title: "项目范围",
-    body: [
-      "Disburse 是 Arc Testnet 的非托管付款控制台。它面向两个实际任务：从注入式钱包发送稳定币转账，以及创建可由其他钱包打开并支付的 QR 付款请求。",
-      "当前版本刻意保持聚焦。它不持有余额、不收集私钥，也不运营托管账户。浏览器准备请求，钱包签署交易，付款状态从 Arc Testnet 数据中验证。"
-    ],
-    points: [
-      "主要应用路由：/payments、/qr-payments 和 /pay。",
-      `文档由 ${PRODUCTION_DOCS_HOSTNAME} 提供。`,
-      "支持的钱包连接、Arc Testnet 切换、gas 估算、ERC-20 转账、QR 请求创建、转账验证、导入/导出和发票下载。",
-      "本版本不包含：托管余额、Permit2、后端强制的 402 流程、MPP rails 和服务端 replay 防护。"
-    ]
-  },
-  {
+/**
+ * Fully translated sections, keyed by the canonical English title from en.ts.
+ * Sections not in this map fall back to the English body with a translated
+ * headline (see fallbackTitles) so the structure never drifts from en.ts.
+ */
+const translated: Record<string, DocsSection> = {
+  "Payment flows": {
     title: "付款流程",
     body: [
       "Disburse 将即时转账和基于请求的付款分开。直接付款用于发送方已知道收款人、token 和金额的场景。QR 付款用于请求方发布固定请求，让他人付款。",
@@ -29,7 +21,7 @@ export const docsSectionsZh: DocsSection[] = [
       "直接付款不会在本地账本中创建 QR 请求记录。"
     ]
   },
-  {
+  "Network and assets": {
     title: "网络和资产",
     body: [
       "应用固定在 Arc Testnet。Native gas 显示为 18 位小数的 USDC，受支持的 ERC-20 付款金额使用 6 位小数。",
@@ -43,7 +35,7 @@ export const docsSectionsZh: DocsSection[] = [
       `EURC: ${TOKENS.EURC.address}`
     ]
   },
-  {
+  "QR request payload": {
     title: "QR 请求 payload",
     body: [
       "QR 码包含 /pay URL，并在 r 查询参数中放入 base64url JSON payload。payload 只是可携带的请求描述；它不会包含私钥、钱包授权、token 余额或已签名交易。",
@@ -56,7 +48,7 @@ export const docsSectionsZh: DocsSection[] = [
     ],
     code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
   },
-  {
+  "Wallet execution": {
     title: "钱包执行",
     body: [
       "付款是由已连接钱包签署的标准 ERC-20 transfer 调用。应用使用 viem 估算 gas，应用 Arc 的 gas-price floor，提交后立即保存钱包交易哈希，然后等待确认。",
@@ -69,7 +61,7 @@ export const docsSectionsZh: DocsSection[] = [
       "Gas: 估算用于展示和余额检查；钱包在签名时最终确定交易 gas。"
     ]
   },
-  {
+  "Local ledger and realtime": {
     title: "本地账本和 realtime",
     body: [
       "QR 请求和收据存储在浏览器 localStorage 中，请求方无需创建账户即可管理工作。账本支持 JSON 导出和导入，用于备份或迁移。",
@@ -82,7 +74,7 @@ export const docsSectionsZh: DocsSection[] = [
       "导入的 explorer URL 会从已验证的 Arcscan transaction hash 重新生成。"
     ]
   },
-  {
+  "Invoice output": {
     title: "发票输出",
     body: [
       "付款人确认且转账从 Arc Testnet 数据验证后，付款页面可以生成本地 PDF 发票。",
@@ -94,7 +86,7 @@ export const docsSectionsZh: DocsSection[] = [
       "本版本没有服务器存储或发送发票文件。"
     ]
   },
-  {
+  Verification: {
     title: "验证",
     body: [
       "验证会先检查已知交易哈希。如果没有哈希，它会从请求起始区块到最新区块按 10,000 区块窗口扫描 ERC-20 Transfer logs，并比较收款人和精确 token 金额。",
@@ -107,7 +99,30 @@ export const docsSectionsZh: DocsSection[] = [
     ],
     code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
   }
-];
+};
+
+/** Translated headlines for sections whose bodies fall back to English. */
+const fallbackTitles: Record<string, string> = {
+  "What Disburse is": "Disburse 是什么",
+  "Tech and stack": "技术栈",
+  Contracts: "合约",
+  "Portable Settlement Proofs": "结算证明 (PSP)",
+  "API and webhooks": "API 与 webhook"
+};
+
+const arcadeTitles: Record<string, string> = {
+  "Cluck Run": "Cluck Run",
+  "The coin slot": "投币口",
+  "Runs and the leaderboard": "对局与排行榜"
+};
+
+export const docsSectionsZh: DocsSection[] = docsSections.map(
+  (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
+);
+
+export const arcadeSectionsZh: DocsSection[] = arcadeSections.map(
+  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
+);
 
 export const docsSummaryItemsZh: DocsSummaryItem[] = [
   {

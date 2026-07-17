@@ -23,7 +23,8 @@ import {
   type TransferLog
 } from "../src/lib/payments.js";
 import { paymentRequestToRow, receiptToRow } from "../src/lib/realtime.js";
-import { verifyMessage, type Address, type Hash, type Hex } from "viem";
+import { DISBURSE_TYPED_DOMAIN } from "../src/lib/ids.js";
+import { verifyMessage, verifyTypedData, type Address, type Hash, type Hex } from "viem";
 
 /**
  * POST /api/disburse
@@ -142,19 +143,28 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       invoiceDate = readClientValue(() => normalizeInvoiceDate(invoiceDateInput));
     }
 
-    const authMessage = buildDisburseAuthorizationMessage({
+    const authInput = {
       txHash: txHash as Hash,
       token: tokenInput,
       recipient: chosen.to,
       amount: amountStr,
       label,
       note
-    });
-    const isAuthorized = await readClientValue(() => verifyMessage({
+    };
+    let isAuthorized = await verifyTypedData({
+      ...buildDisburseRegistrationTypedData(authInput),
       address: chosen.from,
-      message: authMessage,
       signature
-    }));
+    }).catch(() => false);
+    if (!isAuthorized) {
+      // Deprecated: plaintext scheme signed by @disburse/cli <= 0.2.0. It has
+      // no domain or chain binding; new clients must sign the typed data.
+      isAuthorized = await verifyMessage({
+        address: chosen.from,
+        message: buildDisburseAuthorizationMessage(authInput),
+        signature
+      }).catch(() => false);
+    }
     if (!isAuthorized) {
       sendJson(response, 401, { error: "signature must be produced by the transfer payer." });
       return;
@@ -218,14 +228,53 @@ export function directRequestIdFromTxHash(txHash: Hash): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
-export function buildDisburseAuthorizationMessage(input: {
+export type DisburseRegistrationInput = {
   txHash: Hash;
   token: PaymentToken;
   recipient: Address;
   amount: string;
   label: string;
   note?: string;
-}): string {
+};
+
+export const DIRECT_REGISTRATION_TYPES = {
+  DirectPspRegistration: [
+    { name: "txHash", type: "bytes32" },
+    { name: "token", type: "string" },
+    { name: "recipient", type: "address" },
+    { name: "amount", type: "string" },
+    { name: "label", type: "string" },
+    { name: "note", type: "string" }
+  ]
+} as const;
+
+/**
+ * EIP-712 payload authorizing PSP registration of a direct transfer. Bound to
+ * the Disburse domain (app name + Arc chain id) so the signature verifies
+ * nowhere else. No expiry: the message is bound to a specific txHash and
+ * registration is idempotent, so replay gains nothing.
+ */
+export function buildDisburseRegistrationTypedData(input: DisburseRegistrationInput) {
+  return {
+    domain: DISBURSE_TYPED_DOMAIN,
+    types: DIRECT_REGISTRATION_TYPES,
+    primaryType: "DirectPspRegistration",
+    message: {
+      txHash: input.txHash.toLowerCase() as Hash,
+      token: input.token,
+      // Lowercase so viem's strict checksum validation accepts any input
+      // casing; EIP-712 hashes the address value, so casing never changes
+      // the signature.
+      recipient: input.recipient.toLowerCase() as Address,
+      amount: input.amount,
+      label: input.label,
+      note: input.note ?? ""
+    }
+  } as const;
+}
+
+/** @deprecated Legacy plaintext scheme kept only to verify signatures from @disburse/cli <= 0.2.0. */
+export function buildDisburseAuthorizationMessage(input: DisburseRegistrationInput): string {
   return [
     "Disburse direct PSP registration",
     `txHash: ${input.txHash.toLowerCase()}`,

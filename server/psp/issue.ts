@@ -9,17 +9,14 @@
  * roll back a confirmed payment or a successful claim.
  */
 
-import { formatUnits, type Address, type Hex } from "viem";
-import { ARC_CHAIN_ID } from "../../src/lib/arc.js";
+import { type Address, type Hex } from "viem";
 import { isRemotePaymentSourceChainId } from "../../src/lib/crosschain.js";
 import { isCrossChainPaymentRequest, type PaymentRequest, type Receipt } from "../../src/lib/payments.js";
-import type { Market, MarketClaim } from "../../src/lib/markets/types.js";
 import { buildSignedPsp } from "../../src/lib/psp/sign.js";
 import type { NetworkMode, PspCore, PspV1 } from "../../src/lib/psp/types.js";
 import {
   readCrossChainSettlementLog,
   readDirectSettlementLog,
-  readMarketClaimLog,
   readSourcePaymentLog,
 } from "./fetchLogs.js";
 import { getSupabaseAdmin } from "../supabase.js";
@@ -62,26 +59,18 @@ export type IssuePspResult = {
 };
 
 /**
- * Discriminated context for PSP issuance.
- *
- * - `payment`: terminal-state PaymentRequest + Receipt. Persisted with the
- *   request_id idempotency key.
- * - `market_claim`: indexed MarketClaim + parent Market context. Persisted
- *   with the market_claim_id idempotency key.
+ * Context for PSP issuance: a terminal-state PaymentRequest + Receipt.
+ * Persisted with the request_id idempotency key. (A market_claim variant
+ * existed through PSP v1.1; issuance was retired with the bet product, but
+ * previously issued market-claim PSPs remain verifiable.)
  */
-export type IssueContext =
-  | { kind: "payment"; request: PaymentRequest; receipt: Receipt }
-  | { kind: "market_claim"; claim: MarketClaim; market: Market };
+export type IssueContext = { kind: "payment"; request: PaymentRequest; receipt: Receipt };
 
 /**
- * Issue a PSP for a payment or a market-claim event. Idempotent on the
- * variant-specific key.
+ * Issue a PSP for a payment. Idempotent on the request id.
  */
 export async function issuePsp(ctx: IssueContext): Promise<IssuePspResult> {
-  if (ctx.kind === "payment") {
-    return issuePaymentPsp(ctx.request, ctx.receipt);
-  }
-  return issueMarketClaimPsp(ctx.claim, ctx.market);
+  return issuePaymentPsp(ctx.request, ctx.receipt);
 }
 
 // ---------- Payment issuance (existing v1 path) ----------
@@ -202,116 +191,6 @@ async function issuePaymentPsp(
     });
   } catch {
     // Non-fatal — PSP was persisted successfully
-  }
-
-  return { psp, isNew: true };
-}
-
-// ---------- Market-claim issuance (v1.1) ----------
-
-async function issueMarketClaimPsp(
-  claim: MarketClaim,
-  market: Market
-): Promise<IssuePspResult> {
-  // Market must be resolved before a claim can yield a PSP — without a winning
-  // outcome, the PspMarketClaim block is incoherent. Fail loud rather than
-  // silently writing a malformed proof.
-  if (market.winningOutcome === undefined || market.status !== "resolved") {
-    throw new HttpError(
-      400,
-      `Cannot issue market-claim PSP: market ${market.id} is not resolved`
-    );
-  }
-
-  if (!market.resolvesAt) {
-    throw new HttpError(
-      400,
-      `Cannot issue market-claim PSP: market ${market.id} has no resolvesAt timestamp`
-    );
-  }
-
-  const supabase = getSupabaseAdmin();
-
-  // Idempotency lookup keyed on market_claim_id (parallel to request_id for
-  // payment PSPs). The schema's CHECK constraint guarantees these two columns
-  // are mutually exclusive.
-  const { data: existing } = await supabase
-    .from("psp_documents")
-    .select("document")
-    .eq("market_claim_id", claim.id)
-    .maybeSingle();
-
-  if (existing?.document) {
-    return { psp: existing.document as unknown as PspV1, isNew: false };
-  }
-
-  const signingKey = getPspSigningKey();
-  const networkMode = getNetworkMode();
-
-  // Fetch and validate the MarketClaimed log against the on-chain tx.
-  const { settlement } = await readMarketClaimLog(claim, market.onchainAddress);
-
-  const { privateKeyToAccount } = await import("viem/accounts");
-  const issuerAccount = privateKeyToAccount(signingKey);
-
-  // payoutMicros is stored as a number in 1e6 base; render the human form
-  // ("5.00") for the PSP, while sharesRedeemed stays at base scale per spec.
-  const payoutAmount = formatUnits(BigInt(claim.payoutMicros), USDC_DECIMALS);
-
-  const core: PspCore = {
-    version: 1,
-    networkMode,
-    issuer: {
-      name: PSP_ISSUER_NAME,
-      url: PSP_ISSUER_URL,
-      publicKey: issuerAccount.address,
-    },
-    marketClaim: {
-      marketId: claim.marketId,
-      onchainMarket: market.onchainAddress,
-      question: market.question,
-      outcome: claim.outcome,
-      winningOutcome: market.winningOutcome,
-      sharesRedeemed: claim.sharesMicros.toString(),
-      payoutAmount,
-      resolvedAt: market.resolvesAt,
-    },
-    settlement: {
-      ...settlement,
-      chainId: ARC_CHAIN_ID,
-    },
-  };
-
-  const psp = await buildSignedPsp(core, signingKey);
-
-  const { error: insertError } = await supabase.from("psp_documents").upsert(
-    {
-      uid: psp.uid,
-      market_claim_id: claim.id,
-      network_mode: networkMode,
-      digest: psp.digest,
-      document: psp as unknown as Record<string, unknown>,
-      issuer_public_key: issuerAccount.address.toLowerCase(),
-      signature: psp.signature.value,
-      created_at: psp.createdAt,
-    },
-    { onConflict: "market_claim_id" }
-  );
-
-  if (insertError) {
-    throw new HttpError(500, `Failed to persist PSP: ${insertError.message}`);
-  }
-
-  // Stamp the claim row with the new PSP UID so the frontend can subscribe
-  // to `market_claims` realtime and surface the proof immediately. Non-fatal:
-  // the PSP itself is already persisted and discoverable via market_claim_id.
-  try {
-    await supabase
-      .from("market_claims")
-      .update({ psp_uid: psp.uid })
-      .eq("id", claim.id);
-  } catch {
-    // Non-fatal — PSP is the source of truth; the psp_uid column is a cache.
   }
 
   return { psp, isNew: true };

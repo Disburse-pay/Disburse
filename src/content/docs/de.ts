@@ -1,23 +1,15 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
-import { PRODUCTION_DOCS_HOSTNAME } from "../../lib/routing";
 import type { DocsSection, DocsSummaryItem } from "./types";
+import { docsSections, arcadeSections } from "./en";
 
-export const docsSectionsDe: DocsSection[] = [
-  {
-    title: "Projektumfang",
-    body: [
-      "Disburse ist eine nicht-kustodiale Zahlungskonsole für Arc Testnet. Sie deckt zwei praktische Aufgaben ab: eine Stablecoin-Überweisung aus einer injected Wallet senden und eine QR-Zahlungsanfrage erstellen, die eine andere Wallet öffnen und bezahlen kann.",
-      "Der aktuelle Build ist bewusst eng gehalten. Die App hält keine Guthaben, sammelt keine Private Keys und betreibt kein Verwahrkonto. Der Browser bereitet die Anfrage vor, die Wallet signiert die Transaktion, und der Zahlungsstatus wird gegen Arc-Testnet-Daten verifiziert."
-    ],
-    points: [
-      "Primäre App-Routen: /payments, /qr-payments und /pay.",
-      `Dokumentation wird von ${PRODUCTION_DOCS_HOSTNAME} ausgeliefert.`,
-      "Unterstützt werden Wallet-Verbindung, Wechsel zu Arc Testnet, Gas-Schätzung, ERC-20-Transfers, QR-Anfragen, Transferverifizierung, Import/Export und Rechnungsdownload.",
-      "Nicht enthalten in diesem Release: kustodiale Guthaben, Permit2, backend-erzwungene 402-Flows, MPP-Rails und serverseitiger Replay-Schutz."
-    ]
-  },
-  {
+/**
+ * Fully translated sections, keyed by the canonical English title from en.ts.
+ * Sections not in this map fall back to the English body with a translated
+ * headline (see fallbackTitles) so the structure never drifts from en.ts.
+ */
+const translated: Record<string, DocsSection> = {
+  "Payment flows": {
     title: "Zahlungsabläufe",
     body: [
       "Disburse trennt direkte Überweisungen von anfragebasierten Zahlungen. Direkte Zahlungen werden genutzt, wenn Sender, Empfänger, Token und Betrag bereits bekannt sind. QR-Zahlungen werden genutzt, wenn ein Anforderer eine feste Anfrage veröffentlichen will.",
@@ -29,7 +21,7 @@ export const docsSectionsDe: DocsSection[] = [
       "Direkte Zahlungen erzeugen keine QR-Anfragedatensätze im lokalen Ledger."
     ]
   },
-  {
+  "Network and assets": {
     title: "Netzwerk und Assets",
     body: [
       "Die App ist auf Arc Testnet festgelegt. Native Gas wird als USDC mit 18 Dezimalstellen dargestellt, während unterstützte ERC-20-Zahlungsbeträge 6 Dezimalstellen verwenden.",
@@ -43,7 +35,7 @@ export const docsSectionsDe: DocsSection[] = [
       `EURC: ${TOKENS.EURC.address}`
     ]
   },
-  {
+  "QR request payload": {
     title: "QR-Anfrage-Payload",
     body: [
       "Ein QR-Code enthält eine /pay-URL mit einem base64url-JSON-Payload im Query-Parameter r. Der Payload ist nur eine portable Anfragebeschreibung; er enthält niemals Private Keys, Wallet-Freigaben, Token-Guthaben oder signierte Transaktionen.",
@@ -56,7 +48,7 @@ export const docsSectionsDe: DocsSection[] = [
     ],
     code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
   },
-  {
+  "Wallet execution": {
     title: "Wallet-Ausführung",
     body: [
       "Zahlungen sind standardmäßige ERC-20-transfer-Aufrufe, die von der verbundenen Wallet signiert werden. Die App schätzt Gas mit viem, wendet den Arc-Gaspreis-Floor an, speichert den Transaktionshash sofort nach dem Senden und wartet dann auf Bestätigung.",
@@ -69,7 +61,7 @@ export const docsSectionsDe: DocsSection[] = [
       "Gas: Schätzungen werden für Anzeige und Saldo-Prüfungen genutzt; die Wallet finalisiert das Transaktionsgas beim Signieren."
     ]
   },
-  {
+  "Local ledger and realtime": {
     title: "Lokales Ledger und Realtime",
     body: [
       "QR-Anfragen und Belege werden im localStorage des Browsers gespeichert, damit der Anforderer ohne Konto arbeiten kann. Das Ledger unterstützt JSON-Export und -Import für Backup oder Migration.",
@@ -82,7 +74,7 @@ export const docsSectionsDe: DocsSection[] = [
       "Importierte Explorer-URLs werden aus dem verifizierten Arcscan-Transaktionshash neu erzeugt."
     ]
   },
-  {
+  "Invoice output": {
     title: "Rechnungsausgabe",
     body: [
       "Nachdem der Zahler bestätigt und der Transfer aus Arc-Testnet-Daten verifiziert wurde, kann die Zahlungsseite eine lokale PDF-Rechnung erstellen.",
@@ -94,7 +86,7 @@ export const docsSectionsDe: DocsSection[] = [
       "Kein Server speichert oder versendet Rechnungsdateien in diesem Build."
     ]
   },
-  {
+  Verification: {
     title: "Verifizierung",
     body: [
       "Die Verifizierung prüft zuerst einen bekannten Transaktionshash. Wenn kein Hash vorliegt, scannt sie ERC-20-Transfer-Logs in 10.000-Block-Fenstern vom Startblock bis zum neuesten Block und vergleicht Empfänger plus exakten Tokenbetrag.",
@@ -107,7 +99,30 @@ export const docsSectionsDe: DocsSection[] = [
     ],
     code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
   }
-];
+};
+
+/** Translated headlines for sections whose bodies fall back to English. */
+const fallbackTitles: Record<string, string> = {
+  "What Disburse is": "Was Disburse ist",
+  "Tech and stack": "Technik und Stack",
+  Contracts: "Smart Contracts",
+  "Portable Settlement Proofs": "Portable Settlement Proofs",
+  "API and webhooks": "API und Webhooks"
+};
+
+const arcadeTitles: Record<string, string> = {
+  "Cluck Run": "Cluck Run",
+  "The coin slot": "Der Coin Slot",
+  "Runs and the leaderboard": "Runs und das Leaderboard"
+};
+
+export const docsSectionsDe: DocsSection[] = docsSections.map(
+  (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
+);
+
+export const arcadeSectionsDe: DocsSection[] = arcadeSections.map(
+  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
+);
 
 export const docsSummaryItemsDe: DocsSummaryItem[] = [
   {

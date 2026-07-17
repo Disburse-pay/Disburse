@@ -1,9 +1,8 @@
 import { encodeAbiParameters, encodeEventTopics, type Log } from "viem";
 import { describe, expect, it } from "vitest";
 import { erc20Abi, TOKENS } from "../src/lib/arc.js";
-import { ARC_DESTINATION_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID } from "../src/lib/crosschain.js";
 import { parseTokenAmount, type PaymentRequest } from "../src/lib/payments.js";
-import { buildRecoverableCrossChainOpenRequest, readCreateQrRequestInput, resolveSubmittedReceiptConfirmation } from "./qr.js";
+import { readCreateQrRequestInput, resolveSubmittedReceiptConfirmation } from "./qr.js";
 
 const recipient = "0x1111111111111111111111111111111111111111";
 const sender = "0x2222222222222222222222222222222222222222";
@@ -68,36 +67,6 @@ describe("server QR confirmation mapping", () => {
     });
   });
 
-  it("keeps cross-chain requests open and clears a recoverable wrong hash", () => {
-    const wrongHash = `0x${"d".repeat(64)}` as `0x${string}`;
-    const openRequest = buildRecoverableCrossChainOpenRequest(
-      {
-        ...request,
-        destinationChainId: ARC_DESTINATION_CHAIN_ID,
-        allowedSourceChainIds: [ARC_DESTINATION_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID],
-        settlement: {
-          destinationChainId: ARC_DESTINATION_CHAIN_ID,
-          sourceChainId: BASE_SEPOLIA_CHAIN_ID,
-          sourceTxHash: wrongHash,
-          stage: "proving"
-        }
-      },
-      wrongHash,
-      {
-        retainHash: false,
-        sourceChainIdInput: BASE_SEPOLIA_CHAIN_ID
-      }
-    );
-
-    expect(openRequest.status).toBe("open");
-    expect(openRequest.txHash).toBeUndefined();
-    expect(openRequest.settlement).toMatchObject({
-      destinationChainId: ARC_DESTINATION_CHAIN_ID,
-      sourceChainId: BASE_SEPOLIA_CHAIN_ID
-    });
-    expect(openRequest.settlement?.sourceTxHash).toBeUndefined();
-    expect(openRequest.settlement?.stage).toBeUndefined();
-  });
 });
 
 function transferLog(value: bigint): Log {

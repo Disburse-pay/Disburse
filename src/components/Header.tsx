@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, LogOut, Menu, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { AlertTriangle, Bell, LogOut, Menu, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
 import { useI18n } from "../lib/i18n";
 
 type Props = {
@@ -17,6 +17,8 @@ type Props = {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenNav?: () => void;
+  onOpenInbox?: () => void;
+  inboxUnreadCount?: number;
   theme: "light" | "dark";
 };
 
@@ -38,6 +40,8 @@ export default function Header({
   onToggleTheme,
   onOpenSettings,
   onOpenNav,
+  onOpenInbox,
+  inboxUnreadCount = 0,
   theme,
 }: Props) {
   const { t } = useI18n();
@@ -61,11 +65,11 @@ export default function Header({
           </button>
         )}
         <div className="min-w-0">
-          <h1 className="truncate text-[17px] font-semibold leading-tight tracking-[-0.012em] text-[var(--ink)]">
+          <h1 className="truncate text-2xl font-semibold leading-tight tracking-[-0.012em] text-[var(--ink)]">
             {displayTitle}
           </h1>
           {displaySubtitle && (
-            <p className="mt-0.5 truncate text-[13px] leading-tight text-[var(--muted)]">
+            <p className="mt-0.5 truncate text-sm leading-tight text-[var(--muted)]">
               {displaySubtitle}
             </p>
           )}
@@ -80,13 +84,27 @@ export default function Header({
           title={`${expectedChainLabel} · chainId ${expectedChainId}`}
         >
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-soft)]" aria-hidden="true" />
-          <span className="text-[12.5px] font-medium text-[var(--ink)]">
+          <span className="text-sm font-medium text-[var(--ink)]">
             {expectedChainLabel}
           </span>
-          <span className="text-[11.5px] text-[var(--muted)]">Testnet</span>
+          <span className="text-xs text-[var(--muted)]">{t("testnet")}</span>
         </div>
 
-        <span className="mx-1 hidden h-5 w-px bg-[var(--line)] md:inline-block" aria-hidden="true" />
+        {onOpenInbox && (
+          <div className="relative">
+            <IconButton onClick={onOpenInbox} ariaLabel={t("inbox")}>
+              <Bell size={16} strokeWidth={1.75} />
+            </IconButton>
+            {inboxUnreadCount > 0 && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary-bg)] px-1 text-[10px] font-semibold leading-none text-[color:var(--primary-text)]"
+              >
+                {inboxUnreadCount > 9 ? "9+" : inboxUnreadCount}
+              </span>
+            )}
+          </div>
+        )}
 
         <IconButton onClick={onOpenSettings} ariaLabel={t("openSettings")}>
           <SettingsIcon size={16} strokeWidth={1.75} />
@@ -123,15 +141,13 @@ export default function Header({
           </AnimatePresence>
         </IconButton>
 
-        <span className="mx-1 h-5 w-px bg-[var(--line)]" aria-hidden="true" />
-
         {/* Wallet state */}
         {!account ? (
           <button
             type="button"
             onClick={onConnect}
             disabled={isConnecting}
-            className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:opacity-60 shadow-sm"
+            className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:opacity-60 shadow-sm"
           >
             {isConnecting ? t("connecting") : t("connectWallet")}
           </button>
@@ -140,7 +156,7 @@ export default function Header({
             type="button"
             onClick={onSwitch}
             disabled={isConnecting}
-            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--paper)] px-3 py-1.5 text-[12.5px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--ink-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--paper)] px-3 py-1.5 text-sm font-medium text-[var(--ink)] transition-colors hover:border-[var(--ink-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
           >
             <AlertTriangle size={13} strokeWidth={1.75} />
             {t("switchToNetwork", { network: expectedChainLabel })}
@@ -159,7 +175,6 @@ function translateHeaderTitle(title: string, t: (key: string, params?: Record<st
     "Direct send": "directSend",
     "QR requests": "qrPayments",
     "Pay request": "routePayTitle",
-    "Import Â· Export": "routeBackupTitle",
     "Import · Export": "routeBackupTitle",
     Documentation: "documentation",
   };
@@ -185,6 +200,7 @@ function ConnectedWalletPill({
   shortAddr: string;
   onDisconnect?: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -205,7 +221,7 @@ function ConnectedWalletPill({
         className="flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--paper-2)]"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--green-text)]" aria-hidden="true" />
-        <span className="font-mono text-[12px] leading-none text-[var(--ink)]">
+        <span className="font-mono text-sm leading-none text-[var(--ink)]">
           {shortAddr}
         </span>
       </button>
@@ -217,10 +233,10 @@ function ConnectedWalletPill({
               setOpen(false);
               onDisconnect();
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-base text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
           >
             <LogOut size={13} strokeWidth={1.75} />
-            Disconnect
+            {t("disconnect")}
           </button>
         </div>
       )}
@@ -238,11 +254,14 @@ function IconButton({
   children: React.ReactNode;
 }) {
   return (
+    // Fixed 32px square + flex centering: without this, an icon wrapped in an
+    // inline span (the animated theme icon) rides the text baseline and
+    // inflates its button to 40px while the ones next to it sit at 32px.
     <button
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="rounded-md p-2 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
     >
       {children}
     </button>

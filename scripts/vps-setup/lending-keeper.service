@@ -1,0 +1,23 @@
+[Unit]
+Description=Disburse Lending - Keeper (Pyth pusher + liquidation scanner)
+Documentation=file:///opt/disburse/scripts/lending-keeper.ts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/disburse
+EnvironmentFile=/etc/disburse/lending-keeper.env
+ExecStart=/usr/bin/node --import tsx scripts/lending-keeper.ts
+Restart=always
+RestartSec=15s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lending-keeper
+LimitNOFILE=4096
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

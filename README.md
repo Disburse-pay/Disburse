@@ -48,9 +48,8 @@ Disburse is a cryptographic receipt and settlement layer for stablecoin transact
 2. **Cross-Chain Payments**: Payers can pay from **Base Sepolia** or **Monad Testnet** using remote escrows that route settlements to **Arc Testnet** via Polymer cryptographic state proofs in 2 to 5 minutes.
 3. **Direct Send (Wallet-to-Wallet)**: Direct peer-to-peer payments on Arc Testnet, generating immediate verifiable receipts.
 4. **Portable Settlement Proofs (PSP)**: Cryptographically signed, content-addressed JSON proofs verifying stablecoin settlement without relying on Disburse infrastructure.
-5. **Milestone Invoice Chains**: Sequential payment flows where the settlement proof of milestone $N-1$ acts as the cryptographic unlock condition for milestone $N$.
-6. **Prediction Markets (Beta)**: Binary YES/NO outcome markets with orderbooks operating on Arc Testnet, allowing shares to be minted, traded, and claimed, generating specialized market-claim PSPs.
-7. **Webhooks & APIs**: Secure event notification using HMAC-SHA256 signatures with automatic retry policies and deactivation limits.
+5. **Prediction Markets (Beta)**: Binary YES/NO outcome markets with orderbooks operating on Arc Testnet, allowing shares to be minted, traded, and claimed, generating specialized market-claim PSPs.
+6. **Webhooks & APIs**: Secure event notification using HMAC-SHA256 signatures with automatic retry policies and deactivation limits.
 
 ---
 

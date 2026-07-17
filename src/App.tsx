@@ -1,35 +1,31 @@
-import { type ComponentProps, type FormEvent, type MouseEvent, type ReactNode, type RefObject, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, type FormEvent, type MouseEvent, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen,
   Check,
   Download,
-  ExternalLink,
   FileText,
   Moon,
-  QrCode,
-  Send,
   ShieldCheck,
   Sun
 } from "lucide-react";
 import Sidebar from "@/src/components/Sidebar";
 import Header from "@/src/components/Header";
 import SidePanel from "@/src/components/ui/SidePanel";
+import DateInput from "@/src/components/ui/DateInput";
 import SettingsPanel from "@/src/components/SettingsPanel";
-import BalanceCard from "@/src/components/BalanceCard";
 import TransactionsTable from "@/src/components/TransactionsTable";
-import MonthlyStats from "@/src/components/MonthlyStats";
-import SystemStatusCard from "@/src/components/SystemStatusCard";
 import QrShareCard from "@/src/components/QrShareCard";
+import DisburseIdCard from "@/src/components/DisburseIdCard";
+import HandleHint from "@/src/components/HandleHint";
+import InboxPanel, { useInboxUnread } from "@/src/components/InboxPanel";
 import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
 import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice } from "./lib/compliance";
 
 
-import { formatUnits, parseUnits, type Hash } from "viem";
+import { formatUnits, type Hash } from "viem";
 import {
   ARC_CHAIN_ID,
-  ARC_EXPLORER_URL,
   ARC_FAUCET_URL
 } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
@@ -39,24 +35,6 @@ import {
   loadSettings
 } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
-import {
-  ARC_DESTINATION_CHAIN_ID,
-  BASE_SEPOLIA_CHAIN_ID,
-  getAllowedSourceChainIds,
-  getCrossChain,
-  getCrossChainExplorerTxUrl,
-  getCrossChainLabel,
-  isRemotePaymentSourceChainId,
-  type PaymentSourceChainId
-} from "./lib/crosschain";
-import {
-  estimateCrossChainPayment,
-  readCrossChainBalances,
-  submitCrossChainPayment,
-  switchToCrossChain,
-  waitForCrossChainPaymentReceipt,
-  waitForCrossChainReceipt
-} from "./lib/crosschainOnchain";
 import {
   checkArcRpc,
   connectWallet,
@@ -81,9 +59,7 @@ import {
   buildShareUrl,
   createExpiry,
   decodeRequestPayload,
-  encodeRequestPayload,
   formatTokenAmount,
-  isCrossChainPaymentRequest,
   isPaymentExpired,
   isPaymentPayable,
   mergeScannedRequest,
@@ -114,42 +90,24 @@ import {
   upsertReceipt,
   upsertRequest
 } from "./lib/storage";
+import { handleFromInput } from "./lib/idsApi";
 import {
   confirmRemoteQrPayment,
   createRemoteQrRequest,
   fetchRemoteQrStatus,
   recordRemoteQrSubmission,
-  settleRemoteQrPayment,
   type QrConfirmationPayload
 } from "./lib/qrApi";
 import { applyQrRealtimeEvent, shouldHideQrForStatus, type QrRealtimeEvent, type QrStatusPayload } from "./lib/realtime";
 import { getSupabaseBrowserClient } from "./lib/supabaseClient";
 import { useDisburseDynamicWallet } from "./lib/dynamic";
 import LandingPage from "./LandingPage";
+import { lazyChart } from "./lib/lazyChart";
 
-// Route-level code splitting. Docs content + multilingual sections are heavy
-// and rarely on the user's initial path, so they ship in a separate chunk.
-const DocsPage = lazy(() => import("./pages/DocsPage"));
-
-// The bet subdomain (bet.disburse.online) renders an entirely separate shell.
-// Loaded lazily so it never ships to users who only use the payments app.
-const BetApp = lazy(() => import("./BetApp"));
-
-function DocsFallback() {
-  // Quiet placeholder that matches the docs page rhythm so the layout
-  // does not jump when the chunk arrives. Renders for ~tens of ms in
-  // most cases — no spinner.
-  return (
-    <div className="mx-auto max-w-[1180px] pb-16">
-      <div className="border-b border-[var(--line)] pb-10">
-        <div className="h-3 w-32 bg-[var(--line-soft)]" aria-hidden="true" />
-        <div className="mt-4 h-9 w-3/4 bg-[var(--line-soft)]" aria-hidden="true" />
-        <div className="mt-3 h-4 w-2/3 bg-[var(--line-soft)]" aria-hidden="true" />
-      </div>
-      <span className="sr-only">Loading documentation…</span>
-    </div>
-  );
-}
+// Chart cards pull in recharts (heavy). Load them on demand so the `charts`
+// chunk stays off the initial bundle and the mobile pay page.
+const BalanceCard = lazyChart(() => import("@/src/components/BalanceCard"));
+const MonthlyStats = lazyChart(() => import("@/src/components/MonthlyStats"));
 
 import { cx } from "./lib/cx";
 import {
@@ -159,14 +117,9 @@ import {
 } from "./lib/theme";
 import {
   getInitialPage,
-  isDocsHostname,
   isPaySurface,
-  getDocsHref,
-  getBetHref,
   getPayShareOrigin,
   getInternalTargetPath,
-  shouldRedirectLegacyBetRoute,
-  shouldRedirectLegacyDocsRoute,
   getCurrentRouteKey,
   type Page
 } from "./lib/routing";
@@ -185,6 +138,8 @@ type QrFormState = DirectFormState & {
   label: string;
   note: string;
   invoiceDate: string;
+  /** Optional Disburse ID that should receive the request in their inbox. */
+  notify: string;
 };
 
 type Notice = {
@@ -218,7 +173,8 @@ const emptyQrForm: QrFormState = {
   amount: "",
   label: "",
   note: "",
-  invoiceDate: todayInputValue()
+  invoiceDate: todayInputValue(),
+  notify: ""
 };
 
 function App() {
@@ -233,7 +189,6 @@ function App() {
   const [receipts, setReceipts] = useState<Receipt[]>(() => loadReceipts());
   const [selectedId, setSelectedId] = useState<string | undefined>(() => loadRequests()[0]?.id);
   const [payRequestId, setPayRequestId] = useState<string | undefined>();
-  const [paySourceChainId, setPaySourceChainId] = useState<PaymentSourceChainId>(ARC_CHAIN_ID);
   const [shareUrl, setShareUrl] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [directNotice, setDirectNotice] = useState<Notice | undefined>();
@@ -256,13 +211,15 @@ function App() {
   const [isEstimatingPay, setIsEstimatingPay] = useState(false);
   const [isPayingQr, setIsPayingQr] = useState(false);
   const [payLifecycle, setPayLifecycle] = useState<PayLifecycle>("idle");
-  const [payApprovalHash, setPayApprovalHash] = useState<Hash>();
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
   const [appSettings] = useState<AppSettings>(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
+  const inboxUnreadCount = useInboxUnread(account, inboxRefreshKey);
   const dynamicWallet = useDisburseDynamicWallet();
 
   const selectedRequest = useMemo(
@@ -286,8 +243,7 @@ function App() {
   );
 
   const wrongChain = Boolean(account && chainId !== undefined && chainId !== ARC_CHAIN_ID);
-  const payRequiredChainId = isCrossChainPaymentRequest(payRequest) ? paySourceChainId : ARC_CHAIN_ID;
-  const payWrongChain = Boolean(account && chainId !== undefined && chainId !== payRequiredChainId);
+  const payWrongChain = wrongChain;
   const hasWalletProvider = dynamicWallet.enabled || Boolean(getInjectedProvider());
   const payDisplayStatus = payRequest ? refreshDerivedStatus(payRequest, now).status : "open";
   const payIsExpired = payRequest ? isPaymentExpired(payRequest, now) : false;
@@ -295,9 +251,7 @@ function App() {
   const directInsufficientToken = useInsufficientToken(directBalances, directForm);
   const payInsufficientToken = useInsufficientToken(payBalances, payRequest);
   const directMissingGas = hasInsufficientGas(directBalances, directForm, directEstimate);
-  const payMissingGas = usesRemoteSource(payRequest, paySourceChainId)
-    ? hasInsufficientNativeGas(payBalances, payEstimate)
-    : hasInsufficientGas(payBalances, payRequest, payEstimate);
+  const payMissingGas = hasInsufficientGas(payBalances, payRequest, payEstimate);
   const rpcIsStale = Boolean(rpcHealth && Date.now() - new Date(rpcHealth.checkedAt).getTime() > 18_000);
   const rpcStatusLabel = !rpcHealth
     ? "checking"
@@ -323,14 +277,8 @@ function App() {
       ?.setAttribute("content", theme === "dark" ? "#0a0b0e" : "#f6f6f3");
   }, [theme]);
 
-  useEffect(() => {
-    if (shouldRedirectLegacyDocsRoute()) {
-      window.location.replace(getDocsHref());
-    }
-    if (shouldRedirectLegacyBetRoute()) {
-      window.location.replace(getBetHref(window.location.pathname));
-    }
-  }, []);
+  // (/docs never reaches this component — main.tsx redirects it to the docs
+  // host before anything mounts.)
 
   // Legacy: /settings is now a dialog, not a page. Open it and tidy the URL.
   useEffect(() => {
@@ -341,18 +289,16 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    // Bet-subdomain pages are handled by BetApp and never reach this code,
-    // so the title map is keyed only on the app-shell pages.
+    // Docs render on the docs host and never reach this code, so the title
+    // map is keyed only on the app-shell pages.
     const titles: Partial<Record<Page, string>> = {
       landing: "Disburse - Settlement-grade stablecoin payments",
-      dashboard: "Overview · Disburse",
-      payments: "Direct send · Disburse",
-      "qr-payments": "QR requests · Disburse",
+      dashboard: "Dashboard · Disburse",
+      payments: "Send · Disburse",
+      "qr-payments": "QR · Disburse",
       pay: "Pay request · Disburse",
       "import-export": "Backup · Disburse",
-      milestones: "Milestones · Disburse",
       statements: "Statements · Disburse",
-      docs: "Documentation · Disburse",
     };
     document.title = titles[page] ?? "Disburse";
   }, [page]);
@@ -465,48 +411,6 @@ function App() {
     };
   }, [page, selectedRequest?.id]);
 
-  // Client-driven settlement: when a cross-chain payment enters the
-  // "settling" stage, poll the settle endpoint every 30 s so the
-  // Polymer proof is checked and (once ready) settlement is submitted
-  // immediately instead of waiting for the next cron run.
-  useEffect(() => {
-    if (payLifecycle !== "settling" || !payRequest?.id) {
-      return;
-    }
-
-    let isActive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const poll = () => {
-      if (!isActive) return;
-      settleRemoteQrPayment(payRequest.id)
-        .then(async (result) => {
-          if (!isActive) return;
-          if (result?.settled) {
-            // Settlement completed — fetch the full status so the UI
-            // updates immediately without waiting for the Realtime event.
-            const payload = await fetchRemoteQrStatus(payRequest.id).catch(() => undefined);
-            if (isActive && payload) {
-              applyQrStatusPayload(payload, setRequests, setReceipts);
-            }
-            return;
-          }
-          timer = setTimeout(poll, 30_000);
-        })
-        .catch(() => {
-          if (isActive) timer = setTimeout(poll, 30_000);
-        });
-    };
-
-    // First attempt after a short delay (proof typically takes 2-5 min).
-    timer = setTimeout(poll, 30_000);
-
-    return () => {
-      isActive = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [payLifecycle, payRequest?.id]);
-
   useEffect(() => {
     if (!selectedRequest) {
       setShareUrl("");
@@ -572,19 +476,14 @@ function App() {
         upsertRequest(current, mergeScannedRequest(current.find((request) => request.id === decoded.id), decoded))
       );
       setPayRequestId(decoded.id);
-      if (isCrossChainPaymentRequest(decoded)) {
-        setPaySourceChainId(chooseDefaultPaymentSource(decoded));
-      }
       setPayBalances(undefined);
       setPayEstimate(undefined);
-      setPayApprovalHash(undefined);
       setPayLifecycle("idle");
       setPayNotice({ tone: "info", text: "QR payment request loaded." });
     } catch (error) {
       setPayRequestId(undefined);
       setPayBalances(undefined);
       setPayEstimate(undefined);
-      setPayApprovalHash(undefined);
       setPayLifecycle("idle");
       setPayNotice({ tone: "error", text: errorToMessage(error) });
     }
@@ -604,7 +503,6 @@ function App() {
         setPayBalances(undefined);
         setDirectEstimate(undefined);
         setPayEstimate(undefined);
-        setPayApprovalHash(undefined);
         return;
       }
 
@@ -627,7 +525,6 @@ function App() {
       setPayBalances(undefined);
       setDirectEstimate(undefined);
       setPayEstimate(undefined);
-      setPayApprovalHash(undefined);
     };
 
     void syncDynamicWallet();
@@ -653,7 +550,6 @@ function App() {
       setPayBalances(undefined);
       setDirectEstimate(undefined);
       setPayEstimate(undefined);
-      setPayApprovalHash(undefined);
     };
 
     const handleChain = (value: unknown) => {
@@ -662,7 +558,6 @@ function App() {
       setPayBalances(undefined);
       setDirectEstimate(undefined);
       setPayEstimate(undefined);
-      setPayApprovalHash(undefined);
     };
 
     provider.on("accountsChanged", handleAccounts);
@@ -722,7 +617,7 @@ function App() {
       }
       void refreshPayBalances(payRequest);
     }
-  }, [account, wrongChain, payWrongChain, page, payRequest?.id, payRequest?.token, payRequest?.amount, paySourceChainId]);
+  }, [account, wrongChain, payWrongChain, page, payRequest?.id, payRequest?.token, payRequest?.amount]);
 
   async function handleConnectWallet() {
     if (dynamicWallet.enabled && !dynamicWallet.sdkHasLoaded) {
@@ -796,38 +691,6 @@ function App() {
       const nextChainId = await getWalletChainId(provider);
       setChainId(nextChainId);
       setWalletNotice({ tone: "success", text: "Arc Testnet selected." });
-    } catch (error) {
-      setWalletNotice({ tone: "error", text: errorToMessage(error) });
-    } finally {
-      setIsConnecting(false);
-    }
-  }
-
-  async function handleSwitchPayNetwork() {
-    if (!usesRemoteSource(payRequest, paySourceChainId)) {
-      await handleSwitchNetwork();
-      return;
-    }
-
-    const provider = await getWalletProvider();
-    if (!provider) {
-      setWalletNotice({
-        tone: "error",
-        text: dynamicWallet.enabled
-          ? "Connect a Dynamic EVM wallet before switching networks."
-          : "No injected wallet found. Open this page in a wallet browser or install a supported desktop wallet."
-      });
-      return;
-    }
-
-    setIsConnecting(true);
-    setWalletNotice(undefined);
-
-    try {
-      await switchToCrossChain(provider, paySourceChainId);
-      const nextChainId = await getWalletChainId(provider);
-      setChainId(nextChainId);
-      setWalletNotice({ tone: "success", text: `${getCrossChainLabel(paySourceChainId)} selected.` });
     } catch (error) {
       setWalletNotice({ tone: "error", text: errorToMessage(error) });
     } finally {
@@ -923,14 +786,19 @@ function App() {
     setQrNotice(undefined);
 
     try {
-      const remoteRequest = await createRemoteQrRequest(qrForm);
-      const request = remoteRequest ?? (await createLocalQrRequest(qrForm));
+      const notify = qrForm.notify.trim() ? handleFromInput(qrForm.notify) : undefined;
+      const remote = await createRemoteQrRequest({ ...qrForm, notify });
+      const request = remote?.request ?? (await createLocalQrRequest(qrForm));
 
       setRequests((current) => upsertRequest(current, request));
       setSelectedId(request.id);
       setQrNotice({
         tone: "success",
-        text: remoteRequest ? "QR payment request generated and synced." : "QR payment request generated."
+        text: remote
+          ? remote.notified
+            ? `QR payment request generated and synced. @${remote.notified} was notified in their inbox.`
+            : "QR payment request generated and synced."
+          : "QR payment request generated."
       });
       setQrForm((current) => ({
         ...emptyQrForm,
@@ -952,12 +820,7 @@ function App() {
       return;
     }
     if (payWrongChain) {
-      setPayNotice({
-        tone: "error",
-        text: usesRemoteSource(request, paySourceChainId)
-          ? `Switch to ${getCrossChainLabel(paySourceChainId)} before estimating.`
-          : "Switch to Arc Testnet before estimating."
-      });
+      setPayNotice({ tone: "error", text: "Switch to Arc Testnet before estimating." });
       return;
     }
     if (!isPaymentPayable(request)) {
@@ -969,9 +832,7 @@ function App() {
     setPayNotice({ tone: "info", text: "Estimating QR payment." });
 
     try {
-      const nextEstimate = usesRemoteSource(request, paySourceChainId)
-        ? await estimateCrossChainPayment(account, request, paySourceChainId)
-        : await estimatePayment(account, request);
+      const nextEstimate = await estimatePayment(account, request);
       setPayEstimate(nextEstimate);
       await refreshPayBalances(request);
       setPayNotice({ tone: "success", text: "Estimate ready." });
@@ -990,12 +851,7 @@ function App() {
       return;
     }
     if (payWrongChain) {
-      setPayNotice({
-        tone: "error",
-        text: usesRemoteSource(request, paySourceChainId)
-          ? `Switch to ${getCrossChainLabel(paySourceChainId)} before paying.`
-          : "Switch to Arc Testnet before paying."
-      });
+      setPayNotice({ tone: "error", text: "Switch to Arc Testnet before paying." });
       return;
     }
 
@@ -1007,30 +863,20 @@ function App() {
 
     setIsPayingQr(true);
     setPayLifecycle("preparing");
-    setPayApprovalHash(undefined);
     setPayNotice({ tone: "info", text: "Preparing QR payment." });
 
     try {
-      const isRemoteSource = usesRemoteSource(request, paySourceChainId);
-      const balances = isRemoteSource
-        ? await readCrossChainBalances(account, request, paySourceChainId)
-        : await readBalances(account, request);
+      const balances = await readBalances(account, request);
       setPayBalances(balances);
       ensureTokenBalance(balances, request);
 
       let transferEstimate = payEstimate;
       if (!transferEstimate) {
         setPayNotice({ tone: "info", text: "Estimating QR payment." });
-        transferEstimate = isRemoteSource
-          ? await estimateCrossChainPayment(account, request, paySourceChainId)
-          : await estimatePayment(account, request);
+        transferEstimate = await estimatePayment(account, request);
         setPayEstimate(transferEstimate);
       }
-      if (isRemoteSource) {
-        ensureNativeGasBalance(balances, transferEstimate, getCrossChainLabel(paySourceChainId));
-      } else {
-        ensureGasBalance(balances, request, transferEstimate);
-      }
+      ensureGasBalance(balances, request, transferEstimate);
 
       const requestWithAttempt: PaymentRequest = {
         ...request,
@@ -1039,50 +885,13 @@ function App() {
       setPayLifecycle("awaiting_wallet");
       setPayNotice({ tone: "info", text: "Open your wallet and approve the payment." });
 
-      const hash = isRemoteSource
-        ? await submitCrossChainPayment(provider, account, requestWithAttempt, paySourceChainId, {
-            onApprovalRequested: () => {
-              setPayNotice({
-                tone: "info",
-                text: "First approve USDC spending in your wallet. A second wallet prompt will confirm the QR payment."
-              });
-            },
-            onApprovalSubmitted: (approvalHash) => {
-              setPayApprovalHash(approvalHash);
-            },
-            onApprovalConfirmed: () => {
-              setPayNotice({
-                tone: "info",
-                text: "USDC approval confirmed. Open your wallet again and confirm the QR payment."
-              });
-            },
-            onPaymentRequested: () => {
-              setPayNotice({
-                tone: "info",
-                text: "Confirm the QR payment transaction. This is the hash the verifier needs."
-              });
-            }
-          })
-        : await submitPayment(provider, account, requestWithAttempt);
+      const hash = await submitPayment(provider, account, requestWithAttempt);
       setPayLifecycle("submitted");
-      setPayNotice({
-        tone: "info",
-        text: isRemoteSource
-          ? "Source-chain payment submitted. Waiting for Polymer proof relay."
-          : "Transaction submitted. Verifying receipt."
-      });
+      setPayNotice({ tone: "info", text: "Transaction submitted. Verifying receipt." });
 
       let requestWithHash: PaymentRequest = { ...requestWithAttempt, txHash: hash };
-      if (isRemoteSource) {
-        await waitForCrossChainPaymentReceipt(paySourceChainId, hash, requestWithAttempt);
-      }
       try {
-        const submission = await recordRemoteQrSubmission(
-          request.id,
-          hash,
-          requestWithAttempt.submittedAt,
-          isCrossChainPaymentRequest(request) ? paySourceChainId : undefined
-        );
+        const submission = await recordRemoteQrSubmission(request.id, hash, requestWithAttempt.submittedAt);
         if (submission?.request) {
           requestWithHash = submission.request;
         }
@@ -1093,27 +902,14 @@ function App() {
 
       setPayLifecycle("confirming");
       try {
-        if (isRemoteSource) {
-          await waitForCrossChainReceipt(paySourceChainId, hash);
-        } else {
-          await waitForTransactionConfirmation(hash);
-        }
+        await waitForTransactionConfirmation(hash);
       } catch (error) {
         setPayLifecycle("submitted");
         setPayNotice({ tone: "info", text: errorToMessage(error) });
         return;
       }
 
-      if (isRemoteSource) {
-        setPayLifecycle("proving");
-        setPayNotice({ tone: "info", text: "Source payment confirmed. Requesting Polymer proof." });
-      }
-
-      const remoteConfirmation = await confirmRemoteQrPayment(
-        request.id,
-        hash,
-        isCrossChainPaymentRequest(request) ? paySourceChainId : undefined
-      ).catch((error) => {
+      const remoteConfirmation = await confirmRemoteQrPayment(request.id, hash).catch((error) => {
         setPayNotice({ tone: "info", text: errorToMessage(error) });
         return undefined;
       });
@@ -1121,12 +917,6 @@ function App() {
         applyQrStatusPayload(remoteConfirmation, setRequests, setReceipts);
         setPayLifecycle(remoteConfirmationToLifecycle(remoteConfirmation));
         setPayNotice(remoteConfirmationToNotice(remoteConfirmation));
-      } else if (isRemoteSource) {
-        setPayLifecycle("proving");
-        setPayNotice({
-          tone: "info",
-          text: "Source payment is confirmed, but the backend relay was unavailable. Use Verify after the API is available."
-        });
       } else {
         const result = await verifyPayment(requestWithHash);
         if (result.status === "paid") {
@@ -1166,53 +956,16 @@ function App() {
 
     setIsVerifying(true);
     setPayLifecycle(request.txHash ? "confirming" : "preparing");
-    setPayNotice({
-      tone: "info",
-      text: usesRemoteSource(request, request.settlement?.sourceChainId ?? paySourceChainId)
-        ? "Checking Polymer settlement status."
-        : "Scanning Arc Testnet logs."
-    });
+    setPayNotice({ tone: "info", text: "Scanning Arc Testnet logs." });
 
     try {
-      const verifySourceChainId = isCrossChainPaymentRequest(request)
-        ? request.settlement?.sourceChainId ?? paySourceChainId
-        : paySourceChainId;
-      const crossChainSourceHash = isCrossChainPaymentRequest(request)
-        ? request.settlement?.sourceTxHash ?? request.txHash
+      const remoteConfirmation = request.txHash
+        ? await confirmRemoteQrPayment(request.id, request.txHash).catch(() => undefined)
         : undefined;
-      if (crossChainSourceHash && usesRemoteSource(request, verifySourceChainId)) {
-        try {
-          await waitForCrossChainPaymentReceipt(verifySourceChainId, crossChainSourceHash, request);
-        } catch (error) {
-          setRequests((current) => upsertRequest(current, clearInvalidCrossChainSourceHash(request, verifySourceChainId)));
-          setPayLifecycle("idle");
-          setPayNotice({ tone: "error", text: errorToMessage(error) });
-          return;
-        }
-      }
-      const remoteConfirmation = isCrossChainPaymentRequest(request)
-        ? crossChainSourceHash
-          ? await confirmRemoteQrPayment(
-              request.id,
-              crossChainSourceHash,
-              verifySourceChainId
-            ).catch(() => undefined)
-          : undefined
-        : request.txHash
-          ? await confirmRemoteQrPayment(request.id, request.txHash).catch(() => undefined)
-          : undefined;
       if (remoteConfirmation) {
         applyQrStatusPayload(remoteConfirmation, setRequests, setReceipts);
         setPayLifecycle(remoteConfirmationToLifecycle(remoteConfirmation));
         setPayNotice(remoteConfirmationToNotice(remoteConfirmation));
-      } else if (usesRemoteSource(request, request.settlement?.sourceChainId ?? paySourceChainId)) {
-        setPayLifecycle(crossChainSourceHash ? "proving" : "idle");
-        setPayNotice({
-          tone: crossChainSourceHash ? "info" : "error",
-          text: crossChainSourceHash
-            ? "Source payment is known, but the backend relayer did not return a settlement yet."
-            : "No source-chain transaction is saved for this Arc-settlement request."
-        });
       } else {
         const result = await verifyPayment(request);
         if (result.status === "paid") {
@@ -1320,11 +1073,7 @@ function App() {
       return;
     }
     try {
-      setPayBalances(
-        usesRemoteSource(request, paySourceChainId)
-          ? await readCrossChainBalances(account, request, paySourceChainId)
-          : await readBalances(account, request)
-      );
+      setPayBalances(await readBalances(account, request));
     } catch (error) {
       setPayNotice({ tone: "error", text: errorToMessage(error) });
     }
@@ -1421,12 +1170,11 @@ function App() {
     theme,
     account,
     chainId,
-    expectedChainId: page === "pay" ? payRequiredChainId : ARC_CHAIN_ID,
-    expectedChainLabel:
-      page === "pay" && isCrossChainPaymentRequest(payRequest) ? getCrossChainLabel(paySourceChainId) : "Arc Testnet",
+    expectedChainId: ARC_CHAIN_ID,
+    expectedChainLabel: "Arc Testnet",
     isConnecting,
     onConnect: handleConnectWallet,
-    onSwitch: page === "pay" ? handleSwitchPayNetwork : handleSwitchNetwork,
+    onSwitch: handleSwitchNetwork,
     onNavigate: handleNavigate,
     onToggleTheme: handleThemeToggle
   };
@@ -1439,41 +1187,9 @@ function App() {
     );
   }
 
-  // bet.disburse.online (and local bet preview) renders a separate shell with
-  // its own header, nav, and routing. It still inherits the wallet provider
-  // from main.tsx, but it does not use the main app's sidebar or header.
-  if (
-    page === "markets" ||
-    page === "market-detail" ||
-    page === "market-positions" ||
-    page === "market-history"
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <BetApp />
-      </Suspense>
-    );
-  }
-
-  // On the docs.* subdomain, skip the app shell and render a docs-only layout
-  // with a slim top nav and a link back to the console. On `app.*`, the docs
-  // page still renders inside the regular app shell so it behaves like any
-  // other route.
-  const onDocsSubdomain = isDocsHostname(window.location.hostname);
-  if (page === "docs" && onDocsSubdomain) {
-    return (
-      <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-        <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-          <DocsTopNav onToggleTheme={handleThemeToggle} theme={theme} />
-          <main className="mx-auto max-w-[1180px] px-6 pt-10 md:px-10">
-            <Suspense fallback={<DocsFallback />}>
-              <DocsPage />
-            </Suspense>
-          </main>
-        </div>
-      </I18nProvider>
-    );
-  }
+  // Documentation is rendered by DocsApp on the docs host (mounted standalone
+  // in main.tsx, outside the wallet provider). It is never a route in this
+  // shell — /docs redirects there before App mounts.
 
   // pay.disburse.online — the dedicated, mobile-first hosted payment page. A
   // scanned QR lands here and sees only a slim brand bar and a single payment
@@ -1516,7 +1232,6 @@ function App() {
               status={payDisplayStatus}
               balances={payBalances}
               estimate={payEstimate}
-              approvalHash={payApprovalHash}
               notice={payNotice}
               walletNotice={walletNotice}
               now={now}
@@ -1531,15 +1246,7 @@ function App() {
               isVerifying={isVerifying}
               isGeneratingInvoice={isGeneratingInvoice}
               onConnect={handleConnectWallet}
-              onSwitch={handleSwitchPayNetwork}
-              sourceChainId={paySourceChainId}
-              onSourceChainChange={(chainId) => {
-                setPaySourceChainId(chainId);
-                setPayBalances(undefined);
-                setPayEstimate(undefined);
-                setPayApprovalHash(undefined);
-                setPayNotice(undefined);
-              }}
+              onSwitch={handleSwitchNetwork}
               onEstimate={handlePayEstimate}
               onPay={handlePayQrRequest}
               onVerify={() => handleVerifyQrRequest(payRequest)}
@@ -1556,27 +1263,22 @@ function App() {
     );
   }
 
-  // Bet pages render through BetApp, not this shell, so routeMeta covers only
-  // the app-shell pages.
-  type AppShellPage = Exclude<
-    Page,
-    "landing" | "markets" | "market-detail" | "market-positions" | "market-history" | "lending"
-  >;
+  // Docs render through DocsApp on the docs host, not this shell, so
+  // routeMeta covers only the app-shell pages.
+  type AppShellPage = Exclude<Page, "landing" | "docs">;
   const routeMeta: Record<AppShellPage, { title: string; subtitle: string }> = {
-    dashboard:       { title: "Overview",       subtitle: "Requests, receipts and network health at a glance." },
-    payments:        { title: "Direct send",    subtitle: "Pay a wallet address directly on Arc Testnet." },
-    "qr-payments":   { title: "QR requests",    subtitle: "Create a QR invoice for someone else to scan and pay." },
+    dashboard:       { title: "Dashboard",      subtitle: "Requests, receipts and network health at a glance." },
+    payments:        { title: "Send",           subtitle: "Pay a wallet address directly on Arc Testnet." },
+    "qr-payments":   { title: "QR",             subtitle: "Create a QR invoice for someone else to scan and pay." },
     pay:             { title: "Pay request",    subtitle: "Review and settle a QR payment request." },
     "import-export": { title: "Import · Export", subtitle: "Back up or restore your requests and receipts." },
-    milestones:      { title: "Milestones",     subtitle: "Create PSP-gated payment chains for staged work." },
     statements:      { title: "Statements",     subtitle: "Generate settlement proof bundles for reconciliation." },
-    docs:            { title: "Documentation",  subtitle: "How Disburse settles, verifies, and exports payments." },
   };
   const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as AppShellPage] ?? routeMeta.dashboard;
 
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-    <div className="flex min-h-screen bg-[var(--canvas)] text-[var(--ink)] overflow-x-hidden relative">
+    <div className="flex min-h-screen bg-[var(--shell-frame)] text-[var(--ink)] overflow-x-hidden relative md:h-dvh md:overflow-hidden">
       {/* Desktop sidebar — hidden on mobile, where the drawer takes over. */}
       <div className="hidden md:block">
         <Sidebar
@@ -1611,7 +1313,11 @@ function App() {
         />
       </SidePanel>
 
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10", isSidebarCollapsed ? "md:ml-[56px]" : "md:ml-[240px]")}>
+      {/* Content sheet — the Linear/Dynamic pattern: everything except the
+          sidebar lives on one rounded bordered surface inset 8px from the
+          frame. Mobile keeps the plain full-bleed layout. */}
+      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10 md:py-2 md:pr-2 md:pl-2", isSidebarCollapsed ? "md:ml-[56px]" : "md:ml-[240px]")}>
+        <div className="flex min-h-0 flex-1 flex-col bg-[var(--paper)] md:overflow-hidden md:rounded-xl md:border md:border-[var(--line)]">
         <Header
           title={headerTitle}
           subtitle={headerSubtitle}
@@ -1626,7 +1332,18 @@ function App() {
           onToggleTheme={handleThemeToggle}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenNav={() => setIsNavOpen(true)}
+          onOpenInbox={() => setIsInboxOpen(true)}
+          inboxUnreadCount={inboxUnreadCount}
           theme={theme}
+        />
+
+        <InboxPanel
+          open={isInboxOpen}
+          onClose={() => setIsInboxOpen(false)}
+          account={account}
+          getProvider={getWalletProvider}
+          onNavigate={navigateTo}
+          onActivity={() => setInboxRefreshKey((key) => key + 1)}
         />
 
         <SettingsPanel
@@ -1634,26 +1351,21 @@ function App() {
           onClose={() => setIsSettingsOpen(false)}
           theme={theme}
           onToggleTheme={handleThemeToggle}
+          rpcStatusLabel={rpcStatusLabel}
+          rpcBlockLabel={rpcBlockLabel}
+          rpcHealthy={rpcHealth?.healthy}
         />
         
-        <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
           {page === "dashboard" && (
             <DashboardPage
               requests={requests}
               receipts={receipts}
               account={account}
-              rpcHealth={rpcHealth}
-              rpcStatusLabel={rpcStatusLabel}
-              rpcBlockLabel={rpcBlockLabel}
               now={now}
               onNavigate={navigateTo}
-              onExport={handleExport}
+              getProvider={getWalletProvider}
             />
-          )}
-          {page === "docs" && (
-            <Suspense fallback={<DocsFallback />}>
-              <DocsPage />
-            </Suspense>
           )}
           {page === "payments" && (
             <PaymentsPage
@@ -1717,7 +1429,6 @@ function App() {
               status={payDisplayStatus}
               balances={payBalances}
               estimate={payEstimate}
-              approvalHash={payApprovalHash}
               notice={payNotice}
               walletNotice={walletNotice}
               now={now}
@@ -1732,15 +1443,7 @@ function App() {
               isVerifying={isVerifying}
               isGeneratingInvoice={isGeneratingInvoice}
               onConnect={handleConnectWallet}
-              onSwitch={handleSwitchPayNetwork}
-              sourceChainId={paySourceChainId}
-              onSourceChainChange={(chainId) => {
-                setPaySourceChainId(chainId);
-                setPayBalances(undefined);
-                setPayEstimate(undefined);
-                setPayApprovalHash(undefined);
-                setPayNotice(undefined);
-              }}
+              onSwitch={handleSwitchNetwork}
               onEstimate={handlePayEstimate}
               onPay={handlePayQrRequest}
               onVerify={() => handleVerifyQrRequest(payRequest)}
@@ -1761,8 +1464,8 @@ function App() {
               onImport={handleImport}
             />
           )}
-          {page === "milestones" && <MilestonesPage />}
           {page === "statements" && <StatementsPage />}
+        </div>
         </div>
       </main>
     </div>
@@ -1818,13 +1521,7 @@ function PaymentsPage({
   const { t } = useI18n();
   return (
     <>
-      <RouteHero eyebrow={t("payments")} title={t("paymentsHero")} />
-
-      <section className="workbench" aria-labelledby="payments-heading">
-        <header className="section-header">
-          <h2 id="payments-heading">{t("directTransferTitle")}</h2>
-        </header>
-
+      <section className="workbench" aria-label={t("directTransferTitle")}>
         <div className="desk-grid single-flow-grid">
           <section className="desk-pane" aria-labelledby="direct-form-heading">
             <PaneTitle id="direct-form-heading" label={t("paymentDetails")} />
@@ -1833,8 +1530,12 @@ function PaymentsPage({
                 <input
                   value={form.recipient}
                   onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
-                  placeholder="0x..."
+                  placeholder="0x... or @name"
                   spellCheck={false}
+                />
+                <HandleHint
+                  value={form.recipient}
+                  onApply={(address) => onFormChange({ ...form, recipient: address })}
                 />
               </Field>
 
@@ -1928,13 +1629,6 @@ function PaymentsPage({
                 </div>
               </div>
             )}
-
-            <div className="request-callout">
-              <strong>{t("needSomeonePay")}</strong>
-              <button className="secondary-button" type="button" onClick={() => onNavigate("/qr-payments")}>
-                {t("generateQrRequest")}
-              </button>
-            </div>
           </section>
         </div>
       </section>
@@ -2092,12 +1786,10 @@ function QrPaymentsPage({
   const { t } = useI18n();
   const displayRequest = selectedRequest ? refreshDerivedStatus(selectedRequest, now) : undefined;
   const qrIsFinal = displayRequest ? shouldHideQrForStatus(displayRequest.status) : false;
-  const hasFormInput = Boolean(form.recipient || form.amount || form.label || form.note);
+  const hasFormInput = Boolean(form.recipient || form.amount || form.label || form.note || form.notify);
 
   return (
     <>
-      <RouteHero eyebrow={t("qrPayments") || "QR Payments"} title={t("generateQr") || "Generate a payment request"} />
-
       <section className="workbench" aria-label={t("generateQr")}>
         <div className="desk-grid">
           <section className="desk-pane create-pane" aria-label={t("requestDetails")}>
@@ -2107,7 +1799,7 @@ function QrPaymentsPage({
                   <input
                     value={form.recipient}
                     onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
-                    placeholder="0x..."
+                    placeholder="0x... or @name"
                     spellCheck={false}
                   />
                   <button
@@ -2121,6 +1813,10 @@ function QrPaymentsPage({
                     {t("me")}
                   </button>
                 </div>
+                <HandleHint
+                  value={form.recipient}
+                  onApply={(address) => onFormChange({ ...form, recipient: address })}
+                />
               </Field>
 
               <div className="field-grid">
@@ -2155,10 +1851,19 @@ function QrPaymentsPage({
               </Field>
 
               <Field label={t("invoiceDate")}>
-                <input
-                  type="date"
+                <DateInput
                   value={form.invoiceDate}
-                  onChange={(event) => onFormChange({ ...form, invoiceDate: event.target.value })}
+                  onChange={(iso) => onFormChange({ ...form, invoiceDate: iso })}
+                />
+              </Field>
+
+              <Field label={t("qrNotify")} helper={t("qrNotifyHelper")}>
+                <input
+                  value={form.notify}
+                  onChange={(event) => onFormChange({ ...form, notify: event.target.value })}
+                  placeholder="@name"
+                  spellCheck={false}
+                  maxLength={17}
                 />
               </Field>
 
@@ -2184,19 +1889,6 @@ function QrPaymentsPage({
                       invoiceDate={displayRequest.invoiceDate}
                       status={displayRequest.status}
                     />
-                    {isCrossChainPaymentRequest(displayRequest) && (
-                      <div className="route-summary">
-                        <Metric label={t("settlesOn")} value="Arc Testnet" />
-                        <Metric
-                          label={t("payFrom")}
-                          value={(displayRequest.allowedSourceChainIds ?? getAllowedSourceChainIds())
-                            .filter((id) => id !== ARC_DESTINATION_CHAIN_ID)
-                            .map(getCrossChainLabel)
-                            .join(", ")}
-                        />
-                      </div>
-                    )}
-
                     {qrIsFinal ? (
                       <QrFinalState request={displayRequest} receipt={selectedReceipt} />
                     ) : (
@@ -2221,7 +1913,7 @@ function QrPaymentsPage({
                   </>
                 )}
 
-                {(selectedReceipt || isCrossChainPaymentRequest(displayRequest)) && (
+                {selectedReceipt && (
                   <ReceiptView
                     data={{
                       request: displayRequest,
@@ -2326,7 +2018,6 @@ function PayRequestPage({
   status,
   balances,
   estimate,
-  approvalHash,
   notice,
   walletNotice,
   now,
@@ -2342,8 +2033,6 @@ function PayRequestPage({
   isGeneratingInvoice,
   onConnect,
   onSwitch,
-  sourceChainId,
-  onSourceChainChange,
   onEstimate,
   onPay,
   onVerify,
@@ -2362,7 +2051,6 @@ function PayRequestPage({
   status: PaymentStatus;
   balances?: Balances;
   estimate?: TransferEstimate;
-  approvalHash?: Hash;
   notice?: Notice;
   walletNotice?: Notice;
   now: Date;
@@ -2378,8 +2066,6 @@ function PayRequestPage({
   isGeneratingInvoice: boolean;
   onConnect: () => void;
   onSwitch: () => void;
-  sourceChainId: PaymentSourceChainId;
-  onSourceChainChange: (chainId: PaymentSourceChainId) => void;
   onEstimate: () => void;
   onPay: () => void;
   onVerify: () => void;
@@ -2393,29 +2079,16 @@ function PayRequestPage({
   const { t } = useI18n();
   const hasSubmittedTransaction = Boolean(request?.txHash && request.status !== "paid");
   const submittedTxHash = request?.txHash;
-  const submittedTxUrl =
-    submittedTxHash && request && isCrossChainPaymentRequest(request)
-      ? getCrossChainExplorerTxUrl(request.settlement?.sourceChainId ?? sourceChainId, submittedTxHash)
-      : submittedTxHash
-        ? toExplorerTxUrl(submittedTxHash)
-        : undefined;
-  const approvalTxUrl = approvalHash ? getCrossChainExplorerTxUrl(sourceChainId, approvalHash) : undefined;
+  const submittedTxUrl = submittedTxHash ? toExplorerTxUrl(submittedTxHash) : undefined;
   const payButtonLabel = getPayButtonLabel(isPaying, lifecycle, t);
   const isFinal = status === "paid" || status === "expired" || status === "failed";
   const showExpiryGrid = Boolean(request) && !isFinal;
-  const hasResultBlock = Boolean(approvalHash || submittedTxHash || receipt || request?.txHash);
+  const hasResultBlock = Boolean(submittedTxHash || receipt || request?.txHash);
   const payStage = computePayStage(account, wrongChain, request, receipt, lifecycle);
 
   return (
     <>
-      <RouteHero eyebrow={t("payQrRequest")} title={t("payHero")} />
-
-      <section className="workbench pay-request-shell" aria-labelledby="pay-request-heading">
-        <header className="section-header">
-          <h2 id="pay-request-heading">{t("paymentRequestTitle")}</h2>
-          <p>{t("paymentRequestNote")}</p>
-        </header>
-
+      <section className="workbench pay-request-shell" aria-label={t("paymentRequestTitle")}>
         {request && (
           <StageStrip
             stage={payStage}
@@ -2436,12 +2109,6 @@ function PayRequestPage({
                 invoiceDate={request.invoiceDate}
                 status={status}
               />
-              {isCrossChainPaymentRequest(request) && (
-                <div className="route-summary">
-                  <Metric label={t("settlesOn")} value="Arc Testnet" />
-                  <Metric label={t("selectedSource")} value={getCrossChainLabel(sourceChainId)} />
-                </div>
-              )}
               {showExpiryGrid && (
                 <div className="expiry-grid">
                   <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
@@ -2475,23 +2142,6 @@ function PayRequestPage({
               )}
 
               <div className="form-section">
-                {isCrossChainPaymentRequest(request) && (
-                  <Field label={t("payFrom")}>
-                    <select
-                      value={sourceChainId}
-                      onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
-                      disabled={Boolean(request.txHash)}
-                    >
-                      {(request.allowedSourceChainIds ?? getAllowedSourceChainIds())
-                        .map((chainId) => (
-                          <option value={chainId} key={chainId}>
-                            {getCrossChainLabel(chainId)}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                )}
-
                 <WalletActionBlock
                   account={account}
                   wrongChain={wrongChain}
@@ -2500,7 +2150,7 @@ function PayRequestPage({
                   walletNotice={undefined}
                   onConnect={onConnect}
                   onSwitch={onSwitch}
-                  switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
+                  switchLabel={t("switchToNetwork", { network: "Arc Testnet" })}
                 />
 
                 {account && !wrongChain && (
@@ -2510,8 +2160,8 @@ function PayRequestPage({
                     balances={balances}
                     insufficientToken={insufficientToken}
                     missingGas={missingGas}
-                    networkLabel={getCrossChainLabel(sourceChainId)}
-                    nativeSymbol={getCrossChain(sourceChainId).nativeSymbol}
+                    networkLabel="Arc Testnet"
+                    nativeSymbol="USDC"
                   />
                 )}
               </div>
@@ -2584,23 +2234,6 @@ function PayRequestPage({
                       <ReceiptView.Timeline />
                       {receipt && <ReceiptView.Proof />}
                     </ReceiptView>
-                  )}
-
-                  {approvalHash && !receipt && (
-                    <div className="receipt-line">
-                      <div>
-                        <span>{t("usdcApproval")}</span>
-                        <strong>{shortAddress(approvalHash, 10, 8)}</strong>
-                      </div>
-                      <div className="receipt-actions">
-                        <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
-                          {t("copyTx")}
-                        </button>
-                        <a href={approvalTxUrl} target="_blank" rel="noreferrer">
-                          {t("openTx")}
-                        </a>
-                      </div>
-                    </div>
                   )}
 
                   {submittedTxHash && !receipt && (
@@ -2689,7 +2322,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
     status,
     balances,
     estimate,
-    approvalHash,
     notice,
     walletNotice,
     now,
@@ -2705,8 +2337,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
     isGeneratingInvoice,
     onConnect,
     onSwitch,
-    sourceChainId,
-    onSourceChainChange,
     onEstimate,
     onPay,
     onVerify,
@@ -2727,20 +2357,13 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
     );
   }
 
-  const crossChain = isCrossChainPaymentRequest(request);
   const hasSubmittedTransaction = Boolean(request.txHash && request.status !== "paid");
   const submittedTxHash = request.txHash;
-  const submittedTxUrl =
-    submittedTxHash && crossChain
-      ? getCrossChainExplorerTxUrl(request.settlement?.sourceChainId ?? sourceChainId, submittedTxHash)
-      : submittedTxHash
-        ? toExplorerTxUrl(submittedTxHash)
-        : undefined;
-  const approvalTxUrl = approvalHash ? getCrossChainExplorerTxUrl(sourceChainId, approvalHash) : undefined;
+  const submittedTxUrl = submittedTxHash ? toExplorerTxUrl(submittedTxHash) : undefined;
   const payButtonLabel = getPayButtonLabel(isPaying, lifecycle, t);
   const isFinal = status === "paid" || status === "expired" || status === "failed";
   const showExpiryGrid = !isFinal;
-  const hasResultBlock = Boolean(approvalHash || submittedTxHash || receipt || request.txHash);
+  const hasResultBlock = Boolean(submittedTxHash || receipt || request.txHash);
   const payStage = computePayStage(account, wrongChain, request, receipt, lifecycle);
 
   return (
@@ -2755,12 +2378,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
         status={status}
       />
 
-      {crossChain && (
-        <div className="route-summary">
-          <Metric label={t("settlesOn")} value="Arc Testnet" />
-          <Metric label={t("selectedSource")} value={getCrossChainLabel(sourceChainId)} />
-        </div>
-      )}
       {showExpiryGrid && (
         <div className="expiry-grid">
           <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
@@ -2784,22 +2401,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
           <NoticeBar compact notice={{ tone: "info", text: t("txSavedNotice") }} />
         )}
 
-        {crossChain && (
-          <Field label={t("payFrom")}>
-            <select
-              value={sourceChainId}
-              onChange={(event) => onSourceChainChange(Number(event.target.value) as PaymentSourceChainId)}
-              disabled={Boolean(request.txHash)}
-            >
-              {(request.allowedSourceChainIds ?? getAllowedSourceChainIds()).map((chainId) => (
-                <option value={chainId} key={chainId}>
-                  {getCrossChainLabel(chainId)}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-
         <WalletActionBlock
           account={account}
           wrongChain={wrongChain}
@@ -2808,7 +2409,7 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
           walletNotice={undefined}
           onConnect={onConnect}
           onSwitch={onSwitch}
-          switchLabel={t("switchToNetwork", { network: getCrossChainLabel(sourceChainId) })}
+          switchLabel={t("switchToNetwork", { network: "Arc Testnet" })}
         />
 
         {account && !wrongChain && (
@@ -2818,8 +2419,8 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
             balances={balances}
             insufficientToken={insufficientToken}
             missingGas={missingGas}
-            networkLabel={getCrossChainLabel(sourceChainId)}
-            nativeSymbol={getCrossChain(sourceChainId).nativeSymbol}
+            networkLabel="Arc Testnet"
+            nativeSymbol="USDC"
           />
         )}
       </div>
@@ -2886,23 +2487,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
             </ReceiptView>
           )}
 
-          {approvalHash && !receipt && (
-            <div className="receipt-line">
-              <div>
-                <span>{t("usdcApproval")}</span>
-                <strong>{shortAddress(approvalHash, 10, 8)}</strong>
-              </div>
-              <div className="receipt-actions">
-                <button className="text-button" type="button" onClick={() => approvalTxUrl && onCopy(approvalTxUrl)}>
-                  {t("copyTx")}
-                </button>
-                <a href={approvalTxUrl} target="_blank" rel="noreferrer">
-                  {t("openTx")}
-                </a>
-              </div>
-            </div>
-          )}
-
           {submittedTxHash && !receipt && (
             <div className="receipt-line">
               <div>
@@ -2957,15 +2541,6 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
         </div>
       )}
     </div>
-  );
-}
-
-function RouteHero({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <section id="top" className="hero route-hero">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1>{title}</h1>
-    </section>
   );
 }
 
@@ -3143,70 +2718,6 @@ function EstimateGrid({ estimate }: { estimate: TransferEstimate }) {
   );
 }
 
-function DocsTopNav({
-  theme,
-  onToggleTheme,
-}: {
-  theme: Theme;
-  onToggleTheme: () => void;
-}) {
-  const { t } = useI18n();
-  const appHref = `https://app.disburse.online`;
-  const homeHref = `https://disburse.online`;
-  return (
-    <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--paper-translucent)] backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6 md:px-10">
-        <a
-          href={homeHref}
-          className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
-        >
-          <img src="/favicon.png" alt="" className="h-5 w-5" aria-hidden="true" />
-          <span className="text-[13px] font-semibold tracking-tight text-[var(--ink)]">
-            Disburse
-          </span>
-          <span className="ml-1 rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--muted)]">
-            {t("docsTitle")}
-          </span>
-        </a>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)]"
-            aria-label={theme === "dark" ? t("switchToLight") : t("switchToDark")}
-          >
-            {theme === "dark" ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-              </svg>
-            )}
-          </button>
-          <a
-            href={appHref}
-            // `text-[color:var(--primary-text)]` is explicit — without the
-            // `color:` hint Tailwind v4 sees this token sitting next to
-            // `text-[13px]` (a size) and refuses to apply it as a color, so
-            // the label rendered as `currentColor` against the white button
-            // background and looked invisible.
-            className="group inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)]"
-          >
-            {t("launchConsole")}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-0.5">
-              <path d="M5 12h14" />
-              <path d="m12 5 7 7-7 7" />
-            </svg>
-          </a>
-        </div>
-      </div>
-    </header>
-  );
-}
-
 function Field({
   label,
   helper,
@@ -3305,7 +2816,7 @@ function remoteConfirmationToLifecycle(confirmation: QrConfirmationPayload): Pay
   if (confirmation.status === "failed") {
     return "failed";
   }
-  return confirmation.request.settlement?.stage === "settling" ? "settling" : "proving";
+  return "confirming";
 }
 
 function remoteConfirmationToNotice(confirmation: QrConfirmationPayload): Notice {
@@ -3402,12 +2913,7 @@ async function createLocalQrRequest(form: QrFormState): Promise<PaymentRequest> 
     expiresAt: createExpiry(createdAt),
     createdAt,
     startBlock: "0",
-    status: "open",
-    destinationChainId: ARC_DESTINATION_CHAIN_ID,
-    allowedSourceChainIds: getAllowedSourceChainIds(),
-    settlement: {
-      destinationChainId: ARC_DESTINATION_CHAIN_ID
-    }
+    status: "open"
   };
 }
 
@@ -3489,68 +2995,12 @@ function ensureGasBalance(balances: Balances, transfer: SpendableTransfer, estim
   }
 }
 
-function ensureNativeGasBalance(balances: Balances, estimate: TransferEstimate | undefined, networkLabel: string) {
-  if (!estimate) {
-    return;
-  }
-  if (parseUnits(balances.nativeGas, 18) < estimate.gas * estimate.gasPrice) {
-    throw new Error(`Insufficient ${networkLabel} ETH for gas.`);
-  }
-}
-
 function hasInsufficientGas(
   balances: Balances | undefined,
   transfer: SpendableTransfer | undefined,
   estimate?: TransferEstimate
 ): boolean {
   return hasInsufficientNativeSpendBalance(balances, transfer, estimate);
-}
-
-function usesRemoteSource(
-  request: PaymentRequest | undefined,
-  sourceChainId: PaymentSourceChainId
-): sourceChainId is Exclude<PaymentSourceChainId, typeof ARC_CHAIN_ID> {
-  return Boolean(isCrossChainPaymentRequest(request) && isRemotePaymentSourceChainId(sourceChainId));
-}
-
-function clearInvalidCrossChainSourceHash(request: PaymentRequest, sourceChainId: PaymentSourceChainId): PaymentRequest {
-  if (!isCrossChainPaymentRequest(request)) {
-    return request;
-  }
-
-  return {
-    ...request,
-    status: "open",
-    txHash: undefined,
-    settlement: {
-      ...request.settlement,
-      destinationChainId: ARC_DESTINATION_CHAIN_ID,
-      sourceChainId,
-      sourceTxHash: undefined,
-      stage: undefined,
-      failureReason: undefined
-    }
-  };
-}
-
-function chooseDefaultPaymentSource(request: PaymentRequest): PaymentSourceChainId {
-  const allowed = isCrossChainPaymentRequest(request) ? request.allowedSourceChainIds : undefined;
-  return allowed?.includes(ARC_CHAIN_ID)
-    ? ARC_CHAIN_ID
-    : allowed?.includes(BASE_SEPOLIA_CHAIN_ID)
-      ? BASE_SEPOLIA_CHAIN_ID
-      : allowed?.[0] ?? ARC_CHAIN_ID;
-}
-
-function hasInsufficientNativeGas(balances: Balances | undefined, estimate?: TransferEstimate): boolean {
-  if (!balances || !estimate) {
-    return false;
-  }
-  try {
-    return parseUnits(balances.nativeGas, 18) < estimate.gas * estimate.gasPrice;
-  } catch {
-    return false;
-  }
 }
 
 function useInsufficientToken(balances: Balances | undefined, transfer: TokenTransfer | DirectFormState | undefined): boolean {
@@ -3587,22 +3037,6 @@ function formatTimeLeft(request: PaymentRequest, now: Date): string {
 }
 
 function formatQrLiveStatus(request: PaymentRequest): string {
-  if (isCrossChainPaymentRequest(request)) {
-    switch (request.settlement?.stage) {
-      case "submitted":
-        return "Source payment submitted";
-      case "proving":
-        return "Generating Polymer proof";
-      case "settling":
-        return "Relaying settlement";
-      case "settled":
-        return "Payment settled";
-      case "failed":
-        return "Settlement failed";
-      default:
-        return "Watching Arc settlement";
-    }
-  }
   return request.txHash ? "Payment submitted" : "Watching for payment";
 }
 
@@ -3637,17 +3071,14 @@ function trimDisplay(value: string, maxDecimals: number): string {
 }
 
 function DashboardPage({
-  requests, receipts, account, rpcHealth, rpcStatusLabel, rpcBlockLabel, now, onNavigate, onExport
+  requests, receipts, account, now, onNavigate, getProvider
 }: {
   requests: PaymentRequest[];
   receipts: Receipt[];
   account?: `0x${string}`;
-  rpcHealth?: RpcHealth;
-  rpcStatusLabel: string;
-  rpcBlockLabel: string;
   now: Date;
   onNavigate: (target: string) => void;
-  onExport: () => void;
+  getProvider: () => Promise<EthereumProvider | undefined>;
 }) {
   const { t } = useI18n();
   const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
@@ -3657,9 +3088,6 @@ function DashboardPage({
   const pendingVolume = requests
     .filter((request) => refreshDerivedStatus(request, now).status === "open")
     .reduce((sum, request) => sum + Number(request.amount || 0), 0);
-  const paidCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "paid").length;
-  const openCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "open").length;
-  const expiredCount = requests.filter((request) => refreshDerivedStatus(request, now).status === "expired").length;
   const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
   const activityData = Array.from({ length: 7 }, (_, offset) => {
     const date = new Date(now);
@@ -3672,16 +3100,6 @@ function DashboardPage({
       count: dayRequests.length
     };
   });
-  const monthlyData = Array.from({ length: 6 }, (_, offset) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - (5 - offset), 1);
-    const month = date.toISOString().slice(0, 7);
-    const monthRequests = requests.filter((request) => request.createdAt.slice(0, 7) === month);
-    return {
-      month: new Intl.DateTimeFormat(undefined, { month: "short" }).format(date),
-      volume: monthRequests.reduce((sum, request) => sum + Number(request.amount || 0), 0),
-      count: monthRequests.length
-    };
-  });
 
   const hasActivity = requests.length > 0;
   // Compute a 7-day trend delta (second half vs first half) for the
@@ -3689,31 +3107,13 @@ function DashboardPage({
   // the two cards tell a consistent story.
   const trendSeries = activityData.map((d) => ({ value: d.volume }));
   const trendDeltaPct = computeTrendDelta(activityData.map((d) => d.volume));
-  const onboardingSteps: { label: string; done: boolean; href: string }[] = [
-    { label: t("connectWalletStep"), done: Boolean(account), href: "/" },
-    { label: t("fundFaucetStep"), done: Boolean(account), href: ARC_FAUCET_URL },
-    { label: t("createFirstQrStep"), done: hasActivity, href: "/qr-payments" },
-    { label: t("verifyExportStep"), done: receipts.length > 0, href: "/qr-payments" }
-  ];
-  const completedSteps = onboardingSteps.filter((s) => s.done).length;
-  const progressPct = Math.round((completedSteps / onboardingSteps.length) * 100);
 
   return (
-    <div className="ql-dashboard relative z-10 mx-auto flex w-full max-w-[1240px] flex-col pb-16">
+    <div className="ql-dashboard relative z-10 mx-auto flex w-full max-w-[1120px] flex-col pb-6">
 
-      {/* HERO ─ date, greeting, headline counts, period selector */}
-      <DashboardHero
-        now={now}
-        account={account}
-        rpcHealthy={rpcHealth?.healthy}
-        requestCount={requests.length}
-        receiptCount={receipts.length}
-        paidCount={paidCount}
-        openCount={openCount}
-        expiredCount={expiredCount}
-      />
-
-      {/* HEADLINE BALANCE ─ full width, the day's main statement */}
+      {/* HEADLINE BALANCE ─ full width, the day's main statement. The page
+          title lives in the Header (routeMeta); this card is the first thing
+          under it. */}
       <section className="ql-section">
         <BalanceCard
           totalVolume={totalVolume}
@@ -3728,30 +3128,25 @@ function DashboardPage({
         />
       </section>
 
-      {/* ACTIVITY ─ two charts side by side */}
-      <SectionRule label={t("activity") || "Activity"} />
-      <section className="ql-section grid grid-cols-1 gap-4 md:grid-cols-2">
-        <MonthlyStats activityData={activityData} />
-        <SystemStatusCard
-          monthlyData={monthlyData}
-          rpcStatusLabel={rpcStatusLabel}
-          rpcBlockLabel={rpcBlockLabel}
-          rpcHealthy={rpcHealth?.healthy}
-        />
+      {/* IDENTITY ─ the wallet's Disburse ID; payment requests to this name
+          land in the in-app inbox. */}
+      <section className="ql-section mt-4">
+        <DisburseIdCard account={account} getProvider={getProvider} />
       </section>
 
-      {/* OPERATIONS ─ quick actions, full-width grid */}
-      <SectionRule label={t("operations") || "Operations"} />
-      <section className="ql-section">
-        <QuickActionsCard
-          onNavigate={onNavigate}
-          onExport={onExport}
-          faucetUrl={ARC_FAUCET_URL}
-          hasData={requests.length + receipts.length > 0}
-        />
-      </section>
+      {/* ACTIVITY ─ only once there is something to plot. An empty chart is
+          noise, not information. */}
+      {hasActivity && (
+        <>
+          <SectionRule label={t("activity") || "Activity"} />
+          <section className="ql-section">
+            <MonthlyStats activityData={activityData} />
+          </section>
+        </>
+      )}
 
-      {/* LEDGER ─ recent transactions, full width */}
+      {/* LEDGER ─ recent transactions. TransactionsTable renders its own
+          empty state, so it carries the zero case on its own. */}
       <SectionRule label={t("ledger") || "Ledger"} />
       <section className="ql-section">
         <TransactionsTable
@@ -3762,100 +3157,17 @@ function DashboardPage({
         />
       </section>
 
-      {/* SIDE NOTES ─ getting started, proof inbox, resources */}
-      <SectionRule label={t("notes") || "Notes"} />
-      <section className="ql-section grid grid-cols-1 gap-4 md:grid-cols-3">
-        <GettingStartedCard
-          steps={onboardingSteps}
-          completed={completedSteps}
-          total={onboardingSteps.length}
-          progressPct={progressPct}
-        />
-        <ProofInboxCard
-          requests={requests}
-          receipts={receipts}
-          onNavigate={onNavigate}
-        />
-        <ResourcesCard />
-      </section>
-
     </div>
   );
 }
 
-/** Section divider — bare hairline. No eyebrow label; rhythm only. */
-function SectionRule(_props: { label?: string }) {
-  return <div className="ql-section-rule" role="presentation" />;
-}
-
-/** Dashboard hero — borderless top band.
- *  Date · greeting · inline counts. RPC degraded state surfaces inline only
- *  when not healthy; the healthy case shows no chrome. */
-function DashboardHero({
-  now,
-  account,
-  rpcHealthy,
-  requestCount,
-  receiptCount,
-  paidCount,
-  openCount,
-  expiredCount,
-}: {
-  now: Date;
-  account?: `0x${string}`;
-  rpcHealthy?: boolean;
-  requestCount: number;
-  receiptCount: number;
-  paidCount: number;
-  openCount: number;
-  expiredCount: number;
-}) {
-  const greeting = getGreeting(now);
-  const dateLabel = new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(now);
-
+/** Section heading — quiet muted label above its card, Linear-style. */
+function SectionRule({ label }: { label: string }) {
   return (
-    <section className="ql-hero">
-      <p className="ql-hero-eyebrow">{dateLabel}</p>
-      <h1 className="ql-hero-title">
-        {greeting}
-        {account ? "." : ", connect a wallet to begin."}
-      </h1>
-      <p className="ql-hero-meta">
-        <span><strong>{requestCount}</strong> requests</span>
-        <span className="ql-hero-meta-sep">·</span>
-        <span><strong>{receiptCount}</strong> receipts</span>
-        <span className="ql-hero-meta-sep">·</span>
-        <span><strong>{paidCount}</strong> settled</span>
-        <span className="ql-hero-meta-sep">·</span>
-        <span><strong>{openCount}</strong> open</span>
-        {expiredCount > 0 ? (
-          <>
-            <span className="ql-hero-meta-sep">·</span>
-            <span><strong>{expiredCount}</strong> expired</span>
-          </>
-        ) : null}
-        {rpcHealthy === false ? (
-          <>
-            <span className="ql-hero-meta-sep">·</span>
-            <span className="ql-hero-meta-degraded">RPC starting</span>
-          </>
-        ) : null}
-      </p>
-    </section>
+    <div className="mb-3 mt-8">
+      <h2 className="text-sm font-medium text-[var(--muted)]">{label}</h2>
+    </div>
   );
-}
-
-function getGreeting(now: Date): string {
-  const hour = now.getHours();
-  if (hour < 5) return "Good evening";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
 }
 
 /** Second-half vs first-half percent delta for a short series. */
@@ -3867,300 +3179,6 @@ function computeTrendDelta(series: number[]): number | null {
   if (prev === 0 && curr === 0) return null;
   if (prev === 0) return 100;
   return ((curr - prev) / prev) * 100;
-}
-
-function QuickActionsCard({
-  onNavigate,
-  onExport,
-  faucetUrl,
-  hasData
-}: {
-  onNavigate: (target: string) => void;
-  onExport: () => void;
-  faucetUrl: string;
-  hasData: boolean;
-}) {
-  const { t } = useI18n();
-  // Card-shell with no header label — the four action tiles speak for themselves.
-  return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
-      <div className="grid grid-cols-2 md:grid-cols-4">
-        <QuickActionTile
-          onClick={() => onNavigate("/qr-payments")}
-          icon={<QrCode size={15} strokeWidth={1.6} />}
-          label={t("createQrRequest")}
-        />
-        <QuickActionTile
-          onClick={() => onNavigate("/payments")}
-          icon={<Send size={15} strokeWidth={1.6} />}
-          label={t("directSend")}
-        />
-        <QuickActionTile
-          onClick={hasData ? onExport : () => onNavigate("/import-export")}
-          icon={<Download size={15} strokeWidth={1.6} />}
-          label={hasData ? t("exportLedger") : t("importLedger")}
-        />
-        <QuickActionTile
-          href={faucetUrl}
-          external
-          icon={<ExternalLink size={15} strokeWidth={1.6} />}
-          label={t("usdcFaucet")}
-        />
-      </div>
-    </div>
-  );
-}
-
-function QuickActionTile({
-  onClick,
-  href,
-  external,
-  icon,
-  label
-}: {
-  onClick?: () => void;
-  href?: string;
-  external?: boolean;
-  icon: ReactNode;
-  label: string;
-}) {
-  const body = (
-    <div className="flex h-full items-center gap-3 px-4 py-3.5">
-      <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--paper-2)] text-[var(--muted)] transition-colors group-hover:border-[var(--ink-soft)] group-hover:text-[var(--ink)]">
-        {icon}
-      </span>
-      <span className="flex-1 truncate text-[12.5px] font-medium text-[var(--ink)]">{label}</span>
-    </div>
-  );
-  const className =
-    "group block border-b border-r border-[var(--line-soft)] text-left transition-colors hover:bg-[var(--paper-2)] focus-visible:bg-[var(--paper-2)] focus-visible:outline-none md:border-b-0 [&:nth-child(2n)]:border-r-0 md:[&:nth-child(2n)]:border-r md:last:border-r-0 [&:nth-last-child(-n+2)]:border-b-0";
-  if (href) {
-    return (
-      <a
-        className={className}
-        href={href}
-        target={external ? "_blank" : undefined}
-        rel={external ? "noreferrer" : undefined}
-      >
-        {body}
-      </a>
-    );
-  }
-  return (
-    <button type="button" className={className} onClick={onClick}>
-      {body}
-    </button>
-  );
-}
-
-function ProofInboxCard({
-  requests,
-  receipts,
-  onNavigate
-}: {
-  requests: PaymentRequest[];
-  receipts: Receipt[];
-  onNavigate: (target: string) => void;
-}) {
-  const paidReceipts = receipts
-    .map((receipt) => ({
-      receipt,
-      request: requests.find((item) => item.id === receipt.requestId)
-    }))
-    .filter((item) => Boolean(item.request))
-    .slice(0, 3);
-  return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
-      <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
-        <div>
-          <p className="text-[13px] font-medium text-[var(--ink)]">Proof inbox</p>
-          <p className="mt-0.5 text-[12px] text-[var(--muted)]">Arc Testnet PSPs</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--muted)]">
-          <ShieldCheck size={11} strokeWidth={1.7} />
-          {receipts.length}
-        </span>
-      </div>
-
-      <div className="px-5 py-4">
-        <p className="text-[12px] leading-relaxed text-[var(--muted)]">
-          Settled receipts are ready for PSP lookup, CLI verification, statement bundles, and webhook delivery.
-        </p>
-        <dl className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-md border border-[var(--line-soft)] bg-[var(--paper-2)] px-2.5 py-2">
-            <dt className="text-[11.5px] text-[var(--muted)]">Webhook</dt>
-            <dd className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">/api/webhooks</dd>
-          </div>
-          <div className="rounded-md border border-[var(--line-soft)] bg-[var(--paper-2)] px-2.5 py-2">
-            <dt className="text-[11.5px] text-[var(--muted)]">Failures</dt>
-            <dd className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">events table</dd>
-          </div>
-        </dl>
-      </div>
-
-      {paidReceipts.length > 0 ? (
-        <ul className="divide-y divide-[var(--line-soft)] border-y border-[var(--line-soft)]">
-          {paidReceipts.map(({ receipt, request }) => (
-            <li key={receipt.txHash}>
-              <button
-                type="button"
-                onClick={() => request && onNavigate(`/pay?r=${encodeRequestPayload(request)}`)}
-                className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-[var(--paper-2)]"
-              >
-                <FileText size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-medium text-[var(--ink)]">
-                    {request?.label ?? receipt.requestId}
-                  </span>
-                  <span className="block font-mono text-[11.5px] text-[var(--muted)]">
-                    {shortAddress(receipt.txHash, 8, 6)}
-                  </span>
-                </span>
-                <span className="font-mono text-[10.5px] text-[var(--ink-soft)]">
-                  {receipt.amount} {receipt.token}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="border-y border-[var(--line-soft)] px-5 py-4">
-          <p className="text-[11.5px] text-[var(--muted)]">
-            Paid QR requests will appear here as proof-ready Arc Testnet receipts.
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 divide-x divide-[var(--line-soft)]">
-        <button
-          type="button"
-          onClick={() => onNavigate("/statements")}
-          className="px-4 py-2.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
-        >
-          Statements
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("/docs")}
-          className="px-4 py-2.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)]"
-        >
-          Verify docs
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function GettingStartedCard({
-  steps,
-  completed,
-  total,
-  progressPct
-}: {
-  steps: { label: string; done: boolean; href: string }[];
-  completed: number;
-  total: number;
-  progressPct: number;
-}) {
-  const { t } = useI18n();
-  const allDone = completed === total;
-  return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
-        <div>
-          <p className="text-[13px] font-medium text-[var(--ink)]">
-            {allDone ? t("allStepsComplete") : t("gettingStarted")}
-          </p>
-          <p className="mt-0.5 text-[12px] text-[var(--muted)]">{t("onboarding")}</p>
-        </div>
-        <span className="text-[12px] text-[var(--muted)]">
-          {completed}/{total}
-        </span>
-      </div>
-      {/* Progress hairline */}
-      <div className="h-[2px] w-full bg-[var(--line-soft)]">
-        <div
-          className="h-full bg-[var(--ink)] transition-all duration-500"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
-      <ul className="divide-y divide-[var(--line-soft)]">
-        {steps.map((step) => (
-          <li key={step.label}>
-            <a
-              href={step.href}
-              target={step.href.startsWith("http") ? "_blank" : undefined}
-              rel={step.href.startsWith("http") ? "noreferrer" : undefined}
-              className="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-[var(--paper-2)]"
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
-                  step.done
-                    ? "border-[var(--ink)] bg-[var(--ink)]"
-                    : "border-[var(--line-strong)] bg-transparent"
-                )}
-              >
-                {step.done && (
-                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 stroke-[var(--paper)] stroke-[2]">
-                    <path d="M2 5l2 2 4-4.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </span>
-              <span
-                className={cn(
-                  "flex-1 text-[12px]",
-                  step.done ? "text-[var(--muted)] line-through decoration-[var(--line)]" : "text-[var(--ink)]"
-                )}
-              >
-                {step.label}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ResourcesCard() {
-  const { t } = useI18n();
-  const links = [
-    { label: t("documentation"), href: getDocsHref(), external: false, icon: BookOpen },
-    { label: t("usdcFaucet"),   href: ARC_FAUCET_URL, external: true,  icon: ExternalLink },
-    { label: "Arcscan",       href: ARC_EXPLORER_URL, external: true, icon: ExternalLink },
-    { label: t("sourceGithub"), href: "https://github.com/Disburse-pay", external: true, icon: ExternalLink }
-  ];
-  return (
-    <div className="overflow-hidden rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]">
-      <div className="border-b border-[var(--line)] px-5 py-3.5">
-        <p className="text-[13px] font-medium text-[var(--ink)]">{t("resources")}</p>
-        <p className="mt-0.5 text-[12px] text-[var(--muted)]">{t("referenceSection")}</p>
-      </div>
-      <ul>
-        {links.map((link) => {
-          const Icon = link.icon;
-          return (
-            <li key={link.label}>
-              <a
-                href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noreferrer" : undefined}
-                className="group flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-[var(--paper-2)]"
-              >
-                <Icon size={13} strokeWidth={1.6} className="text-[var(--muted)]" />
-                <span className="flex-1 text-[12px] text-[var(--ink)]">{link.label}</span>
-                <span className="font-mono text-[11px] text-[var(--muted)]">
-                  {link.external ? "\u2197" : "\u2192"}
-                </span>
-              </a>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
 }
 
 function ImportExportPage({
@@ -4176,8 +3194,6 @@ function ImportExportPage({
 
   return (
     <>
-      <RouteHero eyebrow={t("backup") || "Backup"} title={t("importExportTitle") || "Backup & Restore"} />
-
       <section className="ql-page" aria-label="Backup">
         <p className="ql-page-lede">
           Your ledger lives locally in this browser. Export to JSON for safe-keeping, or import a previous
@@ -4232,273 +3248,6 @@ function ImportExportPage({
     </>
   );
 }
-
-// ---------- Milestones Page ----------
-
-function MilestonesPage() {
-  const [chains, setChains] = useState<MilestoneChainView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [formTitle, setFormTitle] = useState("");
-  const [formRecipient, setFormRecipient] = useState("");
-  const [formCounterparty, setFormCounterparty] = useState("");
-  const [formSteps, setFormSteps] = useState<{ label: string; amount: string }[]>([
-    { label: "", amount: "" }
-  ]);
-  const [notice, setNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
-
-  useEffect(() => {
-    fetchChains();
-  }, []);
-
-  async function fetchChains() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/milestones");
-      if (res.ok) {
-        const data = await res.json();
-        setChains(data.chains || []);
-      }
-    } catch { /* silent */ }
-    setLoading(false);
-  }
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    setNotice(null);
-    try {
-      const res = await fetch("/api/milestones", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: formTitle,
-          recipient: formRecipient,
-          counterparty: formCounterparty || undefined,
-          token: "USDC",
-          steps: formSteps.filter((s) => s.label && s.amount)
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to create");
-      }
-      setNotice({ tone: "success", text: "Milestone chain created." });
-      setShowForm(false);
-      setFormTitle("");
-      setFormRecipient("");
-      setFormCounterparty("");
-      setFormSteps([{ label: "", amount: "" }]);
-      await fetchChains();
-    } catch (err) {
-      setNotice({ tone: "error", text: err instanceof Error ? err.message : "Error" });
-    }
-    setCreating(false);
-  }
-
-  function addStep() {
-    setFormSteps([...formSteps, { label: "", amount: "" }]);
-  }
-
-  function updateStep(index: number, field: "label" | "amount", value: string) {
-    const next = [...formSteps];
-    next[index] = { ...next[index], [field]: value };
-    setFormSteps(next);
-  }
-
-  function removeStep(index: number) {
-    if (formSteps.length <= 1) return;
-    setFormSteps(formSteps.filter((_, i) => i !== index));
-  }
-
-  return (
-    <>
-      <RouteHero eyebrow="Conditional Payments" title="Milestone Invoices" />
-
-      <section className="ql-page" aria-labelledby="milestones-heading">
-        <div className="ql-page-head">
-          <p className="ql-page-lede">
-            Multi-step payment chains where each step unlocks only when the previous payment is verified
-            with a Portable Settlement Proof.
-          </p>
-          <button className="primary-button" type="button" onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "New chain"}
-          </button>
-        </div>
-
-        {notice && (
-          <div className={`notice ${notice.tone === "success" ? "notice-success" : "notice-error"}`}>
-            {notice.text}
-          </div>
-        )}
-
-        {showForm && (
-          <form onSubmit={handleCreate} className="ql-form-card">
-            <div className="form-section">
-              <p className="form-section-label">Project</p>
-              <Field label="Title">
-                <input
-                  placeholder="Website redesign"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  required
-                />
-              </Field>
-            </div>
-
-            <div className="form-section">
-              <p className="form-section-label">Parties</p>
-              <Field label="Recipient address">
-                <input
-                  placeholder="0x..."
-                  value={formRecipient}
-                  onChange={(e) => setFormRecipient(e.target.value)}
-                  required
-                  spellCheck={false}
-                />
-              </Field>
-              <Field label="Counterparty / payer (optional)">
-                <input
-                  placeholder="0x..."
-                  value={formCounterparty}
-                  onChange={(e) => setFormCounterparty(e.target.value)}
-                  spellCheck={false}
-                />
-              </Field>
-            </div>
-
-            <div className="form-section">
-              <p className="form-section-label">Steps</p>
-              <div className="ql-milestone-steps">
-                {formSteps.map((step, i) => (
-                  <div key={i} className="ql-milestone-step-row">
-                    <span className="ql-milestone-step-index">{i + 1}.</span>
-                    <input
-                      className="ql-milestone-step-label"
-                      placeholder="Step label"
-                      value={step.label}
-                      onChange={(e) => updateStep(i, "label", e.target.value)}
-                      required
-                    />
-                    <input
-                      className="ql-milestone-step-amount"
-                      placeholder="0.00"
-                      type="number"
-                      step="0.01"
-                      value={step.amount}
-                      onChange={(e) => updateStep(i, "amount", e.target.value)}
-                      required
-                    />
-                    <span className="ql-milestone-step-unit">USDC</span>
-                    {formSteps.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeStep(i)}
-                        className="ql-milestone-step-remove"
-                        aria-label="Remove step"
-                      >
-                        \u2715
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button type="button" onClick={addStep} className="text-button ql-milestone-add-step">
-                  + Add step
-                </button>
-              </div>
-            </div>
-
-            <div className="action-row">
-              <button className="primary-button" type="submit" disabled={creating}>
-                {creating ? "Creating\u2026" : "Create milestone chain"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {loading ? (
-          <p className="ql-loading">Loading\u2026</p>
-        ) : chains.length === 0 ? (
-          <div className="ql-empty">
-            <p>No milestone chains yet.</p>
-            <p className="ql-empty-sub">Create your first conditional payment flow above.</p>
-          </div>
-        ) : (
-          <div className="ql-milestone-list">
-            {chains.map((chain) => {
-              const totalSteps = chain.steps?.length || 0;
-              const completedSteps = (chain.steps || []).filter((s) => s.status === "completed").length;
-              return (
-                <article key={chain.id} className="ql-milestone-card">
-                  <header className="ql-milestone-card-head">
-                    <div>
-                      <h3>{chain.title}</h3>
-                      <p className="ql-milestone-meta">
-                        <span className="ql-milestone-amount">{chain.totalAmount}</span>{" "}
-                        <span className="ql-milestone-unit">USDC</span>
-                        <span className="ql-milestone-sep">\u00B7</span>
-                        <span>
-                          {completedSteps} of {totalSteps} steps complete
-                        </span>
-                      </p>
-                    </div>
-                    <span className={cn("ql-milestone-badge", `is-${chain.status}`)}>
-                      {chain.status}
-                    </span>
-                  </header>
-
-                  <div className="ql-milestone-progress" role="presentation">
-                    {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
-                      <span
-                        key={i}
-                        className={cn(
-                          "ql-milestone-progress-seg",
-                          step.status === "completed" && "is-complete",
-                          (step.status === "unlocked" || step.status === "payment_pending") && "is-active"
-                        )}
-                        title={`${step.label}: ${step.status}`}
-                      />
-                    ))}
-                  </div>
-
-                  <ul className="ql-milestone-step-list">
-                    {(chain.steps || []).map((step: MilestoneStepView, i: number) => (
-                      <li key={i} className={cn("ql-milestone-step-item", `is-${step.status}`)}>
-                        <span className="ql-milestone-step-icon" aria-hidden="true">
-                          {step.status === "completed" ? "\u2713" : step.status === "locked" ? "\uD83D\uDD12" : "\u25CB"}
-                        </span>
-                        <span className="ql-milestone-step-text">{step.label}</span>
-                        <span className="ql-milestone-step-money">
-                          {step.amount} <em>USDC</em>
-                        </span>
-                        <span className="ql-milestone-step-status">{step.status}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
-type MilestoneChainView = {
-  id: string;
-  title: string;
-  totalAmount: string;
-  status: string;
-  steps: MilestoneStepView[];
-};
-type MilestoneStepView = {
-  label: string;
-  amount: string;
-  status: string;
-  pspUid?: string;
-};
 
 // ---------- Statements Page ----------
 
@@ -4559,8 +3308,6 @@ function StatementsPage() {
 
   return (
     <>
-      <RouteHero eyebrow="Reconciliation" title="Settlement Statements" />
-
       <section className="ql-page" aria-labelledby="statements-heading">
         <p className="ql-page-lede">
           Generate a verified statement bundle — every settlement proof between you and a counterparty
@@ -4594,10 +3341,10 @@ function StatementsPage() {
             <p className="form-section-label">Period</p>
             <div className="field-grid">
               <Field label="From">
-                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                <DateInput value={fromDate} onChange={setFromDate} />
               </Field>
               <Field label="To">
-                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                <DateInput value={toDate} onChange={setToDate} />
               </Field>
             </div>
           </div>

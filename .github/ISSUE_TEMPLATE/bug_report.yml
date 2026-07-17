@@ -1,0 +1,55 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not file security vulnerabilities here** —
+        follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I pay a cross-chain QR request, the timeline stalls at "proving"…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Payments / QR
+        - Cross-chain settlement
+        - PSP / receipts
+        - Prediction markets
+        - Lending
+        - Docs / landing
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: Chrome 124, MetaMask, Arc Testnet, app.disburse.online
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Logs / screenshots
+      description: Console errors, tx hashes, or screenshots. Redact any secrets.
+    validations:
+      required: false

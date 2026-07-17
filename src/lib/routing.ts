@@ -7,28 +7,15 @@ export type Page =
   | "qr-payments"
   | "pay"
   | "import-export"
-  | "milestones"
   | "statements"
-  | "docs"
-  | "markets"
-  | "market-detail"
-  | "market-positions"
-  | "market-history"
-  | "lending";
+  | "docs";
 
 export type NavigateHandler = (event: MouseEvent<HTMLAnchorElement>, target: string) => void;
 
 export const LEGACY_DOCS_PATH = "/docs";
 export const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
 export const PRODUCTION_APP_HOSTNAME = "app.disburse.online";
-export const PRODUCTION_BET_HOSTNAME = "bet.disburse.online";
 export const PRODUCTION_PAY_HOSTNAME = "pay.disburse.online";
-
-export const MARKET_DETAIL_PATH_PREFIX = "/markets/";
-export const MARKETS_PATH = "/markets";
-export const MARKET_POSITIONS_PATH = "/markets/positions";
-export const MARKET_HISTORY_PATH = "/markets/history";
-export const LENDING_PATH = "/lending";
 
 export function getInitialPage(): Page {
   const hostname = window.location.hostname;
@@ -39,12 +26,6 @@ export function getInitialPage(): Page {
     return "docs";
   }
 
-  // Dedicated bet subdomain (or local bet preview): render the markets shell.
-  // Bet subdomain's homepage is the markets list, not a separate landing.
-  if (isBetHostname(hostname) || isLocalBetPreview(hostname, p)) {
-    return resolveBetPage(p);
-  }
-
   // Dedicated pay subdomain (or local ?pay=1 preview): the hosted, mobile-first
   // QR-payment page. Its homepage IS the pay page — the request payload is read
   // from the ?r= query param, so any path maps to "pay".
@@ -52,6 +33,9 @@ export function getInitialPage(): Page {
     return "pay";
   }
 
+  // /docs is not a route on any of the surfaces below. Documentation has one
+  // home — the docs host — and main.tsx sends /docs there before the app ever
+  // mounts. Nothing here needs to know about it.
   const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
 
   if (isApp) {
@@ -59,21 +43,11 @@ export function getInitialPage(): Page {
     if (p === "/qr-payments") return "qr-payments";
     if (p === "/pay") return "pay";
     if (p === "/import-export") return "import-export";
-    if (p === "/milestones") return "milestones";
     if (p === "/statements") return "statements";
-    // /docs inside the app shell renders the docs page as a regular route
-    // (sidebar navigation, header, the whole console chrome). The dedicated
-    // docs subdomain is served by the branch above.
-    if (p === LEGACY_DOCS_PATH) return "docs";
     // /settings was a dedicated page; it is now a dialog that opens from the header.
     // Keep the URL working by falling through to the dashboard. The dialog
     // auto-opens via an effect in the App component.
     return "dashboard";
-  }
-
-  // Naked localhost / other local preview: allow /docs to render docs in-shell.
-  if (isLocalDocsPreview(hostname, p)) {
-    return "docs";
   }
 
   return "landing";
@@ -89,31 +63,25 @@ export function isLocalAppPreview(hostname: string, pathname: string): boolean {
   }
 
   const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
+  // "/docs" is deliberately absent: it is not an app route on any host — the
+  // docs host is documentation's only home.
   return (
     appPreview ||
-    ["/payments", "/qr-payments", "/pay", "/import-export", "/settings", "/docs"].includes(pathname)
+    ["/payments", "/qr-payments", "/pay", "/import-export", "/settings"].includes(pathname)
   );
-}
-
-export function isLocalDocsPreview(hostname: string, pathname: string): boolean {
-  return (isLocalHostname(hostname) || hostname.endsWith(".localhost")) && pathname === LEGACY_DOCS_PATH;
 }
 
 export function isDocsHostname(hostname = window.location.hostname): boolean {
   return hostname === "docs.localhost" || hostname === PRODUCTION_DOCS_HOSTNAME;
 }
 
-export function isBetHostname(hostname = window.location.hostname): boolean {
-  return hostname === "bet.localhost" || hostname === PRODUCTION_BET_HOSTNAME;
-}
-
 export function isPayHostname(hostname = window.location.hostname): boolean {
   return hostname === "pay.localhost" || hostname === PRODUCTION_PAY_HOSTNAME;
 }
 
-// Naked-localhost preview of the hosted pay page via ?pay=1. Unlike the bet
-// preview, this does NOT also trigger on the /pay path: a plain /pay on
-// localhost stays the in-shell desktop preview, so devs can still see both.
+// Naked-localhost preview of the hosted pay page via ?pay=1. This does NOT
+// also trigger on the /pay path: a plain /pay on localhost stays the in-shell
+// desktop preview, so devs can still see both.
 export function isLocalPayPreview(hostname = window.location.hostname): boolean {
   if (!isLocalHostname(hostname)) {
     return false;
@@ -127,54 +95,9 @@ export function isPaySurface(hostname = window.location.hostname): boolean {
   return isPayHostname(hostname) || isLocalPayPreview(hostname);
 }
 
-export function isLocalBetPreview(hostname: string, pathname: string): boolean {
-  if (!isLocalHostname(hostname)) {
-    return false;
-  }
-  const betPreview = new URLSearchParams(window.location.search).get("bet") === "1";
-  return betPreview || isBetPath(pathname);
-}
-
-function isBetPath(pathname: string): boolean {
-  return (
-    pathname === MARKETS_PATH ||
-    pathname === MARKET_POSITIONS_PATH ||
-    pathname === MARKET_HISTORY_PATH ||
-    pathname === LENDING_PATH ||
-    pathname.startsWith(MARKET_DETAIL_PATH_PREFIX)
-  );
-}
-
-// Resolve a path within the bet shell to its Page. The bet subdomain's
-// homepage is the markets list, so "/" maps to "markets".
-export function resolveBetPage(pathname: string): Page {
-  if (pathname === MARKET_POSITIONS_PATH) return "market-positions";
-  if (pathname === MARKET_HISTORY_PATH) return "market-history";
-  if (pathname === LENDING_PATH) return "lending";
-  if (pathname === MARKETS_PATH || pathname === "/") return "markets";
-  if (pathname.startsWith(MARKET_DETAIL_PATH_PREFIX)) return "market-detail";
-  // Unknown path on bet subdomain falls back to the markets list.
-  return "markets";
-}
-
-// Extract the market id from a /markets/<id> path. Returns undefined for
-// non-detail paths.
-export function getMarketIdFromPath(pathname: string = window.location.pathname): string | undefined {
-  if (!pathname.startsWith(MARKET_DETAIL_PATH_PREFIX)) return undefined;
-  const rest = pathname.slice(MARKET_DETAIL_PATH_PREFIX.length);
-  // Reject reserved sub-paths handled by resolveBetPage above.
-  if (rest === "" || rest === "positions" || rest === "history") return undefined;
-  // Strip any trailing slash/query/hash artifacts.
-  const id = rest.split("/")[0].split("?")[0].split("#")[0];
-  return id || undefined;
-}
-
 export function stripPublicSubdomain(hostname: string): string {
   if (hostname.startsWith("docs.")) {
     return hostname.slice("docs.".length);
-  }
-  if (hostname.startsWith("bet.")) {
-    return hostname.slice("bet.".length);
   }
   if (hostname.startsWith("pay.")) {
     return hostname.slice("pay.".length);
@@ -205,16 +128,6 @@ export function getAppHostname(hostname: string): string {
   return PRODUCTION_APP_HOSTNAME;
 }
 
-export function getBetHostname(hostname: string): string {
-  if (hostname.startsWith("bet.")) {
-    return hostname;
-  }
-  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
-    return "bet.localhost";
-  }
-  return PRODUCTION_BET_HOSTNAME;
-}
-
 export function getPayHostname(hostname: string): string {
   if (hostname.startsWith("pay.")) {
     return hostname;
@@ -241,18 +154,15 @@ export function getOriginForHostname(hostname: string): string {
   return `${window.location.protocol}//${hostname}${port}`;
 }
 
+// The one way to link to documentation. Always resolves to the dedicated docs
+// host — docs.localhost in dev, docs.disburse.online in production — and never
+// to an in-console /docs route. There is no exception, including naked
+// localhost: an exception here is what put docs inside the app shell on the one
+// URL anybody actually opens in dev.
 export function getDocsHref(): string {
   const hostname = window.location.hostname;
   if (isDocsHostname(hostname)) {
     return "/";
-  }
-  // Local dev and app subdomain both render the in-app docs at /docs.
-  if (
-    isLocalHostname(hostname) ||
-    hostname.endsWith(".localhost") ||
-    hostname.startsWith("app.")
-  ) {
-    return LEGACY_DOCS_PATH;
   }
   return `${getOriginForHostname(getDocsHostname(hostname))}/`;
 }
@@ -275,31 +185,6 @@ export function getAppHref(path: string): string {
   return `${getOriginForHostname(getAppHostname(hostname))}${path}`;
 }
 
-export function getBetHref(path: string = "/"): string {
-  const hostname = window.location.hostname;
-
-  // Already on the bet subdomain — relative paths are fine.
-  if (isBetHostname(hostname)) {
-    return path;
-  }
-
-  // Naked localhost uses a query-param preview because it has no product
-  // subdomain in the origin.
-  if (isLocalHostname(hostname)) {
-    if (path === "/") return "/?bet=1";
-    return `${path}${path.includes("?") ? "&" : "?"}bet=1`;
-  }
-
-  // Local app/docs subdomains need a real cross-origin hop; otherwise
-  // app.localhost/?bet=1 remains pinned to the app shell.
-  if (hostname.endsWith(".localhost")) {
-    return `${getOriginForHostname(getBetHostname(hostname))}${path}`;
-  }
-
-  // Production cross-subdomain navigation.
-  return `${getOriginForHostname(getBetHostname(hostname))}${path}`;
-}
-
 export function getInternalTargetPath(target: string): string | undefined {
   const url = new URL(target, window.location.href);
   if (url.origin !== window.location.origin) {
@@ -308,31 +193,15 @@ export function getInternalTargetPath(target: string): string | undefined {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+// /docs is a legacy path. Docs are canonically served from the docs host, so
+// every other surface that still gets a /docs hit sends the user there —
+// localhost included, since docs.localhost resolves to loopback and the dev
+// server answers on it.
 export function shouldRedirectLegacyDocsRoute(): boolean {
-  const hostname = window.location.hostname;
-  // Already on the docs subdomain, a local preview, or inside the app shell:
-  // /docs is a valid route, do not redirect.
-  if (
-    isDocsHostname() ||
-    isLocalHostname(hostname) ||
-    hostname.endsWith(".localhost") ||
-    hostname.startsWith("app.")
-  ) {
+  if (isDocsHostname()) {
     return false;
   }
   return window.location.pathname === LEGACY_DOCS_PATH;
-}
-
-export function shouldRedirectLegacyBetRoute(): boolean {
-  const hostname = window.location.hostname;
-  if (
-    isBetHostname(hostname) ||
-    isLocalHostname(hostname) ||
-    hostname.endsWith(".localhost")
-  ) {
-    return false;
-  }
-  return hostname === PRODUCTION_APP_HOSTNAME && isBetPath(window.location.pathname);
 }
 
 export function getCurrentRouteKey(): string {

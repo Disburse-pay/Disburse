@@ -1,10 +1,16 @@
+/**
+ * Legacy cross-chain metadata. The Polymer settlement stack is retired; new
+ * payments settle on Arc only. This module keeps the chain labels, explorer
+ * links, and event shapes needed to display and verify records created while
+ * remote-source QR payments were live (stored requests, receipts, PSPs).
+ */
 import {
+  createPublicClient,
   defineChain,
+  http,
   keccak256,
-  parseAbi,
   parseAbiItem,
   stringToHex,
-  type Address,
   type Hash,
   type Hex
 } from "viem";
@@ -15,12 +21,9 @@ export const MONAD_TESTNET_CHAIN_ID = 10_143;
 export const ARC_DESTINATION_CHAIN_ID = ARC_CHAIN_ID;
 export const REMOTE_PAYMENT_SOURCE_CHAIN_IDS = [BASE_SEPOLIA_CHAIN_ID, MONAD_TESTNET_CHAIN_ID] as const;
 export const PAYMENT_SOURCE_CHAIN_IDS = [ARC_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID, MONAD_TESTNET_CHAIN_ID] as const;
-export const CROSSCHAIN_CHAIN_IDS = PAYMENT_SOURCE_CHAIN_IDS;
-export const POLYMER_TESTNET_PROVER_ADDRESS = "0x85e9506fd24F9B588dcf2A5AaEF7069e34D99fCE" as Address;
 
 export type PaymentSourceChainId = (typeof PAYMENT_SOURCE_CHAIN_IDS)[number];
 export type RemotePaymentSourceChainId = (typeof REMOTE_PAYMENT_SOURCE_CHAIN_IDS)[number];
-export type CrossChainId = PaymentSourceChainId;
 export type CrossChainPaymentStage = "submitted" | "proving" | "settling" | "settled" | "failed";
 
 export type CrossChainPaymentState = {
@@ -34,13 +37,6 @@ export type CrossChainPaymentState = {
   destinationBlockNumber?: string;
   stage?: CrossChainPaymentStage;
   failureReason?: string;
-};
-
-export type CrossChainRouteConfig = {
-  chainId: PaymentSourceChainId;
-  sourceContract?: Address;
-  settlementContract?: Address;
-  tokenAddress?: Address;
 };
 
 export const baseSepolia = defineChain({
@@ -117,35 +113,9 @@ export const CROSSCHAIN_CHAINS = {
   }
 } as const;
 
-export const crossChainErc20Abi = parseAbi([
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)"
-]);
-
-export const qrPaymentSourceAbi = parseAbi([
-  "function pay(bytes32 requestId,address recipient,address token,uint256 amount,uint256 destinationChainId,uint256 expiresAt,uint256 nonce)",
-  "event QrPaymentInitiated(bytes32 indexed requestId,address indexed payer,address indexed recipient,address token,uint256 amount,uint256 destinationChainId,uint256 nonce)"
-]);
-
-export const qrPaymentSettlementAbi = parseAbi([
-  "function settle(bytes proof) returns (bytes32 settlementId)",
-  "event QrPaymentSettled(bytes32 indexed settlementId,bytes32 indexed requestId,address indexed recipient,uint32 sourceChainId,address payer,address sourceToken,address destinationToken,uint256 amount,uint256 nonce)"
-]);
-
 export const qrPaymentInitiatedEvent = parseAbiItem(
   "event QrPaymentInitiated(bytes32 indexed requestId,address indexed payer,address indexed recipient,address token,uint256 amount,uint256 destinationChainId,uint256 nonce)"
 );
-
-export const qrPaymentInitiatedEventSignature =
-  "QrPaymentInitiated(bytes32,address,address,address,uint256,uint256,uint256)";
-export const qrPaymentInitiatedEventSelector = keccak256(stringToHex(qrPaymentInitiatedEventSignature));
-
-export function isCrossChainId(value: unknown): value is CrossChainId {
-  return isPaymentSourceChainId(value);
-}
 
 export function isPaymentSourceChainId(value: unknown): value is PaymentSourceChainId {
   return value === ARC_CHAIN_ID || value === BASE_SEPOLIA_CHAIN_ID || value === MONAD_TESTNET_CHAIN_ID;
@@ -153,10 +123,6 @@ export function isPaymentSourceChainId(value: unknown): value is PaymentSourceCh
 
 export function isRemotePaymentSourceChainId(value: unknown): value is RemotePaymentSourceChainId {
   return value === BASE_SEPOLIA_CHAIN_ID || value === MONAD_TESTNET_CHAIN_ID;
-}
-
-export function getCrossChain(chainId: PaymentSourceChainId) {
-  return CROSSCHAIN_CHAINS[chainId];
 }
 
 export function getCrossChainLabel(chainId: PaymentSourceChainId | undefined): string {
@@ -171,16 +137,8 @@ export function requestIdToBytes32(id: string): Hex {
   return keccak256(stringToHex(id));
 }
 
-export function buildCrossChainNonce(
-  requestId: string,
-  sourceChainId: RemotePaymentSourceChainId,
-  destinationChainId: typeof ARC_DESTINATION_CHAIN_ID
-): bigint {
-  return BigInt(requestIdToBytes32(`${requestId}:${sourceChainId}:${destinationChainId}`));
-}
-
-export function getAllowedSourceChainIds(): PaymentSourceChainId[] {
-  // Polymer currently accepts Monad proof jobs but leaves them pending
-  // indefinitely. Only advertise sources that can complete settlement.
-  return [ARC_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID];
+/** Read-only client for a legacy source chain (PSP verification of old receipts). */
+export function createCrossChainPublicClient(chainId: PaymentSourceChainId) {
+  const config = CROSSCHAIN_CHAINS[chainId];
+  return createPublicClient({ chain: config.chain, transport: http(config.rpcUrl, { timeout: 20_000 }) });
 }

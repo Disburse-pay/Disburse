@@ -5,28 +5,30 @@ import type { DocsSection, DocsSummaryItem } from "./types";
 
 export const docsSections: DocsSection[] = [
   {
-    title: "Project scope",
+    title: "What Disburse is",
     body: [
-      "Disburse is an Arc Testnet proof layer for stablecoin payments. Its primary job is to turn a settled QR invoice into a Portable Settlement Proof (PSP) that software, accountants, auditors, or smart contracts can verify.",
-      "The current build is intentionally narrow. The browser prepares the request, the wallet signs the transaction, and payment status is verified against Arc Testnet data. Cross-chain testnet routes use source escrow plus prefunded Arc settlement liquidity."
+      "Disburse is a payments and receipts layer for stablecoins on Arc. It does three things: it lets anyone publish a payment request as a QR invoice, it lets anyone send USDC or EURC directly, and it turns every settled payment into a Portable Settlement Proof that software can verify without trusting Disburse.",
+      "The wallet keeps custody and signs every transaction. Disburse prepares requests, checks the network before signing, verifies settlement against chain data afterwards, and issues the paperwork: invoices, statement bundles, and signed proofs. No balances are held and no keys ever leave the wallet.",
+      "The near-term direction is Circle Gateway and CCTP V2. Gateway provides a unified USDC balance across chains without Disburse custodying funds, and CCTP V2 covers one-shot payments into Arc from other chains. Deposit, withdraw, transfer, and batch transfer against a Disburse ID are the four verbs this build is growing toward."
     ],
     points: [
-      "Primary app routes: /qr-payments, /pay, /statements, and /docs.",
+      "Live today: QR invoicing, direct send, settlement verification, PSP issuance, statements, webhooks.",
       `Documentation is served from ${PRODUCTION_DOCS_HOSTNAME}.`,
-      "Supported actions: QR request creation, wallet payment, Arc Testnet verification, PSP lookup, statement bundle generation, UBL/PDF/JSON export, import/export, and direct transfer utility.",
-      "Out of scope for this release: custodial balances, Permit2, backend-enforced 402 flows, MPP rails, and server-side replay protection."
+      "Planned next: Gateway-backed deposit and withdraw, batch payouts in one transaction, handle-based recipients.",
+      "Out of scope for this release: custodial balances, Permit2, backend-enforced 402 flows, and server-side replay protection."
     ]
   },
   {
-    title: "Payment flows",
+    title: "Tech and stack",
     body: [
-      "Disburse separates immediate transfers from request-based payments. Direct Payments are used when the sender already knows the recipient, token, and amount. QR Payments are used when a requester wants to publish a fixed request for someone else to pay.",
-      "A scanned QR request opens the payer page with the request details locked. The payer can connect a wallet, estimate the transfer, submit the transaction, verify the result, and download the invoice after confirmation."
+      "The frontend is React 19 on Vite 6 with Tailwind CSS v4. All chain access goes through viem; there is no other web3 dependency. The backend is a small set of Vercel functions behind one dispatcher, with Supabase Postgres holding QR request state, PSP documents, and webhook registrations.",
+      "Everything is pinned to Arc Testnet, chain id 5042002. Arc has one property worth understanding before anything else here: USDC exists twice. Gas is paid in native USDC with 18 decimals, while payments move the ERC-20 contract at 6 decimals. The app scales between the two and checks both sides of a transfer before it lets the wallet sign."
     ],
     points: [
-      "Payments: the sender enters recipient, token, and amount, then signs a wallet transfer.",
-      "QR Payments: the requester enters recipient, token, amount, label, note, and invoice date, then shares a request URL as a QR code.",
-      "Direct Payments do not create QR request records in the local ledger."
+      "Frontend: React 19, Vite 6, Tailwind CSS v4, viem.",
+      "Backend: Vercel functions, Supabase Postgres, Resend for mail, pdf-lib for PDF output.",
+      "Gas: legacy gas pricing with a 20 gwei floor; Arc does not use EIP-1559.",
+      "Amount rule: ERC-20 USDC and EURC use 6 decimals; the native gas token uses 18."
     ]
   },
   {
@@ -41,6 +43,30 @@ export const docsSections: DocsSection[] = [
       `Failover endpoints: ${ARC_RPC_ENDPOINTS.length}`,
       `USDC: ${TOKENS.USDC.address}`,
       `EURC: ${TOKENS.EURC.address}`
+    ]
+  },
+  {
+    title: "Contracts",
+    body: [
+      "Three contracts back this build. PspVerifier anchors proof checking on-chain: it reconstructs a PSP digest from the document fields, recovers the issuer from the signature, and confirms the referenced settlement actually happened. It is view-only, holds no funds, and cannot be paused, so a proof stays checkable even if every Disburse server disappears.",
+      "QrPaymentSource and QrPaymentSettlement carry the cross-chain testnet route. The source contract escrows the payer's funds on the origin chain; the settlement contract pays the recipient on Arc from prefunded liquidity once the escrow is proven. This pair is scheduled for retirement: once deposits and transfers run through Circle Gateway, the escrow route has no job left."
+    ],
+    points: [
+      "PspVerifier: on-chain verification of signed settlement proofs, digest plus ecrecover plus settlement lookup.",
+      "QrPaymentSource: origin-chain escrow for cross-chain QR payments.",
+      "QrPaymentSettlement: Arc-side payout from prefunded liquidity."
+    ]
+  },
+  {
+    title: "Payment flows",
+    body: [
+      "Disburse separates immediate transfers from request-based payments. Direct Payments are used when the sender already knows the recipient, token, and amount. QR Payments are used when a requester wants to publish a fixed request for someone else to pay.",
+      "A scanned QR request opens the payer page with the request details locked. The payer can connect a wallet, estimate the transfer, submit the transaction, verify the result, and download the invoice after confirmation."
+    ],
+    points: [
+      "Payments: the sender enters recipient, token, and amount, then signs a wallet transfer.",
+      "QR Payments: the requester enters recipient, token, amount, label, note, and invoice date, then shares a request URL as a QR code.",
+      "Direct Payments do not create QR request records in the local ledger."
     ]
   },
   {
@@ -120,6 +146,64 @@ export const docsSections: DocsSection[] = [
       "Open: no matching transfer was found from the request start block."
     ],
     code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+  },
+  {
+    title: "API and webhooks",
+    body: [
+      "The API is a small JSON surface and is unauthenticated in this testnet build. QR request state, PSP lookup, statement bundles, and webhook management are all plain HTTPS endpoints served by the same Vercel dispatcher.",
+      "Webhooks fire when a PSP is issued. Each delivery is signed with HMAC-SHA256 using the webhook's secret and carries the signature in the X-Disburse-Signature header, so the receiver can check integrity before acting. Statement bundles aggregate PSP proofs over a date range with filters for recipient, payer, and token."
+    ],
+    points: [
+      "GET /api/psp?uid=... or ?request_id=... fetches a proof.",
+      "POST /api/statements builds a statement bundle; GET works for simple queries via query params.",
+      "GET, POST, and DELETE on /api/webhooks manage endpoints; secrets are masked on read.",
+      "Webhook deliveries time out after 10 seconds and are signed per delivery."
+    ]
+  }
+];
+
+/**
+ * Arcade docs: Cluck Run, the coin-op game on Arc Testnet. Written from the
+ * actual source in the separate arcade repo; deployed at arcade.disburse.online.
+ */
+export const arcadeSections: DocsSection[] = [
+  {
+    title: "Cluck Run",
+    body: [
+      "Cluck Run is a coin-op arcade game on Arc Testnet, deployed at arcade.disburse.online as its own build, separate from the payments app. It is an endless lane runner: grass, roads, rails, and rivers scroll ahead of a chicken, and the score is the number of rows crossed before the run ends.",
+      "The arcade exists to prove the payment rail in the most literal way possible. One play costs one coin, the coin is a real on-chain payment in native USDC, and the day's prize pot is simply the sum of the day's coins."
+    ],
+    points: [
+      "Runs at arcade.disburse.online as a separate deployment.",
+      "Wallet connection via Dynamic; chain access via viem.",
+      "Built with React 19 and Vite; the game itself is plain TypeScript on a canvas renderer."
+    ]
+  },
+  {
+    title: "The coin slot",
+    body: [
+      "CoinSlot is the single contract behind the game. insertCoin() is payable and requires exactly pricePerPlay in native USDC, currently 1 USDC. Every coin increments an on-chain counter and emits CoinInserted, and the contract balance is the prize pot.",
+      "Prizes are paid by an operator account. payPrize sends part of the pot to a winner and emits PrizePaid tagged with the day it covers, so payouts are auditable from event logs alone. The owner can change the price and rotate the operator, and both changes emit events."
+    ],
+    points: [
+      "Contract: 0xb69a635c1e39e2a96e1707335be1d5a0199e645a on Arc Testnet (5042002).",
+      "insertCoin() reverts unless msg.value equals pricePerPlay.",
+      "prizePot() is the contract balance; there is no separate accounting.",
+      "PrizePaid(player, amount, day) makes daily payouts verifiable from logs."
+    ],
+    code: "function insertCoin() external payable;\nevent CoinInserted(address indexed player, uint256 amount, uint256 indexed nonce);\nevent PrizePaid(address indexed player, uint256 amount, uint256 indexed day);"
+  },
+  {
+    title: "Runs and the leaderboard",
+    body: [
+      "A run starts server-side. The client submits the coin transaction hash; the server reads the receipt, confirms the transaction targeted the coin slot and that its CoinInserted event names the player's wallet, then issues a run id and a random seed. One transaction buys exactly one run, and reusing a spent hash is rejected.",
+      "Scores are checked against physics before they reach the board. The server caps the score by elapsed time, using a ceiling of 4 rows per second plus a small start allowance, and by an absolute maximum, so impossible scores are refused. The leaderboard is daily by UTC date, shows the top ten, and lives in Supabase alongside runs and profiles."
+    ],
+    points: [
+      "Usernames are claimed by signing cluckrun:username:v1:<name> with the wallet.",
+      "Username rules: 3 to 16 characters, letters, digits, underscore; taken names return a conflict.",
+      "Runs, daily scores, and profiles are stored in Supabase keyed by wallet address."
+    ]
   }
 ];
 

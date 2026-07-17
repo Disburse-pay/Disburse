@@ -89,17 +89,6 @@ function renderPspViewer(psp: PspV1): string {
     </div>
     ` : ""}
 
-    ${psp.marketClaim ? `
-    <div class="section">
-      <h2>Market Claim</h2>
-      <div class="row"><span class="label">Market</span><span class="value">${escapeHtml(psp.marketClaim.question)}</span></div>
-      <div class="row"><span class="label">Outcome</span><span class="value">${psp.marketClaim.outcome}${psp.marketClaim.outcome === psp.marketClaim.winningOutcome ? " (won)" : ""}</span></div>
-      <div class="row"><span class="label">Payout</span><span class="value">${psp.marketClaim.payoutAmount} USDC</span></div>
-      <div class="row"><span class="label">Market Address</span><span class="value">${truncateAddress(psp.marketClaim.onchainMarket)}</span></div>
-      <div class="row"><span class="label">Resolved At</span><span class="value">${psp.marketClaim.resolvedAt}</span></div>
-    </div>
-    ` : ""}
-
     <div class="section">
       <h2>Settlement (Arc Testnet)</h2>
       <div class="row"><span class="label">Chain ID</span><span class="value">${psp.settlement.chainId}</span></div>

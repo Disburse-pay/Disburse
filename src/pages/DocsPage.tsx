@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import { useI18n } from "../lib/i18n";
 import { cx, slugify } from "../lib/cx";
 import { getDocsCategories, getDocsSummaryItems } from "../content/docs";
 import type { DocsCategory, DocsPage } from "../content/docs";
+import DocsSearch from "../components/DocsSearch";
 
 /**
  * Gitbook-style docs.
@@ -11,7 +12,7 @@ import type { DocsCategory, DocsPage } from "../content/docs";
  * Layout:
  *   ┌─ sidebar (categories + pages) ─┬─ content (single page) ─┬─ on-this-page ─┐
  *
- * URL hash: `#<category-slug>/<page-slug>` (e.g. `#bet/lending`). Falls back
+ * URL hash: `#<category-slug>/<page-slug>` (e.g. `#app/quickstart`). Falls back
  * to the first page of the first category when no hash is set.
  */
 type Location = { categorySlug: string; pageSlug: string };
@@ -111,15 +112,17 @@ export default function DocsPage() {
   }
 
   const isOverview = location.categorySlug === categories[0].slug && currentIndex === 0;
+  const hasOnThisPage = sectionAnchors.length > 1;
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 pb-16">
-      <div className="docs-gitbook grid grid-cols-1 gap-8 lg:grid-cols-[220px_minmax(0,1fr)_200px] lg:gap-12">
-        {/* Sidebar */}
-        <aside className="docs-sidebar lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
-          <p className="mb-3 text-[12.5px] font-semibold tracking-[-0.005em] text-[var(--ink)]">
-            {t("documentation")}
-          </p>
+    // Docs frame, GitBook-style: the sidebar is anchored to the viewport's
+    // left edge with its own scroll region under the 56px top bar; the article
+    // and the "on this page" rail share the rest of the width. Nothing floats
+    // in a centered column with dead gutters on both sides.
+    <div className="lg:flex">
+      {/* Sidebar */}
+      <aside className="docs-sidebar px-5 pt-6 lg:sticky lg:top-14 lg:h-[calc(100vh-3.5rem)] lg:w-[280px] lg:shrink-0 lg:overflow-y-auto lg:pb-10 lg:pt-6">
+          <DocsSearch categories={categories} onNavigate={navigateTo} />
           {categories.map((category) => (
             <div key={category.slug} className="docs-sidebar-section">
               <p className="docs-sidebar-section-title">{category.title}</p>
@@ -147,36 +150,37 @@ export default function DocsPage() {
               </nav>
             </div>
           ))}
-        </aside>
+      </aside>
 
-        {/* Content */}
-        <main className="min-w-0">
+      {/* Article + on-this-page share the space the sidebar leaves. The pair
+          is capped for a readable measure but sits against the sidebar, not
+          adrift in the middle of the viewport. */}
+      <div className="min-w-0 flex-1">
+        <div className="flex gap-12 px-5 pb-20 pt-8 md:px-10 lg:px-14 lg:pt-10">
+          <main className="mx-auto flex min-h-[calc(100vh-11rem)] min-w-0 max-w-[820px] flex-1 flex-col">
           {isOverview && (
-            <section className="border-b border-[var(--line)] pb-10">
-              <p className="mb-3 text-[12px] font-medium uppercase tracking-wider text-[var(--muted)]">
-                {t("documentation")}
-              </p>
+            <section className="pb-10">
               <h1 className="max-w-[26ch] text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold leading-[1.1] tracking-tight text-[var(--ink)]">
                 {t("docsHeroTitle")}
               </h1>
-              <p className="mt-5 max-w-[66ch] text-[15px] leading-relaxed text-[var(--muted)]">
+              <p className="mt-5 max-w-[66ch] text-lg leading-relaxed text-[var(--ink-soft)]">
                 {t("docsHeroText")}
               </p>
-              <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[var(--line-soft)] pt-6 sm:grid-cols-4">
+              <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
                 {summaryItems.map((item) => (
                   <div key={item.label} className="min-w-0">
-                    <dt className="mb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--muted)]">
+                    <dt className="mb-1 text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
                       {item.label}
                     </dt>
-                    <dd className="truncate text-[13px] font-medium text-[var(--ink)]">{item.value}</dd>
+                    <dd className="text-base font-medium text-[var(--ink)]">{item.value}</dd>
                   </div>
                 ))}
               </dl>
             </section>
           )}
 
-          <article className={isOverview ? "pt-10" : "pt-2"}>
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--muted)]">
+          <article className={cx("flex flex-1 flex-col", isOverview ? "pt-10" : "pt-2")}>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
               {current.category.title}
             </p>
             <h2 className="mb-3 text-[clamp(1.5rem,2.5vw,2rem)] font-semibold tracking-tight text-[var(--ink)]">
@@ -185,16 +189,26 @@ export default function DocsPage() {
 
             {current.page.sections.map((section) => {
               const slug = slugify(section.title);
+              // Most pages wrap exactly one section whose title IS the page
+              // title (see appPagesFromSections). Rendering it again as an h3
+              // put the same words on screen twice, back to back.
+              const repeatsPageTitle =
+                current.page.sections.length === 1 && section.title === current.page.title;
               return (
                 <section
                   key={slug}
                   id={slug}
-                  className="scroll-mt-6 border-b border-[var(--line-soft)] py-8 last:border-b-0"
+                  className={cx(
+                    "scroll-mt-6 pb-8",
+                    repeatsPageTitle ? "pt-2" : "pt-8",
+                  )}
                 >
-                  <h3 className="mb-4 text-[18px] font-semibold tracking-[-0.012em] text-[var(--ink)]">
-                    {section.title}
-                  </h3>
-                  <div className="space-y-3 text-[15px] leading-[1.72] text-[var(--ink-soft)]">
+                  {!repeatsPageTitle && (
+                    <h3 className="mb-4 text-xl font-semibold tracking-[-0.012em] text-[var(--ink)]">
+                      {section.title}
+                    </h3>
+                  )}
+                  <div className="space-y-3 text-lg leading-[1.72] text-[var(--ink-soft)]">
                     {section.body.map((paragraph, i) => (
                       <p key={i} className="max-w-[72ch]">
                         {paragraph}
@@ -206,24 +220,21 @@ export default function DocsPage() {
                       {section.points.map((point, i) => (
                         <li
                           key={i}
-                          className="relative pl-5 text-[14px] leading-[1.65] text-[var(--ink-soft)] before:absolute before:left-0 before:top-[0.65em] before:h-1.5 before:w-1.5 before:rounded-full before:border before:border-[var(--ink)]"
+                          className="relative pl-5 text-md leading-[1.65] text-[var(--ink-soft)] before:absolute before:left-0 before:top-[0.65em] before:h-1.5 before:w-1.5 before:rounded-full before:border before:border-[var(--ink)]"
                         >
                           {point}
                         </li>
                       ))}
                     </ul>
                   )}
-                  {section.code && (
-                    <pre className="mt-5 max-w-[72ch] overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--input-bg)] px-4 py-3 font-mono text-[12.5px] leading-relaxed text-[var(--ink)]">
-                      <code>{section.code}</code>
-                    </pre>
-                  )}
+                  {section.code && <CodeBlock code={section.code} />}
                 </section>
               );
             })}
 
-            {/* Prev / next */}
-            <nav className="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Prev / next — mt-auto pins it to the bottom on short pages;
+                on long pages it simply follows the content. */}
+            <nav className="mt-auto grid grid-cols-1 gap-3 pt-12 sm:grid-cols-2">
               {prev ? (
                 <a
                   href={`#${prev.category.slug}/${prev.page.slug}`}
@@ -235,10 +246,10 @@ export default function DocsPage() {
                 >
                   <ChevronLeft className="h-4 w-4 shrink-0 text-[var(--muted)] transition-transform group-hover:-translate-x-0.5" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10.5px] font-medium uppercase tracking-wider text-[var(--muted)]">
+                    <p className="text-2xs font-medium uppercase tracking-wider text-[var(--muted)]">
                       Previous · {prev.category.title}
                     </p>
-                    <p className="mt-0.5 truncate text-[13.5px] font-medium text-[var(--ink)]">
+                    <p className="mt-0.5 truncate text-base font-medium text-[var(--ink)]">
                       {prev.page.title}
                     </p>
                   </div>
@@ -256,10 +267,10 @@ export default function DocsPage() {
                   className="docs-page-nav-link group flex items-center gap-3 rounded-md border border-[var(--line)] p-4 text-right transition-colors hover:border-[var(--ink-soft)] sm:justify-end"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10.5px] font-medium uppercase tracking-wider text-[var(--muted)]">
+                    <p className="text-2xs font-medium uppercase tracking-wider text-[var(--muted)]">
                       Next · {next.category.title}
                     </p>
-                    <p className="mt-0.5 truncate text-[13.5px] font-medium text-[var(--ink)]">
+                    <p className="mt-0.5 truncate text-base font-medium text-[var(--ink)]">
                       {next.page.title}
                     </p>
                   </div>
@@ -270,15 +281,16 @@ export default function DocsPage() {
               )}
             </nav>
           </article>
-        </main>
+          </main>
 
-        {/* On this page */}
-        {sectionAnchors.length > 1 && (
-          <aside className="hidden lg:sticky lg:top-6 lg:block lg:self-start">
-            <p className="mb-3 text-[11.5px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-              {t("onThisPage")}
-            </p>
-            <nav className="flex flex-col gap-1">
+          {/* On this page */}
+          {hasOnThisPage && (
+            <aside className="hidden w-[220px] shrink-0 xl:block">
+              <div className="sticky top-[4.5rem]">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  {t("onThisPage")}
+                </p>
+                <nav className="flex flex-col gap-1">
               {sectionAnchors.map((a) => {
                 const active = a.slug === activeSection;
                 return (
@@ -290,7 +302,7 @@ export default function DocsPage() {
                       scrollToAnchor(a.slug);
                     }}
                     className={cx(
-                      "relative py-1 pl-3 text-[12.5px] leading-[1.45] transition-colors",
+                      "relative py-1 pl-3 text-sm leading-[1.45] transition-colors",
                       active ? "font-medium text-[var(--ink)]" : "text-[var(--muted)] hover:text-[var(--ink)]",
                     )}
                   >
@@ -305,10 +317,37 @@ export default function DocsPage() {
                   </a>
                 );
               })}
-            </nav>
-          </aside>
-        )}
+                </nav>
+              </div>
+            </aside>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function CodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard?.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="group/code relative mt-5 max-w-[72ch]">
+      <button
+        type="button"
+        onClick={copy}
+        className="absolute right-2 top-2 inline-flex items-center gap-1 rounded border border-[var(--line)] bg-[var(--paper)] px-2 py-1 text-2xs font-medium text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--ink)] focus-visible:opacity-100 group-hover/code:opacity-100"
+        aria-label={copied ? "Copied" : "Copy code"}
+      >
+        {copied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={2} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <pre className="overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--input-bg)] px-4 py-3 font-mono text-sm leading-relaxed text-[var(--ink)]">
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }

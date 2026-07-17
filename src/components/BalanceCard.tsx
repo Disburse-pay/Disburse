@@ -45,19 +45,40 @@ export default function BalanceCard({
       aria-label={t("portfolioSummary")}
       className="rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] shadow-[var(--card-shadow)]"
     >
-      <div className="px-7 pt-7 pb-7">
-        {/* Eyebrow */}
-        <p className="text-[13px] text-[var(--muted)]">
-          {t("requestedVolume")}
-        </p>
+      <div className="p-5">
+        {/* Eyebrow left, actions top-right */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-[var(--muted)]">
+            {t("requestedVolume")}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate("/qr-payments")}
+              className="inline-flex h-8 items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+            >
+              <QrCode size={14} strokeWidth={1.75} />
+              {t("newRequest")}
+              <ArrowRight size={13} strokeWidth={2} className="ml-0.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate("/payments")}
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-base font-medium text-[var(--ink)] transition-colors hover:border-[var(--ink-soft)] hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+            >
+              <Send size={14} strokeWidth={1.75} />
+              {t("directTransfer")}
+            </button>
+          </div>
+        </div>
 
         {/* Headline number + optional sparkline */}
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-6">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-6">
           <div className="min-w-0">
-            <h2 className="text-[clamp(2.5rem,4.5vw,3.25rem)] font-medium leading-none tracking-[-0.028em] text-[var(--ink)]">
+            <h2 className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[var(--ink)]">
               <AnimatedNumber value={totalVolume} format={formatCurrency} />
             </h2>
-            <p className="mt-3 text-[13px] text-[var(--muted)]">
+            <p className="mt-2 text-sm text-[var(--muted)]">
               {isEmpty ? (
                 t("noRequestsVolume")
               ) : (
@@ -103,62 +124,26 @@ export default function BalanceCard({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="mt-7 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onNavigate("/qr-payments")}
-            className="inline-flex items-center gap-2 rounded-md bg-[var(--primary-bg)] px-4 py-2 text-[13.5px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
-          >
-            <QrCode size={14} strokeWidth={1.75} />
-            {t("newRequest")}
-            <ArrowRight size={13} strokeWidth={2} className="ml-0.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("/payments")}
-            className="inline-flex items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--paper)] px-4 py-2 text-[13.5px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--ink-soft)] hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
-          >
-            <Send size={14} strokeWidth={1.75} />
-            {t("directTransfer")}
-          </button>
-        </div>
+        {/* Supporting metrics — whitespace does the separating. Monochrome. */}
+        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
+          <Metric label={t("verified")} value={formatCurrency(verifiedVolume)} />
+          <Metric label={t("pending")} value={formatCurrency(pendingVolume)} />
+          <Metric label={t("requests")} value={String(requestCount)} />
+          <Metric
+            label={t("settlementRate")}
+            value={requestCount > 0 ? `${successRate}%` : "—"}
+          />
+        </dl>
       </div>
-
-      {/* Supporting metrics — single row split by hairlines. Monochrome. */}
-      <dl className="grid grid-cols-2 border-t border-[var(--line)] md:grid-cols-4">
-        <Metric label={t("verified")} value={formatCurrency(verifiedVolume)} />
-        <Metric label={t("pending")} value={formatCurrency(pendingVolume)} bordered />
-        <Metric label={t("requests")} value={String(requestCount)} bordered />
-        <Metric
-          label={t("settlementRate")}
-          value={requestCount > 0 ? `${successRate}%` : "—"}
-          bordered
-        />
-      </dl>
     </section>
   );
 }
 
-function Metric({
-  label,
-  value,
-  bordered,
-}: {
-  label: string;
-  value: string;
-  bordered?: boolean;
-}) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      className={[
-        "px-6 py-5",
-        bordered ? "border-l border-[var(--line)] first:border-l-0" : "",
-        "[&:nth-child(3)]:border-l-0 md:[&:nth-child(3)]:border-l [&:nth-child(n+3)]:border-t [&:nth-child(n+3)]:border-[var(--line)] md:[&:nth-child(n+3)]:border-t-0",
-      ].join(" ")}
-    >
-      <dt className="text-[12.5px] text-[var(--muted)]">{label}</dt>
-      <dd className="mt-2 text-[19px] font-medium tracking-[-0.012em] text-[var(--ink)]">
+    <div>
+      <dt className="text-sm text-[var(--muted)]">{label}</dt>
+      <dd className="mt-1 text-lg font-semibold tracking-[-0.012em] text-[var(--ink)]">
         {value}
       </dd>
     </div>

@@ -1,0 +1,9 @@
+dist
+coverage
+deployments
+node_modules
+.vercel
+package-lock.json
+*.tsbuildinfo
+contracts/out
+supabase/migrations

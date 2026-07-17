@@ -4,6 +4,18 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-serif: "Source Serif 4", "Iowan Old Style", "Apple Garamond", "Baskerville", "Times New Roman", serif;
+
+  /* Type scale — one codified ladder instead of ~20 hand-picked px values.
+     line-heights ≈1.25× to match the dense console's existing rhythm. */
+  --text-2xs: 10px;  --text-2xs--line-height: 13px;
+  --text-xs: 11px;   --text-xs--line-height: 14px;
+  --text-sm: 12px;   --text-sm--line-height: 15px;
+  --text-base: 13px; --text-base--line-height: 17px;
+  --text-md: 14px;   --text-md--line-height: 18px;
+  --text-lg: 15px;   --text-lg--line-height: 20px;
+  --text-xl: 17px;   --text-xl--line-height: 22px;
+  --text-2xl: 22px;  --text-2xl--line-height: 27px;
+  --text-3xl: 28px;  --text-3xl--line-height: 34px;
   /* Monochrome base palette + two restored chromatic accents:
      green = "yes / profit / success / connected"
      red   = "no / loss / failed"
@@ -31,6 +43,11 @@
   --canvas: #000000;
   --paper: #0a0a0a;
   --paper-2: #141414;
+  /* App-shell frame behind the content sheet (Linear/Dynamic pattern): the
+     sidebar sits on this, and all page content lives on one rounded --paper
+     sheet inset from it. --shell-active is the nav pill on that frame. */
+  --shell-frame: #000000;
+  --shell-active: #161616;
   --paper-translucent: rgba(10, 10, 10, 0.92);
   --paper-soft-translucent: rgba(10, 10, 10, 0.6);
   --ink: #ffffff;
@@ -72,8 +89,8 @@
   --texture-line: transparent;
   --texture-dot: transparent;
   --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --card-radius: 8px;
+  --card-shadow: none;
+  --card-radius: 12px;
   --btn-radius: 6px;
   --sidebar-w: 240px;
 }
@@ -84,6 +101,8 @@ html[data-theme="light"] {
   --canvas: #ffffff;
   --paper: #ffffff;
   --paper-2: #fafafa;
+  --shell-frame: #f4f4f5;
+  --shell-active: #ffffff;
   --paper-translucent: rgba(255, 255, 255, 0.95);
   --paper-soft-translucent: rgba(255, 255, 255, 0.7);
   --ink: #000000;
@@ -116,12 +135,27 @@ html[data-theme="light"] {
   --gray-text: #6b6b6b;
   --panel-accent: rgba(0, 0, 0, 0.025);
   --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --card-shadow: none;
 }
 
 /* Legacy light-mode polish block was removed. Theme-agnostic Stripe-style
    polish lives in the override block lower in this file and applies to
    both light and dark. */
+
+/* Everything below is @layer components.
+ *
+ * Why: unlayered declarations beat @layer declarations regardless of
+ * specificity. This file used to be entirely unlayered, so all ~5000 lines
+ * outranked every Tailwind utility — a bare `h1` selector defeated
+ * `.text-white`, and `--text-*`/`text-*` could never take effect. Putting the
+ * whole block in one layer restores the intended order (utilities > components
+ * > base) while preserving the relative order of the rules inside it, so
+ * nothing here changes rank against anything else here.
+ *
+ * The token definitions above (@theme, :root, html[data-theme]) stay unlayered
+ * on purpose: they are the source of truth and nothing should outrank them.
+ */
+@layer components {
 
 * {
   box-sizing: border-box;
@@ -404,35 +438,9 @@ html[data-theme="light"] .brand img { filter: none; }
   color: var(--ink);
 }
 
-.hero {
-  display: block;
-  padding: clamp(40px, 5vw, 56px) 0 clamp(28px, 4vw, 40px);
-  border-bottom: 1px solid var(--line);
-}
+/* (.hero / .route-hero / .eyebrow rules removed — their last consumer was the
+   RouteHero double-title, which is gone. Pages have one title: the Header's.) */
 
-.eyebrow {
-  width: fit-content;
-  margin-bottom: 20px;
-  color: var(--muted);
-  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
-  font-size: 0.78rem;
-}
-
-.hero h1 {
-  max-width: 800px;
-  font-family: "Inter", sans-serif;
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-
-.route-hero h1 {
-  max-width: 1120px;
-}
-
-.section-header p,
 .process-item p {
   color: var(--muted);
   font-size: 1.02rem;
@@ -447,23 +455,17 @@ html[data-theme="light"] .brand img { filter: none; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: var(--btn-radius);
-  padding: 0 18px;
-  font-size: 0.875rem;
-  font-weight: 600;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
   text-decoration: none;
   transition:
     transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
     background 180ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.primary-button {
-  border-color: #000;
-  background: #000;
-  color: #ffffff;
 }
 
 .secondary-button,
@@ -479,7 +481,7 @@ html[data-theme="light"] .brand img { filter: none; }
 }
 
 .text-button {
-  min-height: 34px;
+  min-height: 32px;
   border-color: transparent;
   background: transparent;
   color: var(--muted);
@@ -558,40 +560,26 @@ a[aria-disabled="true"] {
   text-overflow: clip;
 }
 
-.workbench,
-.process-section,
-.ledger-section,
-.faq-section {
-  padding: clamp(32px, 5vw, 56px) 0;
-  border-bottom: 1px solid var(--line);
+/* The QR ledger sits below the workbench; same 1120px column, no painted
+   border — spacing separates it. (.process-section/.faq-section were dead.) */
+.ledger-section {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 16px 0 0;
 }
 
-.section-header {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(280px, 0.45fr);
-  gap: 28px;
-  align-items: end;
-  margin-bottom: 28px;
-}
+/* (.section-header removed — it re-titled pages the Header already titles,
+   and a bare `header` background rule painted it as a full-width band.) */
 
-.section-header h2 {
-  font-family: "Inter", sans-serif;
-  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-
+/* No overflow:hidden — the date-picker popover must escape the card, and
+   nothing inside paints past the rounded corners anymore. */
 .desk-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
-  background: var(--paper-translucent);
-  backdrop-filter: blur(14px);
-  box-shadow: var(--card-shadow);
-  overflow: hidden;
+  background: var(--paper);
 }
 
 .single-flow-grid {
@@ -600,7 +588,7 @@ a[aria-disabled="true"] {
 
 .desk-pane {
   min-width: 0;
-  padding: clamp(20px, 3vw, 34px);
+  padding: 20px;
 }
 
 .create-pane {
@@ -608,22 +596,20 @@ a[aria-disabled="true"] {
 }
 
 .pay-pane {
-  background:
-    linear-gradient(90deg, var(--panel-accent), transparent 42%),
-    var(--paper);
+  background: var(--paper);
 }
 
 .pane-title {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .pane-title h3 {
-  font-size: 1rem;
-  font-weight: 720;
-  letter-spacing: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .form-stack {
@@ -633,10 +619,10 @@ a[aria-disabled="true"] {
 
 .field {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 610;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .field span {
@@ -645,8 +631,8 @@ a[aria-disabled="true"] {
 
 .field small {
   color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .field-grid {
@@ -659,7 +645,7 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--btn-radius);
   background: var(--input-bg);
   color: var(--ink);
@@ -672,13 +658,13 @@ textarea {
 
 input,
 select {
-  min-height: 44px;
-  padding: 0 11px;
+  min-height: 36px;
+  padding: 0 10px;
 }
 
 textarea {
-  min-height: 94px;
-  padding: 11px;
+  min-height: 72px;
+  padding: 9px 10px;
   resize: vertical;
 }
 
@@ -695,19 +681,17 @@ textarea::placeholder {
 
 .request-summary {
   display: grid;
-  gap: 18px;
-  padding-bottom: 20px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .request-summary h3 {
   margin-top: 10px;
   font-family: "Inter", sans-serif;
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
@@ -717,37 +701,33 @@ textarea::placeholder {
   line-height: 1.55;
 }
 
+/* The request-summary divider above already separates; no second line. */
 .amount-lockup {
   display: grid;
-  gap: 5px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  gap: 4px;
+  padding-top: 4px;
 }
 
+/* Amounts read in the UI face (Inter) with tabular figures — the mono
+   fallback drew a dotted zero that clashed with everything around it. */
 .amount-lockup strong {
-  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
-  font-size: 2.2rem;
-  font-weight: 720;
+  font-family: var(--font-sans, "Inter"), sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
 .amount-lockup span {
   color: var(--muted);
-  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
-  font-size: 0.82rem;
+  font-size: 12px;
 }
 
+/* Metric grids separate with whitespace, not cell borders. */
 .expiry-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-
-.expiry-grid .metric {
-  padding: 12px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  gap: 14px 16px;
 }
 
 .wallet-table,
@@ -761,21 +741,12 @@ textarea::placeholder {
 .estimate-line,
 .route-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
   margin: 16px 0;
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
 }
 
 .estimate-line {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.wallet-table .metric,
-.estimate-line .metric,
-.route-summary .metric {
-  padding: 12px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
 }
 
 .metric {
@@ -819,9 +790,7 @@ textarea::placeholder {
 .receipt-line {
   display: grid;
   gap: 8px;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  margin-top: 24px;
 }
 
 .qr-share {
@@ -829,9 +798,7 @@ textarea::placeholder {
   grid-template-columns: 172px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  margin-top: 24px;
   animation: qr-enter 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -898,9 +865,7 @@ textarea::placeholder {
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  margin-top: 24px;
   animation: qr-final-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -1017,20 +982,6 @@ code {
   gap: 6px;
 }
 
-.request-callout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.request-callout strong {
-  font-size: 0.95rem;
-}
-
 .recovery-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1066,8 +1017,8 @@ code {
   border-left: 3px solid var(--blue-text);
   background: var(--blue-bg);
   color: var(--blue-text);
-  font-size: 0.88rem;
-  font-weight: 610;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.45;
 }
 
@@ -1146,24 +1097,16 @@ code {
   font-weight: 700;
 }
 
-.empty-state {
-  display: grid;
-  align-content: center;
-  gap: 8px;
-  min-height: 220px;
-  padding: 16px 0;
-  color: var(--muted);
-  text-align: left;
-}
-
 .empty-state strong {
   color: var(--ink);
-  font-size: 1.1rem;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .empty-state span {
-  max-width: 32ch;
-  line-height: 1.55;
+  max-width: 40ch;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .support-grid {
@@ -1327,7 +1270,7 @@ code {
 }
 
 .ledger-list {
-  border-top: 1px solid var(--line);
+  margin-top: 4px;
 }
 
 .ledger-row {
@@ -1335,8 +1278,8 @@ code {
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 18px;
   align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .ledger-row.selected {
@@ -1390,191 +1333,6 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.docs-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 0.94fr) minmax(280px, 0.46fr);
-  gap: clamp(34px, 6vw, 86px);
-  align-items: end;
-  padding: 126px 0 72px;
-  border-bottom: 1px solid var(--line);
-}
-
-.docs-hero-copy {
-  display: grid;
-  gap: 20px;
-}
-
-.docs-hero .eyebrow {
-  margin-bottom: 0;
-}
-
-.docs-hero h1 {
-  max-width: 780px;
-  font-family: "Inter", sans-serif;
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-
-.docs-lede {
-  max-width: 66ch;
-  color: var(--muted);
-  font-size: 1.08rem;
-  line-height: 1.72;
-}
-
-.docs-summary {
-  display: grid;
-  margin: 0;
-  border-top: 1px solid var(--line);
-}
-
-.docs-summary div {
-  display: grid;
-  gap: 6px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.docs-summary dt {
-  color: var(--muted);
-  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
-  font-size: 0.68rem;
-  font-weight: 740;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.docs-summary dd {
-  margin: 0;
-  color: var(--ink);
-  font-size: 0.98rem;
-  font-weight: 680;
-  line-height: 1.4;
-}
-
-.docs-manual {
-  display: grid;
-  grid-template-columns: minmax(160px, 0.25fr) minmax(0, 1fr);
-  gap: clamp(30px, 5vw, 72px);
-  padding: 34px 0 76px;
-  border-bottom: 1px solid var(--line);
-}
-
-.docs-toc {
-  position: sticky;
-  top: 24px;
-  align-self: start;
-  padding-top: 2px;
-}
-
-.docs-toc strong {
-  display: block;
-  margin-bottom: 14px;
-  color: var(--ink);
-  font-size: 0.86rem;
-  font-weight: 760;
-}
-
-.docs-toc nav {
-  display: grid;
-  gap: 2px;
-}
-
-.docs-toc a {
-  display: inline-flex;
-  width: fit-content;
-  padding: 5px 0;
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 620;
-  line-height: 1.35;
-  text-decoration: none;
-  transition:
-    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.docs-toc a:hover {
-  color: var(--ink);
-  transform: translateX(2px);
-}
-
-.docs-content {
-  min-width: 0;
-  border-top: 1px solid var(--line);
-}
-
-.docs-section {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 28px;
-  padding: 32px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.docs-section > span {
-  color: var(--muted);
-  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
-  font-size: 0.78rem;
-}
-
-.docs-section h2 {
-  margin-bottom: 12px;
-  font-size: 1.42rem;
-  font-weight: 740;
-  letter-spacing: 0;
-}
-
-.docs-section p {
-  max-width: 76ch;
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.72;
-}
-
-.docs-section p + p {
-  margin-top: 12px;
-}
-
-.docs-section ul {
-  display: grid;
-  gap: 9px;
-  max-width: 78ch;
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.docs-section li {
-  position: relative;
-  padding-left: 18px;
-  color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.58;
-}
-
-.docs-section li::before {
-  position: absolute;
-  top: 0.72em;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border: 1px solid var(--muted);
-  border-radius: 999px;
-  content: "";
-}
-
-.docs-section code {
-  margin-top: 18px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  background: var(--input-bg);
-  white-space: normal;
 }
 
 .faq-list {
@@ -1764,12 +1522,8 @@ code {
 }
 
 @media (max-width: 980px) {
-  .hero,
-  .section-header,
   .desk-grid,
-  .support-grid,
-  .docs-hero,
-  .docs-manual {
+  .support-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1829,16 +1583,6 @@ code {
   gap: 4px;
 }
 
-  .docs-toc {
-    position: static;
-  }
-
-  .docs-toc nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 16px;
-  }
-
   .nav-links a,
   .text-link,
   .wallet-pill {
@@ -1851,22 +1595,6 @@ code {
   .theme-toggle {
     min-height: 34px;
     font-size: 0.8rem;
-  }
-
-  .hero h1 {
-    font-size: 5.4rem;
-  }
-
-  .section-header h2 {
-    font-size: 3.6rem;
-  }
-
-  .request-summary h3 {
-    font-size: 2.6rem;
-  }
-
-  .amount-lockup strong {
-    font-size: 1.8rem;
   }
 
   .process-item h3 {
@@ -1903,10 +1631,6 @@ code {
   overflow: hidden;
   background: var(--canvas);
 }
-
-  .hero {
-    padding-top: 72px;
-  }
 
   .top-nav {
   width: var(--sidebar-w);
@@ -2010,22 +1734,8 @@ code {
     display: none;
   }
 
-  .hero h1 {
-    font-size: 4.2rem;
-  }
-
-  .section-header h2,
-  .docs-hero h1 {
-    font-size: 3rem;
-  }
-
-  .request-summary h3,
   .process-item h3 {
     font-size: 2.1rem;
-  }
-
-  .amount-lockup strong {
-    font-size: 1.5rem;
   }
 
   .field-grid,
@@ -2035,11 +1745,9 @@ code {
   .expiry-grid,
   .token-line,
   .qr-share,
-  .request-callout,
   .recovery-panel,
   .process-item,
-  .ledger-row,
-  .docs-section {
+  .ledger-row {
     grid-template-columns: 1fr;
   }
 
@@ -2053,10 +1761,6 @@ code {
   .receipt-actions,
   .recovery-panel .tool-actions {
     justify-content: flex-start;
-  }
-
-  .docs-hero {
-    padding: 72px 0 48px;
   }
 
   .system-strip {
@@ -2085,8 +1789,7 @@ code {
 
   .recovery-panel,
   .process-item,
-  .ledger-row,
-  .docs-section {
+  .ledger-row {
     grid-template-columns: 1fr;
   }
 
@@ -2100,10 +1803,6 @@ code {
   .receipt-actions,
   .recovery-panel .tool-actions {
     justify-content: flex-start;
-  }
-
-  .docs-hero {
-    padding: 72px 0 48px;
   }
 
   .system-strip {
@@ -2216,7 +1915,7 @@ code {
 
 .activity-table td {
   padding: 11px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -2248,21 +1947,19 @@ code {
   display: grid;
   gap: 6px;
   align-content: start;
-  padding: 16px 0;
-  border: none;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--paper);
   cursor: pointer;
   text-align: left;
-  transition: color 150ms ease;
+  transition: border-color 150ms ease;
 }
 
 .quick-card:hover {
-  color: var(--primary-bg);
   transform: none;
   box-shadow: none;
-  border-color: var(--line);
+  border-color: var(--line-strong);
 }
 
 .quick-card:active { opacity: 0.8; }
@@ -2282,30 +1979,24 @@ code {
 }
 
 .health-card {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: transparent;
-  padding: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--paper);
+  padding: 8px 0;
 }
 
 .health-card-title {
-  padding: 16px 20px;
+  padding: 12px 20px 8px;
   font-size: 0.9rem;
-  font-weight: 700;
-  border-bottom: 1px solid var(--line);
+  font-weight: 600;
 }
 
 .health-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--line);
+  padding: 10px 20px;
   font-size: 0.84rem;
-}
-
-.health-row:last-child {
-  border-bottom: 0;
 }
 
 .health-label {
@@ -2744,25 +2435,26 @@ html[data-theme="light"] .nav-links a.active {
   stroke-linejoin: round;
 }
 
-/* Empty State */
+/* Empty State — one quiet centered block, compact. */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 64px 24px;
+  gap: 4px;
+  padding: 36px 24px;
   text-align: center;
   color: var(--muted);
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
   border-radius: var(--card-radius);
-  margin: 24px 0;
+  margin: 16px 0 0;
 }
 
 .empty-state svg {
-  width: 48px;
-  height: 48px;
+  width: 28px;
+  height: 28px;
   opacity: 0.5;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 /* Quick Actions Micro-interactions */
@@ -3108,8 +2800,13 @@ html[data-theme="light"] .quick-card:hover:not(:disabled) {
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* Smooth page transitions */
+/* Smooth page transitions. Every page shares one content column: 1120px,
+   centered, 24px above / 24px below — same as .ql-page and the dashboard. */
 .workbench {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 0;
   animation: workbenchFadeIn 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -3234,10 +2931,6 @@ html[data-theme="light"] .qr-share.watching::after {
     border-right: none !important;
     border-bottom: 1px solid var(--line);
   }
-  .section-header {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
   .system-strip {
     grid-template-columns: repeat(2, 1fr) !important;
   }
@@ -3263,17 +2956,15 @@ html[data-theme="light"] .qr-share.watching::after {
   gap: 14px;
 }
 
+/* Labeled groups: the label separates — no painted divider needed. */
 .form-section + .form-section {
   padding-top: 18px;
-  border-top: 1px solid var(--line-soft);
 }
 
 .form-section-label {
   color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 640;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .stage-strip {
@@ -3583,19 +3274,23 @@ html[data-theme="light"] .qr-share.watching::after {
   display: grid;
   align-content: start;
   gap: 6px;
-  min-height: 220px;
+  min-height: 120px;
   padding: 4px 0;
   margin: 0;
   max-width: 40ch;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 13px;
   line-height: 1.55;
+}
+
+.pay-pane-hint {
+  font-size: 13px;
 }
 
 .pay-pane-hint strong {
   color: var(--ink);
-  font-size: 0.95rem;
-  font-weight: 660;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .ledger-toolbar {
@@ -3610,7 +3305,7 @@ html[data-theme="light"] .qr-share.watching::after {
 
 .ledger-toolbar-label {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 13px;
 }
 
 .ledger-row-compact {
@@ -3775,7 +3470,6 @@ h2 { font-size: clamp(1.4rem, 2.2vw, 1.65rem); line-height: 1.2; font-weight: 60
 h3 { font-size: 1.0625rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.012em; }
 
 /* Eyebrow labels — calmer sentence-case grey instead of mono-uppercase tracked. */
-.eyebrow,
 .form-section-label,
 .ledger-toolbar-label,
 .health-card-title {
@@ -3859,50 +3553,18 @@ h3 { font-size: 1.0625rem; line-height: 1.3; font-weight: 600; letter-spacing: -
   font-weight: 600;
 }
 
-/* ─── Header ───────────────────────────────────────────────────────────────── */
-.header,
-header {
-  background: var(--paper);
-  border-bottom: 1px solid var(--line);
-}
+/* (bare `header` background rule removed — it painted EVERY <header> in the
+   app as a full-width paper band with a border, including in-card section
+   headers. The top bar styles itself; nothing else should inherit chrome.) */
 
-/* ─── Hero / section header ────────────────────────────────────────────────── */
-.hero,
-.route-hero,
-.section-header {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 24px;
-}
-.hero h1,
-.route-hero h1,
-.section-header h2 {
-  font-family: "Inter", sans-serif !important;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.section-header p,
-.hero p {
-  color: var(--muted);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  max-width: 60ch;
-}
-
-/* ─── Cards & panes — clean elevated paper ─────────────────────────────────── */
-.desk-grid {
-  background: var(--paper);
-  backdrop-filter: none;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--card-shadow);
-}
-.desk-pane { padding: clamp(22px, 3vw, 32px); }
+/* ─── Cards & panes ─────────────────────────────────────────────────────────
+   (.desk-grid/.desk-pane are defined once, earlier — no second recipe.) */
 .create-pane { border-right-color: var(--line); }
 
 .health-card {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 0;
   overflow: hidden;
   box-shadow: var(--card-shadow);
@@ -3924,7 +3586,7 @@ header {
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   overflow: hidden;
 }
 .quick-card {
@@ -3958,7 +3620,7 @@ header {
   width: 100%;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
   backdrop-filter: none;
 }
@@ -3981,11 +3643,11 @@ header {
 .secondary-button,
 .danger-button,
 .utility-button {
-  min-height: 38px;
-  padding: 0 16px;
+  min-height: 32px;
+  padding: 0 12px;
   border-radius: 6px;
   font-family: "Inter", sans-serif;
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.003em;
   transition:
@@ -4028,8 +3690,9 @@ header {
   transform: none;
 }
 .primary-button--lg {
-  min-height: 44px;
-  font-size: 0.9375rem;
+  /* Matches the 36px input height so a submit sits flush with its form. */
+  min-height: 36px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -4070,8 +3733,7 @@ textarea::placeholder {
 }
 
 /* ─── Forms — airy section spacing ─────────────────────────────────────────── */
-.form-section { padding: 20px 0; }
-.form-section + .form-section { border-top-color: var(--line-soft); }
+.form-section { padding: 14px 0; }
 .field { gap: 8px; }
 .field span {
   font-family: "Inter", sans-serif;
@@ -4090,7 +3752,7 @@ textarea::placeholder {
 .stage-strip {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   padding: 20px 22px;
 }
 .stage-step + .stage-step { border-left-color: var(--line-soft); }
@@ -4330,29 +3992,17 @@ blockquote {
 /* ─── Quiet Ledger Dashboard layout primitives ─────────────────────────────── */
 
 .ql-dashboard {
-  padding-top: 28px;
+  /* Same top offset as .ql-page and .workbench — one vertical rhythm. */
+  padding-top: 24px;
 }
 
 .ql-section {
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
-/* Section rule — hairline only, no eyebrow label. Just rhythm. */
-.ql-section-rule {
-  display: block;
-  height: 1px;
-  margin-top: 44px;
-  margin-bottom: 4px;
-  background: var(--line);
-}
-html[data-theme="light"] .ql-section-rule {
-  background: var(--line-soft);
-}
-/* Legacy label/line spans inside the rule are hidden if any markup still uses them. */
-.ql-section-rule-label,
-.ql-section-rule-line {
-  display: none;
-}
+/* (.ql-section-rule removed — its 1px-high painted box fought the labelled
+   SectionRule markup and rendered the label on a grey band. SectionRule now
+   styles itself: plain muted label over a hairline, Linear-style.) */
 
 /* Hero — borderless. Date / greeting / inline counts. No card, no aside. */
 .ql-hero {
@@ -4400,21 +4050,15 @@ html[data-theme="light"] .ql-section-rule {
   font-style: italic;
 }
 
-@media (max-width: 720px) {
-  .ql-section-rule {
-    margin-top: 32px;
-  }
-}
-
 /* ─── Generic Quiet Ledger page primitives ─────────────────────────────────── */
 
 .ql-page {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 0 64px;
+  padding: 24px 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .ql-page-head {
@@ -4430,7 +4074,7 @@ html[data-theme="light"] .ql-section-rule {
   max-width: 64ch;
   color: var(--muted);
   font-family: "Inter", sans-serif;
-  font-size: 0.95rem;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -4441,43 +4085,39 @@ html[data-theme="light"] .ql-section-rule {
 }
 
 .ql-empty {
-  padding: 60px 24px;
+  padding: 36px 24px;
   text-align: center;
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
   background: var(--paper);
   color: var(--ink-soft);
 }
 .ql-empty p {
   margin: 0;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-size: 1.15rem;
+  font-size: 15px;
   font-weight: 500;
 }
 .ql-empty-sub {
   margin-top: 6px !important;
   color: var(--muted);
   font-family: "Inter", sans-serif !important;
-  font-size: 0.875rem !important;
+  font-size: 13px !important;
   font-weight: 400 !important;
 }
 
-/* Form-card — used by Statements form, Milestones form. Card shell. */
+/* Form-card — used by Statements form. Card shell. */
 .ql-form-card {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--card-shadow);
-  padding: 24px 26px;
+  border-radius: var(--card-radius);
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .ql-form-card .form-section {
-  padding: 16px 0;
-}
-.ql-form-card .form-section + .form-section {
-  border-top: 1px solid var(--line-soft);
+  padding: 14px 0;
 }
 .ql-form-card .form-section:first-child {
   padding-top: 4px;
@@ -4494,9 +4134,8 @@ html[data-theme="light"] .ql-section-rule {
 .ql-statement-result {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--card-shadow);
-  padding: 24px 26px;
+  border-radius: var(--card-radius);
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -4614,229 +4253,6 @@ html[data-theme="light"] .ql-section-rule {
   color: var(--ink);
 }
 
-/* ─── Milestones ───────────────────────────────────────────────────────────── */
-
-.ql-milestone-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
-}
-.ql-milestone-step-row {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1.6fr) minmax(80px, 0.8fr) 44px 28px;
-  align-items: center;
-  gap: 8px;
-}
-.ql-milestone-step-index {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.78rem;
-  color: var(--muted);
-  text-align: right;
-}
-.ql-milestone-step-label,
-.ql-milestone-step-amount {
-  min-height: 38px;
-  padding: 0 12px;
-  font-size: 0.875rem;
-}
-.ql-milestone-step-unit {
-  font-family: "Inter", sans-serif;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ql-milestone-step-remove {
-  appearance: none;
-  background: transparent;
-  border: 1px solid transparent;
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ql-milestone-step-remove:hover {
-  background: var(--paper-2);
-  color: var(--ink);
-  border-color: var(--line-strong);
-}
-.ql-milestone-add-step {
-  align-self: flex-start;
-  padding: 6px 0;
-  font-size: 0.82rem;
-}
-
-.ql-milestone-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.ql-milestone-card {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  transition: border-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ql-milestone-card:hover {
-  border-color: var(--line-strong);
-}
-.ql-milestone-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-}
-.ql-milestone-card-head h3 {
-  margin: 0 0 6px 0;
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-weight: 500;
-  font-size: 1.2rem;
-  letter-spacing: -0.012em;
-  color: var(--ink);
-}
-.ql-milestone-meta {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-.ql-milestone-amount {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--ink);
-}
-.ql-milestone-unit {
-  font-family: "Inter", sans-serif;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ql-milestone-sep {
-  color: var(--line-strong);
-}
-.ql-milestone-badge {
-  font-family: "Inter", sans-serif;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 4px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-.ql-milestone-badge.is-completed {
-  background: transparent;
-  border: 1px solid var(--ink);
-  color: var(--ink);
-}
-.ql-milestone-badge.is-cancelled {
-  background: transparent;
-  border: 1px dotted var(--muted-soft);
-  color: var(--muted);
-}
-.ql-milestone-badge.is-active,
-.ql-milestone-badge.is-in_progress {
-  background: transparent;
-  border: 1px dashed var(--ink-soft);
-  color: var(--ink-soft);
-}
-
-.ql-milestone-progress {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-}
-.ql-milestone-progress-seg {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--line-strong);
-  transition: background 200ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ql-milestone-progress-seg.is-complete { background: var(--primary-bg); }
-.ql-milestone-progress-seg.is-active { background: var(--primary-bg); opacity: 0.6; }
-
-.ql-milestone-step-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--line-soft);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.ql-milestone-step-item {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--paper);
-  font-size: 0.86rem;
-  transition: background 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ql-milestone-step-item:hover {
-  background: var(--paper-2);
-}
-.ql-milestone-step-icon {
-  text-align: center;
-  color: var(--muted);
-  font-family: "Inter", sans-serif;
-}
-.ql-milestone-step-item.is-completed .ql-milestone-step-icon { color: var(--primary-bg); }
-.ql-milestone-step-text {
-  color: var(--ink);
-}
-.ql-milestone-step-money {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-}
-.ql-milestone-step-money em {
-  font-style: normal;
-  font-family: "Inter", sans-serif;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-left: 2px;
-}
-.ql-milestone-step-status {
-  font-family: "Inter", sans-serif;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  min-width: 80px;
-  text-align: right;
-}
-.ql-milestone-step-item.is-completed .ql-milestone-step-status { color: var(--ink); font-weight: 700; }
-.ql-milestone-step-item.is-locked .ql-milestone-step-status { color: var(--muted-soft); }
-
 /* ─── Import / Export (Backup) ─────────────────────────────────────────────── */
 
 .ql-ie-grid {
@@ -4847,8 +4263,8 @@ html[data-theme="light"] .ql-section-rule {
 .ql-ie-card {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 22px 24px;
+  border-radius: var(--card-radius);
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4860,14 +4276,14 @@ html[data-theme="light"] .ql-section-rule {
 .ql-ie-card h3 {
   margin: 0;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-weight: 500;
-  font-size: 1.2rem;
-  letter-spacing: -0.012em;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 .ql-ie-card-text {
   margin: 0 0 6px 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 13px;
   line-height: 1.55;
 }
 .ql-ie-card button {
@@ -4881,7 +4297,7 @@ html[data-theme="light"] .ql-section-rule {
 .ql-ie-note p:not(.form-section-label) {
   margin: 4px 0 0;
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: 13px;
   line-height: 1.55;
 }
 .ql-ie-note strong {
@@ -4889,29 +4305,6 @@ html[data-theme="light"] .ql-section-rule {
   font-weight: 600;
 }
 
-@media (max-width: 640px) {
-  .ql-milestone-step-row {
-    grid-template-columns: 24px minmax(0, 1fr) 28px;
-    grid-template-rows: auto auto;
-    gap: 6px 8px;
-  }
-  .ql-milestone-step-label { grid-column: 2 / 3; grid-row: 1; }
-  .ql-milestone-step-amount { grid-column: 2 / 3; grid-row: 2; }
-  .ql-milestone-step-unit { display: none; }
-  .ql-milestone-step-remove { grid-column: 3 / 4; grid-row: 1 / 3; }
-
-  .ql-milestone-step-item {
-    grid-template-columns: 22px minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-    gap: 4px 12px;
-  }
-  .ql-milestone-step-status {
-    grid-column: 2 / 4;
-    grid-row: 2;
-    text-align: left;
-    min-width: 0;
-  }
-}
 
 /* END Quiet Ledger ════════════════════════════════════════════════════════════ */
 
@@ -4920,10 +4313,6 @@ html[data-theme="light"] .ql-section-rule {
    Three columns: category sidebar, single-page content, on-this-page TOC.
    Monochrome — borders + tone of gray do all the work.
    ═══════════════════════════════════════════════════════════════════════════ */
-
-.docs-gitbook {
-  padding-top: 28px;
-}
 
 .docs-sidebar {
   display: flex;
@@ -4943,9 +4332,7 @@ html[data-theme="light"] .ql-section-rule {
 }
 
 .docs-sidebar-section + .docs-sidebar-section {
-  margin-top: 6px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line-soft);
+  margin-top: 20px;
 }
 
 .docs-sidebar-section-title {
@@ -5197,4 +4584,6 @@ html[data-theme="light"] .ql-section-rule {
 .pay-host-exports .compliance-buttons {
   padding: 14px 16px;
 }
+
+} /* end @layer components */
 

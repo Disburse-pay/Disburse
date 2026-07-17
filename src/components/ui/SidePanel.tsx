@@ -164,7 +164,7 @@ export default function SidePanel({
                   {title && (
                     <h2
                       id={titleId}
-                      className="text-[14px] font-semibold tracking-tight text-[var(--ink)]"
+                      className="text-md font-semibold tracking-tight text-[var(--ink)]"
                     >
                       {title}
                     </h2>
@@ -172,7 +172,7 @@ export default function SidePanel({
                   {description && (
                     <p
                       id={descId}
-                      className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--muted)]"
+                      className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]"
                     >
                       {description}
                     </p>

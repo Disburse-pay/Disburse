@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  ARC_CHAIN_ID,
   ARC_EXPLORER_URL,
   ARC_RPC_ENDPOINTS,
   TOKENS,
@@ -161,8 +162,8 @@ export async function send(opts: SendOptions): Promise<SendResult> {
     token,
     recipient: recipient,
     amount,
-    signature: await account.signMessage({
-      message: buildDisburseAuthorizationMessage({
+    signature: await account.signTypedData(
+      buildDisburseRegistrationTypedData({
         txHash: hash,
         token,
         recipient,
@@ -170,7 +171,7 @@ export async function send(opts: SendOptions): Promise<SendResult> {
         label,
         note
       })
-    })
+    )
   };
 
   const regRes = await fetch(`${apiBase}/api/disburse`, {
@@ -268,21 +269,43 @@ function log(opts: Pick<SendOptions, "json">, message: string) {
   }
 }
 
-function buildDisburseAuthorizationMessage(input: {
+/**
+ * EIP-712 payload authorizing PSP registration of a direct transfer. Must
+ * match buildDisburseRegistrationTypedData in the Disburse API
+ * (api-handlers/disburse.ts): domain bound to the app name and Arc chain id
+ * so the signature verifies nowhere else.
+ */
+function buildDisburseRegistrationTypedData(input: {
   txHash: Hash;
   token: PaymentToken;
   recipient: Address;
   amount: string;
   label: string;
   note?: string;
-}): string {
-  return [
-    "Disburse direct PSP registration",
-    `txHash: ${input.txHash.toLowerCase()}`,
-    `token: ${input.token}`,
-    `recipient: ${input.recipient.toLowerCase()}`,
-    `amount: ${input.amount}`,
-    `label: ${input.label}`,
-    `note: ${input.note ?? ""}`
-  ].join("\n");
+}) {
+  return {
+    domain: { name: "Disburse", version: "1", chainId: ARC_CHAIN_ID },
+    types: {
+      DirectPspRegistration: [
+        { name: "txHash", type: "bytes32" },
+        { name: "token", type: "string" },
+        { name: "recipient", type: "address" },
+        { name: "amount", type: "string" },
+        { name: "label", type: "string" },
+        { name: "note", type: "string" }
+      ]
+    },
+    primaryType: "DirectPspRegistration",
+    message: {
+      txHash: input.txHash.toLowerCase() as Hash,
+      token: input.token,
+      // Lowercase so viem's strict checksum validation accepts any input
+      // casing; EIP-712 hashes the address value, so casing never changes
+      // the signature.
+      recipient: input.recipient.toLowerCase() as Address,
+      amount: input.amount,
+      label: input.label,
+      note: input.note ?? ""
+    }
+  } as const;
 }

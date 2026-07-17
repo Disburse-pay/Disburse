@@ -81,15 +81,15 @@ export default function TransactionsTable({
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
         <div className="flex items-baseline gap-3">
           <div>
-            <p className="text-[15px] font-semibold tracking-[-0.012em] text-[var(--ink)]">
+            <p className="text-lg font-semibold tracking-[-0.012em] text-[var(--ink)]">
               {t("recentRequestsLower")}
             </p>
-            <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">
+            <p className="mt-0.5 text-sm text-[var(--muted)]">
               {t("ledger")}
             </p>
           </div>
           {requests.length > 0 && (
-            <span className="text-[12px] text-[var(--muted)]">
+            <span className="text-sm text-[var(--muted)]">
               {requests.length} {requests.length === 1 ? t("record") : t("records")}
             </span>
           )}
@@ -106,7 +106,7 @@ export default function TransactionsTable({
                 onClick={() => setFilter(f)}
                 aria-pressed={active}
                 className={[
-                  "rounded px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
+                  "rounded px-2.5 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
                   active
                     ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
                     : "text-[var(--muted)] hover:text-[var(--ink)]",
@@ -116,7 +116,7 @@ export default function TransactionsTable({
                 {count > 0 && f !== "all" && (
                   <span
                     className={[
-                      "ml-1 text-[11px] tabular-nums",
+                      "ml-1 text-xs tabular-nums",
                       active ? "text-[var(--muted)]" : "text-[var(--muted-soft)]",
                     ].join(" ")}
                   >
@@ -150,7 +150,7 @@ export default function TransactionsTable({
                 return (
                   <tr
                     key={r.id}
-                    className="group cursor-pointer border-b border-[var(--line-soft)] transition-colors last:border-b-0 hover:bg-[var(--paper-2)]"
+                    className="group cursor-pointer transition-colors hover:bg-[var(--paper-2)]"
                     onClick={() =>
                       onNavigate(`/pay?r=${encodeRequestPayload(r)}`)
                     }
@@ -161,7 +161,7 @@ export default function TransactionsTable({
                           className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}
                           aria-hidden="true"
                         />
-                        <span className={`text-[12px] font-medium ${cfg.text}`}>
+                        <span className={`text-sm font-medium ${cfg.text}`}>
                           {t(cfg.labelKey)}
                         </span>
                         {receipt && (
@@ -176,38 +176,38 @@ export default function TransactionsTable({
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-[13.5px] font-medium text-[var(--ink)]">
+                      <span className="text-base font-medium text-[var(--ink)]">
                         {r.label}
                       </span>
                       {r.note && (
-                        <span className="ml-2 hidden max-w-[24ch] truncate align-middle text-[12px] text-[var(--muted)] md:inline-block">
+                        <span className="ml-2 hidden max-w-[24ch] truncate align-middle text-sm text-[var(--muted)] md:inline-block">
                           {r.note}
                         </span>
                       )}
                     </Td>
                     <Td>
-                      <span className="font-mono text-[12px] text-[var(--muted)]">
+                      <span className="font-mono text-sm text-[var(--muted)]">
                         {shortAddress(r.recipient)}
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-[12.5px] text-[var(--muted)]">
+                      <span className="text-sm text-[var(--muted)]">
                         {isCrossChainPaymentRequest(r) ? t("crossChain") : t("arcDirect")}
                       </span>
                     </Td>
                     <Td align="right">
-                      <span className="text-[13.5px] font-medium text-[var(--ink)] tabular-nums">
+                      <span className="text-base font-medium text-[var(--ink)] tabular-nums">
                         {r.amount}
                       </span>
-                      <span className="ml-1 text-[11.5px] text-[var(--muted)]">
+                      <span className="ml-1 text-xs text-[var(--muted)]">
                         {r.token}
                       </span>
                     </Td>
                     <Td align="right">
-                      <span className="text-[12.5px] text-[var(--muted)]">
+                      <span className="text-sm text-[var(--muted)]">
                         {formatRelative(r.createdAt, now)}
                       </span>
-                      <span className="block text-[11px] text-[var(--muted-soft)]">
+                      <span className="block text-xs text-[var(--muted-soft)]">
                         {formatInvoiceDate(r.invoiceDate)}
                       </span>
                     </Td>
@@ -242,7 +242,7 @@ function Th({
   return (
     <th
       className={[
-        "px-5 py-3 text-[12px] font-medium text-[var(--muted)]",
+        "px-5 py-3 text-sm font-medium text-[var(--muted)]",
         align === "right" ? "text-right" : "text-left",
       ].join(" ")}
     >
@@ -284,10 +284,10 @@ function EmptyState({
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--paper-2)] text-[var(--muted)]">
         <QrCode size={20} strokeWidth={1.5} />
       </div>
-      <p className="mb-1 text-[14px] font-medium text-[var(--ink)]">
+      <p className="mb-1 text-lg font-medium text-[var(--ink)]">
         {isFiltered ? t("noFilteredRequests", { filter: t(FILTER_LABEL[filter]).toLowerCase() }) : t("noRequests")}
       </p>
-      <p className="mb-4 max-w-[32ch] text-[12.5px] leading-relaxed text-[var(--muted)]">
+      <p className="mb-4 max-w-[32ch] text-base leading-relaxed text-[var(--muted)]">
         {isFiltered
           ? t("changeFilter")
           : t("createQrStartCollecting")}
@@ -296,7 +296,7 @@ function EmptyState({
         <button
           type="button"
           onClick={onCreate}
-          className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+          className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-base font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
         >
           {t("createFirstRequest")}
         </button>

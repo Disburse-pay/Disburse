@@ -1,23 +1,15 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
-import { PRODUCTION_DOCS_HOSTNAME } from "../../lib/routing";
 import type { DocsSection, DocsSummaryItem } from "./types";
+import { docsSections, arcadeSections } from "./en";
 
-export const docsSectionsId: DocsSection[] = [
-  {
-    title: "Ruang lingkup proyek",
-    body: [
-      "Disburse adalah konsol pembayaran non-kustodial untuk Arc Testnet. Aplikasi ini dibuat untuk dua tugas praktis: mengirim transfer stablecoin dari wallet yang terhubung, dan membuat permintaan pembayaran QR yang bisa dibuka dan dibayar oleh wallet lain.",
-      "Build saat ini sengaja dibuat fokus. Aplikasi tidak menyimpan saldo, mengambil private key, atau menjalankan akun kustodial. Browser menyiapkan permintaan, wallet menandatangani transaksi, dan status pembayaran diverifikasi dari data Arc Testnet."
-    ],
-    points: [
-      "Route aplikasi utama: /payments, /qr-payments, dan /pay.",
-      `Dokumentasi disajikan dari ${PRODUCTION_DOCS_HOSTNAME}.`,
-      "Aksi yang didukung: koneksi wallet, perpindahan ke Arc Testnet, estimasi gas, transfer ERC-20, pembuatan permintaan QR, verifikasi transfer, import/export, dan unduhan invoice.",
-      "Di luar cakupan release ini: saldo kustodial, Permit2, alur 402 yang ditegakkan backend, rail MPP, dan perlindungan replay di server."
-    ]
-  },
-  {
+/**
+ * Fully translated sections, keyed by the canonical English title from en.ts.
+ * Sections not in this map fall back to the English body with a translated
+ * headline (see fallbackTitles) so the structure never drifts from en.ts.
+ */
+const translated: Record<string, DocsSection> = {
+  "Payment flows": {
     title: "Alur pembayaran",
     body: [
       "Disburse memisahkan transfer langsung dari pembayaran berbasis permintaan. Pembayaran Langsung dipakai saat pengirim sudah tahu penerima, token, dan jumlah. Pembayaran QR dipakai saat requester ingin menerbitkan permintaan tetap untuk dibayar orang lain.",
@@ -29,7 +21,7 @@ export const docsSectionsId: DocsSection[] = [
       "Pembayaran Langsung tidak membuat record permintaan QR di ledger lokal."
     ]
   },
-  {
+  "Network and assets": {
     title: "Jaringan dan aset",
     body: [
       "Aplikasi dipasang untuk Arc Testnet. Gas native direpresentasikan sebagai USDC dengan 18 desimal, sedangkan jumlah pembayaran ERC-20 yang didukung memakai 6 desimal.",
@@ -43,7 +35,7 @@ export const docsSectionsId: DocsSection[] = [
       `EURC: ${TOKENS.EURC.address}`
     ]
   },
-  {
+  "QR request payload": {
     title: "Payload permintaan QR",
     body: [
       "QR code berisi URL /pay dengan payload JSON base64url pada parameter query r. Payload hanya deskripsi permintaan portabel; tidak pernah berisi private key, approval wallet, saldo token, atau transaksi yang sudah ditandatangani.",
@@ -56,7 +48,7 @@ export const docsSectionsId: DocsSection[] = [
     ],
     code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
   },
-  {
+  "Wallet execution": {
     title: "Eksekusi wallet",
     body: [
       "Pembayaran adalah pemanggilan transfer ERC-20 standar yang ditandatangani oleh wallet terhubung. Aplikasi memperkirakan gas dengan viem, menerapkan batas bawah harga gas Arc, menyimpan hash transaksi wallet segera setelah dikirim, lalu menunggu konfirmasi.",
@@ -69,7 +61,7 @@ export const docsSectionsId: DocsSection[] = [
       "Gas: estimasi dipakai untuk tampilan dan pemeriksaan saldo; wallet menentukan gas transaksi akhir saat signing."
     ]
   },
-  {
+  "Local ledger and realtime": {
     title: "Ledger lokal dan realtime",
     body: [
       "Permintaan QR dan receipt disimpan di localStorage browser agar requester bisa mengelola pekerjaan tanpa membuat akun. Ledger mendukung export dan import JSON untuk backup atau migrasi.",
@@ -82,7 +74,7 @@ export const docsSectionsId: DocsSection[] = [
       "URL explorer hasil import dibuat ulang dari hash transaksi Arcscan yang sudah diverifikasi."
     ]
   },
-  {
+  "Invoice output": {
     title: "Output invoice",
     body: [
       "Setelah payer mengonfirmasi dan transfer diverifikasi dari data Arc Testnet, halaman bayar dapat membuat invoice PDF lokal.",
@@ -94,7 +86,7 @@ export const docsSectionsId: DocsSection[] = [
       "Tidak ada server yang menyimpan atau mengirim file invoice lewat email pada build ini."
     ]
   },
-  {
+  Verification: {
     title: "Verifikasi",
     body: [
       "Verifikasi pertama memeriksa hash transaksi yang diketahui. Jika tidak ada hash, aplikasi memindai log Transfer ERC-20 dalam jendela 10.000 blok dari blok awal permintaan sampai blok terbaru dan membandingkan penerima serta jumlah token yang tepat.",
@@ -107,7 +99,30 @@ export const docsSectionsId: DocsSection[] = [
     ],
     code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
   }
-];
+};
+
+/** Translated headlines for sections whose bodies fall back to English. */
+const fallbackTitles: Record<string, string> = {
+  "What Disburse is": "Apa itu Disburse",
+  "Tech and stack": "Teknologi dan stack",
+  Contracts: "Kontrak",
+  "Portable Settlement Proofs": "Portable Settlement Proofs",
+  "API and webhooks": "API dan webhook"
+};
+
+const arcadeTitles: Record<string, string> = {
+  "Cluck Run": "Cluck Run",
+  "The coin slot": "Slot koin",
+  "Runs and the leaderboard": "Run dan leaderboard"
+};
+
+export const docsSectionsId: DocsSection[] = docsSections.map(
+  (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
+);
+
+export const arcadeSectionsId: DocsSection[] = arcadeSections.map(
+  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
+);
 
 export const docsSummaryItemsId: DocsSummaryItem[] = [
   {

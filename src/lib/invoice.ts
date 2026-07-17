@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import type { PDFFont, PDFPage, RGB } from "pdf-lib";
 import { ARC_CHAIN_ID } from "./arc";
 import { shortAddress, type PaymentRequest, type Receipt } from "./payments";
 
@@ -45,6 +45,9 @@ export function buildInvoiceRows({ request, receipt }: InvoiceInput): InvoiceRow
 }
 
 export async function generateInvoicePdf(input: InvoiceInput): Promise<Uint8Array> {
+  // Load pdf-lib on demand so it ships only when a receipt PDF is actually
+  // generated (keeps it out of the initial bundle / the mobile pay page).
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const { request, receipt } = input;
   const document = await PDFDocument.create();
   const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);

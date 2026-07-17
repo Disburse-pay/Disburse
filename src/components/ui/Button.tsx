@@ -24,9 +24,9 @@ const base =
   "disabled:cursor-not-allowed disabled:opacity-50";
 
 const sizes: Record<Size, string> = {
-  sm: "h-7 px-2.5 text-[11.5px]",
-  md: "h-8 px-3.5 text-[12.5px]",
-  lg: "h-10 px-4 text-[13.5px]",
+  sm: "h-7 px-2.5 text-xs",
+  md: "h-8 px-3.5 text-sm",
+  lg: "h-10 px-4 text-base",
 };
 
 const variants: Record<Variant, string> = {

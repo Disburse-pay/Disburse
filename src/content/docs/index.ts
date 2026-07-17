@@ -1,12 +1,11 @@
 import type { LanguageCode } from "../../lib/settings";
 import { slugify } from "../../lib/cx";
 import type { DocsCategory, DocsPage, DocsSection, DocsSummaryItem } from "./types";
-import { docsSections, docsSummaryItems } from "./en";
-import { docsSectionsId, docsSummaryItemsId } from "./id";
-import { docsSectionsDe, docsSummaryItemsDe } from "./de";
-import { docsSectionsHi, docsSummaryItemsHi } from "./hi";
-import { docsSectionsZh, docsSummaryItemsZh } from "./zh";
-import { betPages } from "./bet";
+import { docsSections, arcadeSections, docsSummaryItems } from "./en";
+import { docsSectionsId, arcadeSectionsId, docsSummaryItemsId } from "./id";
+import { docsSectionsDe, arcadeSectionsDe, docsSummaryItemsDe } from "./de";
+import { docsSectionsHi, arcadeSectionsHi, docsSummaryItemsHi } from "./hi";
+import { docsSectionsZh, arcadeSectionsZh, docsSummaryItemsZh } from "./zh";
 
 export type { DocsSection, DocsSummaryItem, DocsPage, DocsCategory } from "./types";
 
@@ -16,6 +15,14 @@ export function getDocsSections(lang: LanguageCode): DocsSection[] {
   if (lang === "hi") return docsSectionsHi;
   if (lang === "zh") return docsSectionsZh;
   return docsSections;
+}
+
+export function getArcadeSections(lang: LanguageCode): DocsSection[] {
+  if (lang === "de") return arcadeSectionsDe;
+  if (lang === "id") return arcadeSectionsId;
+  if (lang === "hi") return arcadeSectionsHi;
+  if (lang === "zh") return arcadeSectionsZh;
+  return arcadeSections;
 }
 
 export function getDocsSummaryItems(lang: LanguageCode): DocsSummaryItem[] {
@@ -39,9 +46,9 @@ function appPagesFromSections(sections: DocsSection[]): DocsPage[] {
 }
 
 /**
- * Gitbook categories for /docs. Two top-level groups: "App" (the payments /
- * QR / PSP surface, sourced from the locale files) and "Bet" (markets +
- * lending, authored in English with no translation fallback yet).
+ * Gitbook categories for /docs. "App" is the payments / QR / PSP surface,
+ * "Arcade" is Cluck Run, the coin-op game deployed separately at
+ * arcade.disburse.online. Both are sourced from the locale files.
  */
 export function getDocsCategories(lang: LanguageCode): DocsCategory[] {
   return [
@@ -51,9 +58,9 @@ export function getDocsCategories(lang: LanguageCode): DocsCategory[] {
       pages: appPagesFromSections(getDocsSections(lang)),
     },
     {
-      slug: "bet",
-      title: "Bet",
-      pages: betPages,
+      slug: "arcade",
+      title: "Arcade",
+      pages: appPagesFromSections(getArcadeSections(lang)),
     },
   ];
 }

@@ -1,14 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/markets-expire-orders",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/qr-settle-cron",
-      "schedule": "0 12 * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/:route*",

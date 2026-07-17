@@ -5,7 +5,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { TOKENS, arcTestnet, ARC_RPC_ENDPOINTS, erc20Abi } from "./lib/arc.js";
 import { formatTokenAmount, parseTokenAmount, validateRecipient, type PaymentToken } from "./lib/payments.js";
 import { buildBatchInvoiceFilename, generateBatchInvoicePdf, type BatchInvoiceItem } from "./lib/invoice.js";
-import { send, type SendResult } from "./send.js";
+import { send } from "./send.js";
 
 export type BatchOptions = {
   csvPath: string;

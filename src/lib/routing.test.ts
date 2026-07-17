@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getBetHref, getInitialPage, shouldRedirectLegacyBetRoute } from "./routing";
+import { getInitialPage } from "./routing";
 
 function stubLocation(input: {
   hostname: string;
@@ -29,40 +29,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("bet routing", () => {
-  it("keeps naked localhost on the query-param bet preview", () => {
-    stubLocation({ hostname: "localhost" });
-
-    expect(getBetHref("/")).toBe("/?bet=1");
-    expect(getBetHref("/markets")).toBe("/markets?bet=1");
-  });
-
-  it("crosses from local app/docs subdomains to bet.localhost", () => {
-    stubLocation({ hostname: "app.localhost" });
-
-    expect(getBetHref("/")).toBe("http://bet.localhost:5173/");
-    expect(getBetHref("/markets")).toBe("http://bet.localhost:5173/markets");
-
+describe("routing", () => {
+  it("resolves docs, pay and app surfaces", () => {
     stubLocation({ hostname: "docs.localhost" });
+    expect(getInitialPage()).toBe("docs");
 
-    expect(getBetHref("/markets/history")).toBe("http://bet.localhost:5173/markets/history");
+    stubLocation({ hostname: "pay.localhost" });
+    expect(getInitialPage()).toBe("pay");
+
+    stubLocation({ hostname: "app.localhost", pathname: "/payments" });
+    expect(getInitialPage()).toBe("payments");
+
+    stubLocation({ hostname: "app.localhost", pathname: "/statements" });
+    expect(getInitialPage()).toBe("statements");
   });
 
-  it("uses relative paths inside the bet subdomain", () => {
-    stubLocation({ hostname: "bet.localhost" });
-
-    expect(getBetHref("/markets")).toBe("/markets");
-  });
-
-  it("crosses from the production app domain to the bet subdomain", () => {
-    stubLocation({ hostname: "app.disburse.online", port: "", protocol: "https:" });
-
-    expect(getBetHref("/")).toBe("https://bet.disburse.online/");
-
+  it("falls back to the dashboard for unknown app paths", () => {
     stubLocation({ hostname: "app.disburse.online", pathname: "/markets", port: "", protocol: "https:" });
-
     expect(getInitialPage()).toBe("dashboard");
-    expect(shouldRedirectLegacyBetRoute()).toBe(true);
-    expect(getBetHref("/markets")).toBe("https://bet.disburse.online/markets");
+
+    stubLocation({ hostname: "app.disburse.online", pathname: "/settings", port: "", protocol: "https:" });
+    expect(getInitialPage()).toBe("dashboard");
+  });
+
+  it("lands visitors without a product subdomain on the landing page", () => {
+    stubLocation({ hostname: "disburse.online", port: "", protocol: "https:" });
+    expect(getInitialPage()).toBe("landing");
   });
 });

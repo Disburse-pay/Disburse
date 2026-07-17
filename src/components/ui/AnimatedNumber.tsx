@@ -9,9 +9,9 @@ type Props = {
 };
 
 /**
- * Counts up to `value` on mount and whenever it changes (eased), giving
- * headline metrics a premium "alive" feel. Honors prefers-reduced-motion by
- * snapping straight to the final value — no animation, no layout surprise.
+ * Counts up to `value` when it increases (eased); decreases and the initial
+ * render snap straight to the final value. Honors prefers-reduced-motion by
+ * never animating — no layout surprise.
  */
 export default function AnimatedNumber({
   value,
@@ -28,13 +28,14 @@ export default function AnimatedNumber({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-    if (prefersReduced || durationMs <= 0) {
+    const from = fromRef.current;
+
+    if (prefersReduced || durationMs <= 0 || value <= from) {
       setDisplay(value);
       fromRef.current = value;
       return;
     }
 
-    const from = fromRef.current;
     const start = performance.now();
 
     const tick = (now: number) => {

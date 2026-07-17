@@ -12,14 +12,14 @@ export type FieldProps = {
 function Field({ label, hint, error, children, className }: FieldProps) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label className="text-[12.5px] font-medium text-[var(--ink)]">
+      <label className="text-sm font-medium text-[var(--ink)]">
         {label}
       </label>
       {children}
       {error ? (
-        <p className="text-[11px] text-[var(--red-text)]">{error}</p>
+        <p className="text-xs text-[var(--red-text)]">{error}</p>
       ) : hint ? (
-        <p className="text-[11px] text-[var(--muted)]">{hint}</p>
+        <p className="text-xs text-[var(--muted)]">{hint}</p>
       ) : null}
     </div>
   );
@@ -43,10 +43,10 @@ function FieldRow({ label, children, className }: FieldRowProps) {
         className,
       )}
     >
-      <dt className="text-[11.5px] font-medium text-[var(--muted)]">
+      <dt className="text-xs font-medium text-[var(--muted)]">
         {label}
       </dt>
-      <dd className="min-w-0 truncate font-mono text-[12px] text-[var(--ink)]">
+      <dd className="min-w-0 truncate font-mono text-sm text-[var(--ink)]">
         {children}
       </dd>
     </div>

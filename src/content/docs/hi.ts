@@ -1,23 +1,15 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
-import { PRODUCTION_DOCS_HOSTNAME } from "../../lib/routing";
 import type { DocsSection, DocsSummaryItem } from "./types";
+import { docsSections, arcadeSections } from "./en";
 
-export const docsSectionsHi: DocsSection[] = [
-  {
-    title: "प्रोजेक्ट का दायरा",
-    body: [
-      "Disburse Arc Testnet के लिए non-custodial भुगतान कंसोल है. यह दो कामों के लिए बनाया गया है: injected wallet से stablecoin transfer भेजना, और QR भुगतान अनुरोध बनाना जिसे दूसरा wallet खोलकर भुगतान कर सके.",
-      "मौजूदा build जानबूझकर सीमित है. यह balance नहीं रखता, private key नहीं लेता, और custodial account नहीं चलाता. Browser अनुरोध तैयार करता है, wallet transaction sign करता है, और payment status Arc Testnet data से verify होता है."
-    ],
-    points: [
-      "मुख्य app routes: /payments, /qr-payments, और /pay.",
-      `Documentation ${PRODUCTION_DOCS_HOSTNAME} से serve होती है.`,
-      "Supported actions: wallet connection, Arc Testnet switching, gas estimation, ERC-20 transfers, QR request creation, transfer verification, import/export, और invoice download.",
-      "इस release के बाहर: custodial balances, Permit2, backend-enforced 402 flows, MPP rails, और server-side replay protection."
-    ]
-  },
-  {
+/**
+ * Fully translated sections, keyed by the canonical English title from en.ts.
+ * Sections not in this map fall back to the English body with a translated
+ * headline (see fallbackTitles) so the structure never drifts from en.ts.
+ */
+const translated: Record<string, DocsSection> = {
+  "Payment flows": {
     title: "भुगतान flow",
     body: [
       "Disburse immediate transfers और request-based payments को अलग रखता है. Direct Payments तब उपयोग होते हैं जब sender recipient, token और amount पहले से जानता है. QR Payments तब उपयोग होते हैं जब requester किसी और से भुगतान लेने के लिए fixed request publish करना चाहता है.",
@@ -29,7 +21,7 @@ export const docsSectionsHi: DocsSection[] = [
       "Direct Payments local ledger में QR request records नहीं बनाते."
     ]
   },
-  {
+  "Network and assets": {
     title: "नेटवर्क और asset",
     body: [
       "App Arc Testnet पर pinned है. Native gas को 18 decimals वाले USDC की तरह दिखाया जाता है, जबकि supported ERC-20 payment amounts 6 decimals उपयोग करते हैं.",
@@ -43,7 +35,7 @@ export const docsSectionsHi: DocsSection[] = [
       `EURC: ${TOKENS.EURC.address}`
     ]
   },
-  {
+  "QR request payload": {
     title: "QR अनुरोध payload",
     body: [
       "QR code में /pay URL होता है जिसमें r query parameter पर base64url JSON payload रहता है. Payload सिर्फ portable request description है; इसमें private key, wallet approval, token balance या signed transaction कभी नहीं होता.",
@@ -56,7 +48,7 @@ export const docsSectionsHi: DocsSection[] = [
     ],
     code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
   },
-  {
+  "Wallet execution": {
     title: "Wallet execution",
     body: [
       "Payments connected wallet द्वारा signed standard ERC-20 transfer calls हैं. App viem से gas estimate करता है, Arc gas-price floor लागू करता है, wallet transaction hash submit होते ही save करता है, और confirmation का wait करता है.",
@@ -69,7 +61,7 @@ export const docsSectionsHi: DocsSection[] = [
       "Gas: estimates display और balance checks के लिए इस्तेमाल होते हैं; wallet signing के समय final transaction gas तय करता है."
     ]
   },
-  {
+  "Local ledger and realtime": {
     title: "Local ledger और realtime",
     body: [
       "QR requests और receipts browser localStorage में stored हैं ताकि requester account बनाए बिना काम manage कर सके. Ledger backup या migration के लिए JSON export और import support करता है.",
@@ -82,7 +74,7 @@ export const docsSectionsHi: DocsSection[] = [
       "Imported explorer URLs verified Arcscan transaction hash से regenerate होते हैं."
     ]
   },
-  {
+  "Invoice output": {
     title: "Invoice output",
     body: [
       "Payer confirmation और Arc Testnet data से transfer verification के बाद pay page local PDF invoice generate कर सकता है.",
@@ -94,7 +86,7 @@ export const docsSectionsHi: DocsSection[] = [
       "इस build में कोई server invoice files store या email नहीं करता."
     ]
   },
-  {
+  Verification: {
     title: "Verification",
     body: [
       "Verification पहले known transaction hash check करता है. अगर hash नहीं है, तो request start block से latest तक 10,000-block windows में ERC-20 Transfer logs scan करता है और recipient plus exact token amount compare करता है.",
@@ -107,7 +99,30 @@ export const docsSectionsHi: DocsSection[] = [
     ],
     code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
   }
-];
+};
+
+/** Translated headlines for sections whose bodies fall back to English. */
+const fallbackTitles: Record<string, string> = {
+  "What Disburse is": "Disburse क्या है",
+  "Tech and stack": "टेक और stack",
+  Contracts: "Contracts",
+  "Portable Settlement Proofs": "Portable Settlement Proofs",
+  "API and webhooks": "API और webhooks"
+};
+
+const arcadeTitles: Record<string, string> = {
+  "Cluck Run": "Cluck Run",
+  "The coin slot": "Coin slot",
+  "Runs and the leaderboard": "Run और leaderboard"
+};
+
+export const docsSectionsHi: DocsSection[] = docsSections.map(
+  (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
+);
+
+export const arcadeSectionsHi: DocsSection[] = arcadeSections.map(
+  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
+);
 
 export const docsSummaryItemsHi: DocsSummaryItem[] = [
   {

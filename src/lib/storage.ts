@@ -1,7 +1,6 @@
 import type { PaymentRequest, PaymentStatus, Receipt } from "./payments";
 import {
   ARC_DESTINATION_CHAIN_ID,
-  getAllowedSourceChainIds,
   getCrossChainExplorerTxUrl,
   isPaymentSourceChainId,
   type PaymentSourceChainId
@@ -146,7 +145,7 @@ function normalizeImportedRequest(value: unknown): PaymentRequest | undefined {
       }
       request.allowedSourceChainIds = request.allowedSourceChainIds?.length
         ? request.allowedSourceChainIds
-        : getAllowedSourceChainIds();
+        : [ARC_DESTINATION_CHAIN_ID];
     }
 
     return refreshDerivedStatus(request);

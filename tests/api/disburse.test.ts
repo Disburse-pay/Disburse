@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { verifyTypedData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   buildDisburseAuthorizationMessage,
+  buildDisburseRegistrationTypedData,
   directRequestIdFromTxHash
 } from "../../api-handlers/disburse.js";
 
@@ -38,5 +40,30 @@ describe("/api/disburse helpers", () => {
       "note: Subscription"
     ].join("\n"));
     expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
+  });
+
+  it("signs and verifies the EIP-712 registration payload, rejecting foreign domains", async () => {
+    const account = privateKeyToAccount(`0x${"1".repeat(64)}`);
+    const typedData = buildDisburseRegistrationTypedData({
+      txHash,
+      token: "USDC",
+      recipient: "0x742d35Cc6634C0532925a3b844Bc9e7595f8fA4c",
+      amount: "25",
+      label: "Invoice 1",
+      note: "Subscription"
+    });
+    const signature = await account.signTypedData(typedData);
+
+    await expect(
+      verifyTypedData({ ...typedData, address: account.address, signature })
+    ).resolves.toBe(true);
+
+    const foreignSignature = await account.signTypedData({
+      ...typedData,
+      domain: { ...typedData.domain, chainId: 1 }
+    });
+    await expect(
+      verifyTypedData({ ...typedData, address: account.address, signature: foreignSignature })
+    ).resolves.toBe(false);
   });
 });

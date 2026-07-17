@@ -5,7 +5,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   try {
     assertMethod(request, "POST");
     const body = readJsonBody(request);
-    sendJson(response, 200, await confirmStoredQrPayment(readRequestId(body.id), readHash(body.txHash), body.sourceChainId));
+    sendJson(response, 200, await confirmStoredQrPayment(readRequestId(body.id), readHash(body.txHash)));
   } catch (error) {
     sendError(response, error);
   }

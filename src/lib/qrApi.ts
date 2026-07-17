@@ -1,5 +1,4 @@
 import type { Hash } from "viem";
-import type { PaymentSourceChainId } from "./crosschain";
 import type { PaymentRequest, PaymentToken } from "./payments";
 import type { QrStatusPayload } from "./realtime";
 
@@ -14,18 +13,32 @@ export type QrFormStateInput = {
   label: string;
   note: string;
   invoiceDate: string;
+  /** Disburse ID to notify in-app: "request payment from @name". */
+  notify?: string;
+};
+
+export type CreatedQrRequest = {
+  request: PaymentRequest;
+  /** Handle that received an in-app payment request notification. */
+  notified?: string;
 };
 
 export type QrConfirmationPayload = QrStatusPayload & {
   status: "paid" | "failed" | "open";
 };
 
-export async function createRemoteQrRequest(input: QrFormStateInput): Promise<PaymentRequest | undefined> {
-  const payload = await requestJson<QrStatusPayload>("/api/qr-requests", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-  return payload?.request;
+export async function createRemoteQrRequest(input: QrFormStateInput): Promise<CreatedQrRequest | undefined> {
+  const payload = await requestJson<QrStatusPayload>(
+    "/api/qr-requests",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    // An unknown notify name comes back as a JSON 404 the requester must see;
+    // without notify, 404 keeps meaning "no API here" and we fall back local.
+    { jsonNotFoundIsError: Boolean(input.notify) }
+  );
+  return payload ? { request: payload.request, notified: payload.notified } : undefined;
 }
 
 export async function fetchRemoteQrStatus(requestId: string): Promise<QrStatusPayload | undefined> {
@@ -37,34 +50,29 @@ export async function fetchRemoteQrStatus(requestId: string): Promise<QrStatusPa
 export async function recordRemoteQrSubmission(
   requestId: string,
   txHash: Hash,
-  submittedAt?: string,
-  sourceChainId?: PaymentSourceChainId
+  submittedAt?: string
 ): Promise<QrStatusPayload | undefined> {
   return requestJson<QrStatusPayload>("/api/qr-submissions", {
     method: "POST",
-    body: JSON.stringify({ id: requestId, txHash, submittedAt, sourceChainId })
+    body: JSON.stringify({ id: requestId, txHash, submittedAt })
   });
 }
 
 export async function confirmRemoteQrPayment(
   requestId: string,
-  txHash: Hash,
-  sourceChainId?: PaymentSourceChainId
+  txHash: Hash
 ): Promise<QrConfirmationPayload | undefined> {
   return requestJson<QrConfirmationPayload>("/api/qr-confirmations", {
     method: "POST",
-    body: JSON.stringify({ id: requestId, txHash, sourceChainId })
+    body: JSON.stringify({ id: requestId, txHash })
   });
 }
 
-export async function settleRemoteQrPayment(requestId: string): Promise<{ settled: boolean } | undefined> {
-  return requestJson<{ settled: boolean }>("/api/qr-settle", {
-    method: "POST",
-    body: JSON.stringify({ id: requestId })
-  });
-}
-
-async function requestJson<T>(url: string, init: RequestInit): Promise<T | undefined> {
+async function requestJson<T>(
+  url: string,
+  init: RequestInit,
+  options: { jsonNotFoundIsError?: boolean } = {}
+): Promise<T | undefined> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -89,7 +97,7 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T | undef
   }
 
   const body = (await response.json()) as T | ApiErrorBody;
-  if (response.status === 404) {
+  if (response.status === 404 && !options.jsonNotFoundIsError) {
     return undefined;
   }
   if (!response.ok) {

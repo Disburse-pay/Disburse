@@ -69,20 +69,20 @@ export default function QrShareCard({
     <section className="rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-3.5 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-[11.5px] font-medium text-[var(--muted)]">
+          <p className="text-xs font-medium text-[var(--muted)]">
             Active request
           </p>
-          <h3 className="mt-1.5 truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)]">
+          <h3 className="mt-1.5 truncate text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)]">
             {request.label}
           </h3>
           {request.note && (
-            <p className="mt-1.5 max-w-[40ch] text-[12px] leading-snug text-[var(--muted)]">
+            <p className="mt-1.5 max-w-[40ch] text-sm leading-snug text-[var(--muted)]">
               {request.note}
             </p>
           )}
         </div>
         <span
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[10px] tracking-[0.06em]"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-2xs tracking-[0.06em]"
           style={{
             background: tone.bg,
             color: tone.text,
@@ -102,7 +102,7 @@ export default function QrShareCard({
           {qrDataUrl ? (
             <img src={qrDataUrl} alt="QR payment code" className="h-full w-full" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-[11.5px] font-medium text-[var(--muted)]">
+            <div className="flex h-full w-full items-center justify-center text-xs font-medium text-[var(--muted)]">
               Generating
             </div>
           )}
@@ -110,24 +110,24 @@ export default function QrShareCard({
 
         <div className="flex flex-col gap-3.5">
           <div>
-            <p className="text-[11.5px] font-medium text-[var(--muted)]">
+            <p className="text-xs font-medium text-[var(--muted)]">
               Amount
             </p>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="font-mono text-[26px] font-semibold leading-none text-[var(--ink)] tabular-nums">
+              <span className="font-mono text-3xl font-semibold leading-none text-[var(--ink)] tabular-nums">
                 {request.amount}
               </span>
-              <span className="text-[12px] font-medium text-[var(--muted)]">
+              <span className="text-sm font-medium text-[var(--muted)]">
                 {request.token}
               </span>
             </div>
           </div>
 
           <div>
-            <p className="text-[11.5px] font-medium text-[var(--muted)]">
+            <p className="text-xs font-medium text-[var(--muted)]">
               Recipient
             </p>
-            <p className="mt-1 font-mono text-[11.5px] text-[var(--ink)]">{shortAddr}</p>
+            <p className="mt-1 font-mono text-xs text-[var(--ink)]">{shortAddr}</p>
           </div>
 
           <div className="flex items-center gap-2" aria-live="polite">
@@ -149,7 +149,7 @@ export default function QrShareCard({
                 style={{ background: "currentColor" }}
               />
             </span>
-            <span className="text-[12px] font-medium text-[var(--muted)]">
+            <span className="text-sm font-medium text-[var(--muted)]">
               {liveStatusLabel}
             </span>
           </div>
@@ -158,7 +158,7 @@ export default function QrShareCard({
             <button
               type="button"
               onClick={() => onCopy(shareUrl)}
-              className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
+              className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-sm font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
             >
               <Copy size={12} strokeWidth={1.75} />
               Copy link
@@ -167,7 +167,7 @@ export default function QrShareCard({
               <button
                 type="button"
                 onClick={onDownload}
-                className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
+                className="inline-flex items-center gap-1.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-sm font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--line-soft)]"
               >
                 <Download size={12} strokeWidth={1.75} />
                 Download PNG
