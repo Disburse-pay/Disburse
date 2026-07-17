@@ -322,7 +322,7 @@ function usdcTokenAmountToNativeUnits(amount: string): bigint {
   return parseTokenAmount(amount, "USDC") * USDC_NATIVE_UNIT_SCALE;
 }
 
-async function requestWalletTransaction(
+export async function requestWalletTransaction(
   provider: EthereumProvider,
   transaction: WalletTransferTransaction
 ): Promise<Hash> {
