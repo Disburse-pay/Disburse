@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AtSign, BellOff, Inbox as InboxIcon } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AtSign, BellOff, Inbox as InboxIcon, X } from "lucide-react";
 import type { Address } from "viem";
 import { useI18n } from "../lib/i18n";
 import {
@@ -15,7 +17,6 @@ import {
 } from "../lib/notificationsApi";
 import type { EthereumProvider } from "../lib/onchain";
 import { encodeRequestPayload, shortAddress } from "../lib/payments";
-import SidePanel from "./ui/SidePanel";
 
 const UNREAD_POLL_MS = 30_000;
 
@@ -83,6 +84,52 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const hasLoadedRef = useRef(false);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+
+  // Anchor the popover under the header bell (its wrapper carries
+  // data-inbox-anchor). Align the card's right edge to the bell's right edge
+  // and drop it just below, like a typical notifications menu.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const trigger = document.querySelector<HTMLElement>("[data-inbox-anchor]");
+      if (!trigger) {
+        setAnchor({ top: 60, right: 16 });
+        return;
+      }
+      const box = trigger.getBoundingClientRect();
+      setAnchor({ top: box.bottom + 8, right: Math.max(8, window.innerWidth - box.right) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  // Close on Esc and outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (cardRef.current?.contains(target)) return;
+      if ((target as HTMLElement).closest?.("[data-inbox-anchor]")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [open, onClose]);
 
   const loadInbox = useCallback(
     async (nextAuth: InboxAuth) => {
@@ -169,65 +216,104 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
     onNavigate(`/pay?r=${encodeRequestPayload(request)}`);
   }
 
-  return (
-    <SidePanel
-      open={open}
-      onClose={onClose}
-      side="right"
-      width={400}
-      scrim={false}
-      ariaLabel={t("inbox")}
-      title={t("inbox")}
-      description={payload?.handle ? `@${payload.handle}` : undefined}
-    >
-      {!account && <p className="text-sm text-[var(--muted)]">{t("disburseIdConnect")}</p>}
+  const transition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.16, ease: [0.16, 1, 0.3, 1] as const };
 
-      {account && !auth && (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm text-[var(--muted)]">{t("inboxUnlockHint")}</p>
-          <button
-            type="button"
-            onClick={() => void handleUnlock()}
-            disabled={isUnlocking}
-            className="inline-flex h-8 items-center rounded-md bg-[var(--primary-bg)] px-3 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
-          >
-            {isUnlocking ? t("inboxSigning") : t("inboxUnlock")}
-          </button>
-        </div>
+  return createPortal(
+    <AnimatePresence>
+      {open && anchor && (
+        <motion.div
+          ref={cardRef}
+          role="dialog"
+          aria-modal="false"
+          aria-label={t("inbox")}
+          initial={{ opacity: 0, scale: 0.94, y: -6 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.94, y: -6 }}
+          transition={transition}
+          style={{
+            position: "fixed",
+            top: anchor.top,
+            right: anchor.right,
+            transformOrigin: "top right",
+            width: "min(92vw, 380px)",
+            maxHeight: "min(70vh, 560px)"
+          }}
+          className="z-[60] flex flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)] shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]"
+        >
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="text-md font-semibold tracking-tight text-[var(--ink)]">{t("inbox")}</h2>
+              {payload?.handle && (
+                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">@{payload.handle}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="-mr-1 -mt-0.5 rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--line-soft)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+            >
+              <X size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {!account && <p className="text-sm text-[var(--muted)]">{t("disburseIdConnect")}</p>}
+
+            {account && !auth && (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-[var(--muted)]">{t("inboxUnlockHint")}</p>
+                <button
+                  type="button"
+                  onClick={() => void handleUnlock()}
+                  disabled={isUnlocking}
+                  className="inline-flex h-8 items-center rounded-md bg-[var(--primary-bg)] px-3 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+                >
+                  {isUnlocking ? t("inboxSigning") : t("inboxUnlock")}
+                </button>
+              </div>
+            )}
+
+            {account && auth && isLoading && <p className="text-sm text-[var(--muted)]">{t("loading")}</p>}
+
+            {account && auth && !isLoading && payload && payload.handle === null && (
+              <p className="text-sm text-[var(--muted)]">{t("inboxNoName")}</p>
+            )}
+
+            {account && auth && !isLoading && payload && payload.handle !== null && payload.notifications.length === 0 && (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <InboxIcon size={20} strokeWidth={1.5} className="text-[var(--muted)]" />
+                <p className="text-sm text-[var(--muted)]">{t("inboxEmpty")}</p>
+              </div>
+            )}
+
+            {account && auth && !isLoading && payload && payload.notifications.length > 0 && (
+              <ul className="flex flex-col gap-2.5">
+                {payload.notifications.map((notification) => (
+                  <NotificationItem
+                    key={notification.id}
+                    notification={notification}
+                    onPayNow={() => handlePayNow(notification)}
+                    onIgnore={() => void handleIgnore(notification.id)}
+                  />
+                ))}
+              </ul>
+            )}
+
+            {error && (
+              <p role="alert" className="mt-4 text-sm text-[var(--ink)]">
+                {error}
+              </p>
+            )}
+          </div>
+        </motion.div>
       )}
-
-      {account && auth && isLoading && <p className="text-sm text-[var(--muted)]">{t("loading")}</p>}
-
-      {account && auth && !isLoading && payload && payload.handle === null && (
-        <p className="text-sm text-[var(--muted)]">{t("inboxNoName")}</p>
-      )}
-
-      {account && auth && !isLoading && payload && payload.handle !== null && payload.notifications.length === 0 && (
-        <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <InboxIcon size={20} strokeWidth={1.5} className="text-[var(--muted)]" />
-          <p className="text-sm text-[var(--muted)]">{t("inboxEmpty")}</p>
-        </div>
-      )}
-
-      {account && auth && !isLoading && payload && payload.notifications.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {payload.notifications.map((notification) => (
-            <NotificationItem
-              key={notification.id}
-              notification={notification}
-              onPayNow={() => handlePayNow(notification)}
-              onIgnore={() => void handleIgnore(notification.id)}
-            />
-          ))}
-        </ul>
-      )}
-
-      {error && (
-        <p role="alert" className="mt-4 text-sm text-[var(--ink)]">
-          {error}
-        </p>
-      )}
-    </SidePanel>
+    </AnimatePresence>,
+    document.body
   );
 }
 

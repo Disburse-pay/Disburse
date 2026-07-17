@@ -17,6 +17,7 @@ import QrShareCard from "@/src/components/QrShareCard";
 import DisburseIdCard from "@/src/components/DisburseIdCard";
 import HandleHint from "@/src/components/HandleHint";
 import InboxPanel, { useInboxUnread } from "@/src/components/InboxPanel";
+import DepositPanel from "@/src/components/DepositPanel";
 import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
@@ -218,6 +219,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
   const inboxUnreadCount = useInboxUnread(account, inboxRefreshKey);
   const dynamicWallet = useDisburseDynamicWallet();
@@ -1355,6 +1357,14 @@ function App() {
           rpcBlockLabel={rpcBlockLabel}
           rpcHealthy={rpcHealth?.healthy}
         />
+
+        <DepositPanel
+          open={isDepositOpen}
+          onClose={() => setIsDepositOpen(false)}
+          account={account}
+          chainId={chainId}
+          getProvider={getWalletProvider}
+        />
         
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
           {page === "dashboard" && (
@@ -1365,6 +1375,7 @@ function App() {
               now={now}
               onNavigate={navigateTo}
               getProvider={getWalletProvider}
+              onDeposit={() => setIsDepositOpen(true)}
             />
           )}
           {page === "payments" && (
@@ -3071,7 +3082,7 @@ function trimDisplay(value: string, maxDecimals: number): string {
 }
 
 function DashboardPage({
-  requests, receipts, account, now, onNavigate, getProvider
+  requests, receipts, account, now, onNavigate, getProvider, onDeposit
 }: {
   requests: PaymentRequest[];
   receipts: Receipt[];
@@ -3079,6 +3090,7 @@ function DashboardPage({
   now: Date;
   onNavigate: (target: string) => void;
   getProvider: () => Promise<EthereumProvider | undefined>;
+  onDeposit: () => void;
 }) {
   const { t } = useI18n();
   const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
@@ -3123,6 +3135,7 @@ function DashboardPage({
           receiptCount={receipts.length}
           account={account}
           onNavigate={onNavigate}
+          onDeposit={onDeposit}
           trend={trendSeries}
           trendDeltaPct={trendDeltaPct ?? undefined}
         />

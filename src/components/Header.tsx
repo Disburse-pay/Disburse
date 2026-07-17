@@ -91,7 +91,7 @@ export default function Header({
         </div>
 
         {onOpenInbox && (
-          <div className="relative">
+          <div className="relative" data-inbox-anchor>
             <IconButton onClick={onOpenInbox} ariaLabel={t("inbox")}>
               <Bell size={16} strokeWidth={1.75} />
             </IconButton>

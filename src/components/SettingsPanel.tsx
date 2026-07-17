@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronDown, Moon, Sun, X } from "lucide-react";
 import Button from "./ui/Button";
@@ -179,10 +180,13 @@ export default function SettingsPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            // Genie toward the top-right, where the settings gear lives, so
+            // open/close reads like a macOS minimize into its trigger.
+            style={{ transformOrigin: "top right" }}
+            initial={{ opacity: 0, scale: 0.86 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.86 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="relative flex h-[min(520px,calc(100dvh-32px))] w-[720px] max-w-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)] shadow-[0_24px_64px_-24px_rgba(0,0,0,0.4)]"
           >
             {/* Header */}
@@ -364,6 +368,8 @@ function ThemeTile({
   );
 }
 
+type MenuRect = { left: number; width: number; top: number; placement: "down" | "up" };
+
 function AnimatedSelect({
   value,
   onChange,
@@ -374,9 +380,53 @@ function AnimatedSelect({
   options: { value: string; label: string }[];
 }) {
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<MenuRect | null>(null);
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
+
+  // Position the menu from the trigger's viewport rect. The dropdown is
+  // portalled to <body> so the settings dialog's overflow clipping can't cut
+  // it off (the bug: Currency sits in the bottom row and its list was clipped
+  // by the modal edge). Flip upward when there isn't room below.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const compute = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const box = trigger.getBoundingClientRect();
+      const estimatedHeight = Math.min(208, options.length * 44 + 8);
+      const spaceBelow = window.innerHeight - box.bottom;
+      const placement: "down" | "up" = spaceBelow < estimatedHeight + 12 ? "up" : "down";
+      setRect({
+        left: box.left,
+        width: box.width,
+        top: placement === "down" ? box.bottom + 6 : box.top - 6,
+        placement,
+      });
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [open, options.length]);
+
+  // Close on outside click (the menu lives outside rootRef in the portal).
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
 
   function selectValue(nextValue: string) {
     onChange(nextValue);
@@ -384,16 +434,9 @@ function AnimatedSelect({
   }
 
   return (
-    <div
-      ref={rootRef}
-      className="relative"
-      onBlur={(event) => {
-        if (!rootRef.current?.contains(event.relatedTarget)) {
-          setOpen(false);
-        }
-      }}
-    >
+    <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -433,19 +476,31 @@ function AnimatedSelect({
         />
       </button>
 
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            id={listboxId}
-            role="listbox"
-            initial={{ opacity: 0, height: 0, y: -4 }}
-            animate={{ opacity: 1, height: "auto", y: 0 }}
-            exit={{ opacity: 0, height: 0, y: -4 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 max-h-52 overflow-y-auto overflow-x-hidden rounded-lg border border-[var(--line)] bg-[var(--paper)] shadow-[0_18px_42px_-26px_rgba(0,0,0,0.55)]"
-          >
-            <div className="grid gap-1 p-1">
-              {options.map((option) => {
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence initial={false}>
+            {open && rect && (
+              <motion.div
+                ref={menuRef}
+                id={listboxId}
+                role="listbox"
+                initial={{ opacity: 0, scale: 0.97, y: rect.placement === "down" ? -4 : 4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: rect.placement === "down" ? -4 : 4 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                style={{
+                  position: "fixed",
+                  left: rect.left,
+                  width: rect.width,
+                  ...(rect.placement === "down"
+                    ? { top: rect.top }
+                    : { top: rect.top, transform: "translateY(-100%)" }),
+                  transformOrigin: rect.placement === "down" ? "top" : "bottom",
+                }}
+                className="z-[60] max-h-52 overflow-y-auto overflow-x-hidden rounded-lg border border-[var(--line)] bg-[var(--paper)] shadow-[0_18px_42px_-20px_rgba(0,0,0,0.55)]"
+              >
+                <div className="grid gap-1 p-1">
+                  {options.map((option) => {
                 const active = option.value === value;
                 return (
                   <button
@@ -497,10 +552,12 @@ function AnimatedSelect({
                   </button>
                 );
               })}
-            </div>
-          </motion.div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }

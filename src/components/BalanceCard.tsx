@@ -1,4 +1,4 @@
-import { ArrowRight, QrCode, Send } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, QrCode, Send } from "lucide-react";
 import type { Address } from "viem";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useI18n } from "../lib/i18n";
@@ -12,6 +12,7 @@ type Props = {
   receiptCount: number;
   account?: Address;
   onNavigate: (target: string) => void;
+  onDeposit?: () => void;
   trend?: { value: number }[];
   trendDeltaPct?: number;
 };
@@ -29,6 +30,7 @@ export default function BalanceCard({
   receiptCount,
   account: _account,
   onNavigate,
+  onDeposit,
   trend,
   trendDeltaPct,
 }: Props) {
@@ -52,10 +54,20 @@ export default function BalanceCard({
             {t("requestedVolume")}
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            {onDeposit && (
+              <button
+                type="button"
+                onClick={onDeposit}
+                className="inline-flex h-8 items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+              >
+                <ArrowDownToLine size={14} strokeWidth={1.75} />
+                {t("deposit")}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onNavigate("/qr-payments")}
-              className="inline-flex h-8 items-center gap-2 rounded-md bg-[var(--primary-bg)] px-3 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-base font-medium text-[var(--ink)] transition-colors hover:border-[var(--ink-soft)] hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
             >
               <QrCode size={14} strokeWidth={1.75} />
               {t("newRequest")}
