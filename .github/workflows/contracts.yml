@@ -28,7 +28,7 @@ jobs:
         working-directory: contracts
     steps:
       - name: Checkout (with forge-std submodule)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
