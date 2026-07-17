@@ -18,6 +18,7 @@ import DisburseIdCard from "@/src/components/DisburseIdCard";
 import HandleHint from "@/src/components/HandleHint";
 import InboxPanel, { useInboxUnread } from "@/src/components/InboxPanel";
 import DepositPanel from "@/src/components/DepositPanel";
+import { fetchGatewayBalance } from "@/src/lib/gateway/balance";
 import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
@@ -220,6 +221,7 @@ function App() {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
   const inboxUnreadCount = useInboxUnread(account, inboxRefreshKey);
   const dynamicWallet = useDisburseDynamicWallet();
@@ -1364,8 +1366,9 @@ function App() {
           account={account}
           chainId={chainId}
           getProvider={getWalletProvider}
+          onDeposited={() => setBalanceRefreshKey((key) => key + 1)}
         />
-        
+
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
           {page === "dashboard" && (
             <DashboardPage
@@ -1376,6 +1379,7 @@ function App() {
               onNavigate={navigateTo}
               getProvider={getWalletProvider}
               onDeposit={() => setIsDepositOpen(true)}
+              balanceRefreshKey={balanceRefreshKey}
             />
           )}
           {page === "payments" && (
@@ -3082,7 +3086,7 @@ function trimDisplay(value: string, maxDecimals: number): string {
 }
 
 function DashboardPage({
-  requests, receipts, account, now, onNavigate, getProvider, onDeposit
+  requests, receipts, account, now, onNavigate, getProvider, onDeposit, balanceRefreshKey
 }: {
   requests: PaymentRequest[];
   receipts: Receipt[];
@@ -3091,8 +3095,30 @@ function DashboardPage({
   onNavigate: (target: string) => void;
   getProvider: () => Promise<EthereumProvider | undefined>;
   onDeposit: () => void;
+  balanceRefreshKey: number;
 }) {
   const { t } = useI18n();
+  const [disburseBalance, setDisburseBalance] = useState<number | undefined>();
+
+  // Reflect the user's deposited Circle Gateway balance on the headline card.
+  // Re-runs when the wallet changes or a deposit reports success upstream.
+  useEffect(() => {
+    if (!account) {
+      setDisburseBalance(undefined);
+      return;
+    }
+    let cancelled = false;
+    void fetchGatewayBalance(account)
+      .then((balance) => {
+        if (!cancelled) setDisburseBalance(Number(balance.formatted));
+      })
+      .catch(() => {
+        if (!cancelled) setDisburseBalance(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account, balanceRefreshKey]);
   const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
   const verifiedVolume = requests
     .filter((request) => refreshDerivedStatus(request, now).status === "paid")
@@ -3136,6 +3162,7 @@ function DashboardPage({
           account={account}
           onNavigate={onNavigate}
           onDeposit={onDeposit}
+          disburseBalance={disburseBalance}
           trend={trendSeries}
           trendDeltaPct={trendDeltaPct ?? undefined}
         />

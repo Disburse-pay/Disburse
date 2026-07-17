@@ -22,6 +22,7 @@ const DICTIONARY: Record<LanguageCode, Translations> = {
     feedback: "Feedback",
     settings: "Settings",
     deposit: "Deposit",
+    availableBalance: "Available in Disburse",
     depositTitle: "Deposit USDC",
     depositDescription: "Move USDC into your Disburse balance on Arc. Funds land in your Circle Gateway unified balance, ready to send.",
     depositAmount: "Amount",

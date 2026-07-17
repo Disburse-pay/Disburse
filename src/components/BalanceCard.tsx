@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowRight, QrCode, Send } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, QrCode, Send, Wallet } from "lucide-react";
 import type { Address } from "viem";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useI18n } from "../lib/i18n";
@@ -13,6 +13,8 @@ type Props = {
   account?: Address;
   onNavigate: (target: string) => void;
   onDeposit?: () => void;
+  /** Available Disburse (Circle Gateway) USDC balance. Shown once positive. */
+  disburseBalance?: number;
   trend?: { value: number }[];
   trendDeltaPct?: number;
 };
@@ -31,10 +33,13 @@ export default function BalanceCard({
   account: _account,
   onNavigate,
   onDeposit,
+  disburseBalance,
   trend,
   trendDeltaPct,
 }: Props) {
   const { t, formatCurrency } = useI18n();
+  const hasBalance =
+    typeof disburseBalance === "number" && Number.isFinite(disburseBalance) && disburseBalance > 0;
   const successRate =
     requestCount > 0 ? Math.round((receiptCount / requestCount) * 100) : 0;
   const isEmpty = requestCount === 0;
@@ -109,6 +114,20 @@ export default function BalanceCard({
                 </>
               )}
             </p>
+
+            {hasBalance && (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--paper-2)] px-3 py-1.5">
+                <Wallet size={14} strokeWidth={1.75} className="text-[var(--muted)]" />
+                <span className="text-sm text-[var(--muted)]">{t("availableBalance")}</span>
+                <span className="text-base font-semibold tabular-nums tracking-[-0.012em] text-[var(--ink)]">
+                  {(disburseBalance as number).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  USDC
+                </span>
+              </div>
+            )}
           </div>
 
           {hasTrend && !isEmpty && (
