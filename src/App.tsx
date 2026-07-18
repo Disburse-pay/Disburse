@@ -19,6 +19,7 @@ import HandleHint from "@/src/components/HandleHint";
 import InboxPanel, { useInboxUnread } from "@/src/components/InboxPanel";
 import DepositPanel from "@/src/components/DepositPanel";
 import { fetchGatewayBalance } from "@/src/lib/gateway/balance";
+import { transferViaGateway } from "@/src/lib/gateway/transfer";
 import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
@@ -92,7 +93,7 @@ import {
   upsertReceipt,
   upsertRequest
 } from "./lib/storage";
-import { handleFromInput } from "./lib/idsApi";
+import { handleFromInput, looksLikeHandleInput, resolveIdByHandle } from "./lib/idsApi";
 import {
   confirmRemoteQrPayment,
   createRemoteQrRequest,
@@ -252,9 +253,13 @@ function App() {
   const payDisplayStatus = payRequest ? refreshDerivedStatus(payRequest, now).status : "open";
   const payIsExpired = payRequest ? isPaymentExpired(payRequest, now) : false;
   const payIsPayable = payRequest ? isPaymentPayable(payRequest, now) : false;
-  const directInsufficientToken = useInsufficientToken(directBalances, directForm);
+  // A Disburse ID is paid from the sender's Circle Gateway balance, not the
+  // wallet token balance shown for ordinary address transfers.
+  const directUsesGateway = looksLikeHandleInput(directForm.recipient);
+  const directWalletInsufficientToken = useInsufficientToken(directBalances, directForm);
+  const directInsufficientToken = directUsesGateway ? false : directWalletInsufficientToken;
   const payInsufficientToken = useInsufficientToken(payBalances, payRequest);
-  const directMissingGas = hasInsufficientGas(directBalances, directForm, directEstimate);
+  const directMissingGas = directUsesGateway ? false : hasInsufficientGas(directBalances, directForm, directEstimate);
   const payMissingGas = hasInsufficientGas(payBalances, payRequest, payEstimate);
   const rpcIsStale = Boolean(rpcHealth && Date.now() - new Date(rpcHealth.checkedAt).getTime() > 18_000);
   const rpcStatusLabel = !rpcHealth
@@ -713,9 +718,18 @@ function App() {
     }
 
     setIsEstimatingDirect(true);
-    setDirectNotice({ tone: "info", text: "Estimating direct transfer." });
+    setDirectNotice({ tone: "info", text: directUsesGateway ? "Checking Disburse balance." : "Estimating direct transfer." });
 
     try {
+      if (directUsesGateway) {
+        await resolveGatewayRecipient(directForm);
+        setDirectEstimate(undefined);
+        setDirectNotice({
+          tone: "success",
+          text: "This payment will credit the recipient's Disburse balance. Circle Gateway confirms its fee when you send."
+        });
+        return;
+      }
       const transfer = buildTokenTransfer(directForm);
       const nextEstimate = await estimatePayment(account, transfer);
       setDirectEstimate(nextEstimate);
@@ -743,6 +757,39 @@ function App() {
     setDirectNotice({ tone: "info", text: "Preparing direct transfer." });
 
     try {
+      if (directUsesGateway) {
+        const { id, transfer } = await resolveGatewayRecipient(directForm);
+        const gatewayBalance = await fetchGatewayBalance(account);
+        const amount = parseTokenAmount(transfer.amount, "USDC");
+        if (gatewayBalance.available < amount) {
+          throw new Error("Insufficient Disburse balance. Deposit USDC before sending to a Disburse ID.");
+        }
+
+        setDirectNotice({ tone: "info", text: `Sending to @${id.handle}'s Disburse balance. Approve the Gateway transfer in your wallet.` });
+        const { mintHash } = await transferViaGateway(provider, account, {
+          recipient: transfer.recipient,
+          amount
+        });
+        setDirectHash(mintHash);
+        const txReceipt = await waitForTransactionConfirmation(mintHash);
+        const { request, receipt } = buildDirectSendRecord({
+          transfer,
+          payer: account,
+          txHash: mintHash,
+          blockNumber: txReceipt.blockNumber.toString(),
+          label: directForm.label,
+          note: directForm.note
+        });
+        setRequests((current) => upsertRequest(current, request));
+        setReceipts((current) => upsertReceipt(current, receipt));
+        setBalanceRefreshKey((current) => current + 1);
+        setDirectNotice({
+          tone: "success",
+          text: `Payment sent to @${id.handle}'s Disburse balance. They can withdraw it to their wallet from Disburse.`
+        });
+        return;
+      }
+
       const transfer = buildTokenTransfer(directForm);
       const balances = await readBalances(account, transfer);
       setDirectBalances(balances);
@@ -1393,6 +1440,7 @@ function App() {
               notice={directNotice}
               walletNotice={walletNotice}
               hash={directHash}
+              usesGatewayRecipient={directUsesGateway}
               insufficientToken={directInsufficientToken}
               missingGas={directMissingGas}
               isConnecting={isConnecting}
@@ -1498,6 +1546,7 @@ function PaymentsPage({
   notice,
   walletNotice,
   hash,
+  usesGatewayRecipient,
   insufficientToken,
   missingGas,
   isConnecting,
@@ -1520,6 +1569,7 @@ function PaymentsPage({
   notice?: Notice;
   walletNotice?: Notice;
   hash?: Hash;
+  usesGatewayRecipient: boolean;
   insufficientToken: boolean;
   missingGas: boolean;
   isConnecting: boolean;
@@ -1541,7 +1591,10 @@ function PaymentsPage({
           <section className="desk-pane" aria-labelledby="direct-form-heading">
             <PaneTitle id="direct-form-heading" label={t("paymentDetails")} />
             <form className="form-stack" onSubmit={(event) => event.preventDefault()}>
-              <Field label={t("recipient")} helper={t("recipientHelper")}>
+              <Field
+                label={t("recipient")}
+                helper={usesGatewayRecipient ? "Disburse ID payments credit the recipient's Disburse balance." : t("recipientHelper")}
+              >
                 <input
                   value={form.recipient}
                   onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
@@ -1551,6 +1604,7 @@ function PaymentsPage({
                 <HandleHint
                   value={form.recipient}
                   onApply={(address) => onFormChange({ ...form, recipient: address })}
+                  gatewayRecipient
                 />
               </Field>
 
@@ -1585,13 +1639,19 @@ function PaymentsPage({
               />
 
               {account && !wrongChain && (
-                <TransferState
-                  account={account}
-                  token={form.token}
-                  balances={balances}
-                  insufficientToken={insufficientToken}
-                  missingGas={missingGas}
-                />
+                usesGatewayRecipient ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    Send USDC from your Disburse balance. The recipient withdraws it to their wallet from Disburse.
+                  </p>
+                ) : (
+                  <TransferState
+                    account={account}
+                    token={form.token}
+                    balances={balances}
+                    insufficientToken={insufficientToken}
+                    missingGas={missingGas}
+                  />
+                )
               )}
 
               <div className="action-row">
@@ -2939,6 +2999,32 @@ function buildTokenTransfer(form: DirectFormState): TokenTransfer {
     recipient: validateRecipient(form.recipient),
     token,
     amount
+  };
+}
+
+/**
+ * A typed Disburse ID is deliberately a different rail from a pasted wallet
+ * address. It resolves only at send time so the directory result cannot go
+ * stale between typing and wallet approval, then targets the ID owner's
+ * Circle Gateway balance.
+ */
+async function resolveGatewayRecipient(form: DirectFormState) {
+  if (form.token !== "USDC") {
+    throw new Error("Disburse ID payments use the USDC Disburse balance. Select USDC to continue.");
+  }
+
+  const id = await resolveIdByHandle(form.recipient);
+  if (!id) {
+    throw new Error(`No Disburse ID named @${handleFromInput(form.recipient)}. Use a wallet address to send directly instead.`);
+  }
+
+  return {
+    id,
+    transfer: {
+      recipient: id.address,
+      token: "USDC" as const,
+      amount: formatTokenAmount(parseTokenAmount(form.amount, "USDC"), "USDC")
+    }
   };
 }
 

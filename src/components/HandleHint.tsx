@@ -7,6 +7,8 @@ import { shortAddress } from "../lib/payments";
 type Props = {
   value: string;
   onApply: (address: Address) => void;
+  /** On the Send screen, IDs are paid through Circle Gateway instead of being pasted as addresses. */
+  gatewayRecipient?: boolean;
 };
 
 type LookupState =
@@ -21,7 +23,7 @@ type LookupState =
  * (with or without @), it resolves the name and offers the wallet address;
  * when they paste an address that owns a name, it confirms who that is.
  */
-export default function HandleHint({ value, onApply }: Props) {
+export default function HandleHint({ value, onApply, gatewayRecipient = false }: Props) {
   const { t } = useI18n();
   const [state, setState] = useState<LookupState>({ kind: "idle" });
 
@@ -75,13 +77,17 @@ export default function HandleHint({ value, onApply }: Props) {
           <span>
             @{state.id.handle} · {shortAddress(state.id.address)}
           </span>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => onApply(state.id.address)}
-          >
-            {t("disburseIdUse")}
-          </button>
+          {gatewayRecipient ? (
+            <span>Payment will go to this Disburse balance.</span>
+          ) : (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onApply(state.id.address)}
+            >
+              {t("disburseIdUse")}
+            </button>
+          )}
         </>
       )}
       {state.kind === "missing" && <span>{t("disburseIdNotFound", { handle: state.handle })}</span>}
