@@ -116,11 +116,7 @@ export function isPaySurface(hostname = window.location.hostname): boolean {
 }
 
 export function isBridgeSurface(hostname = window.location.hostname): boolean {
-  return (
-    isBridgeHostname(hostname) ||
-    (hostname === PRODUCTION_APP_HOSTNAME && window.location.pathname === "/bridge") ||
-    isLocalBridgePreview(hostname)
-  );
+  return isBridgeHostname(hostname) || isLocalBridgePreview(hostname);
 }
 
 export function stripPublicSubdomain(hostname: string): string {
@@ -216,10 +212,7 @@ export function getBridgeHref(): string {
   if (isLocalHostname(hostname) && !hostname.startsWith("bridge.")) {
     return "/bridge";
   }
-  if (hostname === PRODUCTION_APP_HOSTNAME) {
-    return "/bridge";
-  }
-  return `${getOriginForHostname(PRODUCTION_APP_HOSTNAME)}/bridge`;
+  return `${getOriginForHostname(getBridgeHostname(hostname))}/`;
 }
 
 export function getAppHref(path: string): string {
