@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getInitialPage } from "./routing";
+import { getBridgeHref, getInitialPage, isBridgeSurface } from "./routing";
 
 function stubLocation(input: {
   hostname: string;
@@ -42,10 +42,19 @@ describe("routing", () => {
 
     stubLocation({ hostname: "app.localhost", pathname: "/statements" });
     expect(getInitialPage()).toBe("statements");
+
+    stubLocation({ hostname: "localhost", pathname: "/statements" });
+    expect(getInitialPage()).toBe("statements");
+
+    stubLocation({ hostname: "localhost", pathname: "/dashboard" });
+    expect(getInitialPage()).toBe("dashboard");
+
+    stubLocation({ hostname: "localhost", search: "?app=1" });
+    expect(getInitialPage()).toBe("dashboard");
   });
 
   it("falls back to the dashboard for unknown app paths", () => {
-    stubLocation({ hostname: "app.disburse.online", pathname: "/markets", port: "", protocol: "https:" });
+    stubLocation({ hostname: "app.disburse.online", pathname: "/unknown", port: "", protocol: "https:" });
     expect(getInitialPage()).toBe("dashboard");
 
     stubLocation({ hostname: "app.disburse.online", pathname: "/settings", port: "", protocol: "https:" });
@@ -55,5 +64,22 @@ describe("routing", () => {
   it("lands visitors without a product subdomain on the landing page", () => {
     stubLocation({ hostname: "disburse.online", port: "", protocol: "https:" });
     expect(getInitialPage()).toBe("landing");
+
+    stubLocation({ hostname: "localhost" });
+    expect(getInitialPage()).toBe("landing");
+  });
+
+  it("keeps the bridge on its own wallet surface", () => {
+    stubLocation({ hostname: "bridge.disburse.online", port: "", protocol: "https:" });
+    expect(isBridgeSurface()).toBe(true);
+    expect(getBridgeHref()).toBe("/");
+
+    stubLocation({ hostname: "localhost", search: "?bridge=1" });
+    expect(isBridgeSurface()).toBe(true);
+    expect(getBridgeHref()).toBe("/bridge");
+
+    stubLocation({ hostname: "localhost", pathname: "/bridge" });
+    expect(isBridgeSurface()).toBe(true);
+    expect(getBridgeHref()).toBe("/bridge");
   });
 });

@@ -1,5 +1,5 @@
-import type { Hash } from "viem";
-import type { PaymentRequest, PaymentToken } from "./payments";
+import type { Hash, Hex } from "viem";
+import { normalizeRequestToken, type PaymentRequest, type PaymentToken } from "./payments";
 import type { QrStatusPayload } from "./realtime";
 
 type ApiErrorBody = {
@@ -15,10 +15,15 @@ export type QrFormStateInput = {
   invoiceDate: string;
   /** Disburse ID to notify in-app: "request payment from @name". */
   notify?: string;
+  /** Required EIP-712 authorization fields for every server-created QR request. */
+  wallet: `0x${string}`;
+  expiresAt: string;
+  signature: Hex;
 };
 
 export type CreatedQrRequest = {
   request: PaymentRequest;
+  requestToken: string;
   /** Handle that received an in-app payment request notification. */
   notified?: string;
 };
@@ -28,44 +33,67 @@ export type QrConfirmationPayload = QrStatusPayload & {
 };
 
 export async function createRemoteQrRequest(input: QrFormStateInput): Promise<CreatedQrRequest | undefined> {
-  const payload = await requestJson<QrStatusPayload>(
+  const payload = await requestJson<QrStatusPayload & { requestToken?: string }>(
     "/api/qr-requests",
     {
       method: "POST",
       body: JSON.stringify(input)
     },
-    // An unknown notify name comes back as a JSON 404 the requester must see;
-    // without notify, 404 keeps meaning "no API here" and we fall back local.
+    // An unknown notify name comes back as a JSON 404 the requester must see.
+    // A non-JSON 404 still means this API route is unavailable.
     { jsonNotFoundIsError: Boolean(input.notify) }
   );
-  return payload ? { request: payload.request, notified: payload.notified } : undefined;
+  return payload
+    ? {
+        request: payload.request,
+        requestToken: normalizeRequestToken(payload.requestToken ?? ""),
+        notified: payload.notified
+      }
+    : undefined;
 }
 
-export async function fetchRemoteQrStatus(requestId: string): Promise<QrStatusPayload | undefined> {
+export async function fetchRemoteQrStatus(
+  requestId: string,
+  requestToken: string
+): Promise<QrStatusPayload | undefined> {
   return requestJson<QrStatusPayload>(`/api/qr-status?id=${encodeURIComponent(requestId)}`, {
-    method: "GET"
+    method: "GET",
+    headers: requestCapabilityHeader(requestToken)
   });
 }
 
 export async function recordRemoteQrSubmission(
   requestId: string,
+  requestToken: string,
   txHash: Hash,
+  authorization: Hex,
+  payer: `0x${string}`,
   submittedAt?: string
 ): Promise<QrStatusPayload | undefined> {
   return requestJson<QrStatusPayload>("/api/qr-submissions", {
     method: "POST",
-    body: JSON.stringify({ id: requestId, txHash, submittedAt })
+    headers: requestCapabilityHeader(requestToken),
+    body: JSON.stringify({ id: requestId, txHash, authorization, payer, submittedAt })
   });
 }
 
 export async function confirmRemoteQrPayment(
   requestId: string,
-  txHash: Hash
+  requestToken: string,
+  txHash: Hash,
+  authorization: Hex
 ): Promise<QrConfirmationPayload | undefined> {
   return requestJson<QrConfirmationPayload>("/api/qr-confirmations", {
     method: "POST",
-    body: JSON.stringify({ id: requestId, txHash })
+    headers: requestCapabilityHeader(requestToken),
+    body: JSON.stringify({ id: requestId, txHash, authorization })
   });
+}
+
+function requestCapabilityHeader(requestToken: string): Record<string, string> {
+  return {
+    "X-Disburse-Request-Token": normalizeRequestToken(requestToken)
+  };
 }
 
 async function requestJson<T>(

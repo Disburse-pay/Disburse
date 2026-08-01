@@ -12,7 +12,7 @@ import {
   CURRENCY_META,
   LANGUAGE_META,
   loadSettings,
-  saveSettings,
+  saveSettings
 } from "../lib/settings";
 
 type Theme = "light" | "dark";
@@ -50,7 +50,7 @@ const SETTINGS_COPY: Record<
     languageHint: "Used for the interface labels in the app.",
     currencyHint: "Display currency for converted totals. Settlement is always in stablecoin.",
     currencyPreview: "Preview",
-    done: "Done",
+    done: "Done"
   },
   de: {
     description: "Einstellungen werden lokal auf diesem Gerät gespeichert.",
@@ -61,7 +61,7 @@ const SETTINGS_COPY: Record<
     languageHint: "Wird für die Beschriftungen der App-Oberfläche verwendet.",
     currencyHint: "Anzeigewährung für umgerechnete Summen. Die Abwicklung bleibt immer in Stablecoin.",
     currencyPreview: "Vorschau",
-    done: "Fertig",
+    done: "Fertig"
   },
   id: {
     description: "Preferensi disimpan secara lokal di perangkat ini.",
@@ -72,7 +72,7 @@ const SETTINGS_COPY: Record<
     languageHint: "Dipakai untuk label antarmuka di aplikasi.",
     currencyHint: "Mata uang tampilan untuk total konversi. Settlement tetap dalam stablecoin.",
     currencyPreview: "Pratinjau",
-    done: "Selesai",
+    done: "Selesai"
   },
   ng: {
     description: "Preferences are saved on this device.",
@@ -83,7 +83,7 @@ const SETTINGS_COPY: Record<
     languageHint: "Used for the interface labels in the app.",
     currencyHint: "Display currency for converted totals. Settlement is always in stablecoin.",
     currencyPreview: "Preview",
-    done: "Done",
+    done: "Done"
   },
   hi: {
     description: "सेटिंग्स इस डिवाइस पर स्थानीय रूप से सहेजी जाती हैं.",
@@ -94,7 +94,7 @@ const SETTINGS_COPY: Record<
     languageHint: "ऐप के इंटरफेस लेबल के लिए उपयोग किया जाता है.",
     currencyHint: "बदले गए कुल के लिए प्रदर्शन मुद्रा. सेटलमेंट हमेशा stablecoin में रहता है.",
     currencyPreview: "पूर्वावलोकन",
-    done: "हो गया",
+    done: "हो गया"
   },
   zh: {
     description: "偏好设置会保存在此设备本地.",
@@ -105,8 +105,8 @@ const SETTINGS_COPY: Record<
     languageHint: "用于应用界面标签.",
     currencyHint: "用于显示换算后的总额. 结算始终使用稳定币.",
     currencyPreview: "预览",
-    done: "完成",
-  },
+    done: "完成"
+  }
 };
 
 /**
@@ -120,7 +120,7 @@ export default function SettingsPanel({
   onToggleTheme,
   rpcStatusLabel,
   rpcBlockLabel,
-  rpcHealthy,
+  rpcHealthy
 }: Props) {
   const { t, setLang, setCurrency, formatCurrency } = useI18n();
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
@@ -134,7 +134,7 @@ export default function SettingsPanel({
     const next: AppSettings = {
       ...settings,
       language: lang,
-      currency: LANGUAGE_META[lang].currency,
+      currency: LANGUAGE_META[lang].currency
     };
     setSettings(next);
     saveSettings(next);
@@ -149,8 +149,8 @@ export default function SettingsPanel({
     setCurrency(currency);
   }
 
-  const languages = Object.entries(LANGUAGE_META) as [LanguageCode, typeof LANGUAGE_META["en"]][];
-  const currencies = Object.entries(CURRENCY_META) as [CurrencyCode, typeof CURRENCY_META["USD"]][];
+  const languages = Object.entries(LANGUAGE_META) as [LanguageCode, (typeof LANGUAGE_META)["en"]][];
+  const currencies = Object.entries(CURRENCY_META) as [CurrencyCode, (typeof CURRENCY_META)["USD"]][];
   const titleId = useId();
 
   useEffect(() => {
@@ -236,7 +236,7 @@ export default function SettingsPanel({
                   onChange={(value) => updateLanguage(value as LanguageCode)}
                   options={languages.map(([code, meta]) => ({
                     value: code,
-                    label: `${meta.native} · ${meta.label}`,
+                    label: `${meta.native} · ${meta.label}`
                   }))}
                 />
               </Section>
@@ -247,7 +247,7 @@ export default function SettingsPanel({
                   onChange={(value) => updateCurrency(value as CurrencyCode)}
                   options={currencies.map(([code, meta]) => ({
                     value: code,
-                    label: `${meta.label} (${meta.symbol})`,
+                    label: `${meta.label} (${meta.symbol})`
                   }))}
                 />
                 <dl className="mt-2 rounded-md bg-[var(--paper-2)] px-3 py-1">
@@ -262,10 +262,7 @@ export default function SettingsPanel({
                   <StatusRow label={t("chain")} value={`${arcTestnet.name} ${ARC_CHAIN_ID}`} />
                   <StatusRow label={t("rpc")} value={rpcStatusLabel} mono />
                   <StatusRow label={t("block")} value={rpcBlockLabel} mono />
-                  <StatusRow
-                    label={t("status")}
-                    value={rpcHealthy ? t("operational") : t("degraded")}
-                  />
+                  <StatusRow label={t("status")} value={rpcHealthy ? t("operational") : t("degraded")} />
                 </dl>
               </Section>
             </div>
@@ -283,50 +280,23 @@ export default function SettingsPanel({
   );
 }
 
-function StatusRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function StatusRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between py-2.5">
       <dt className="text-sm text-[var(--muted)]">{label}</dt>
-      <dd
-        className={[
-          "max-w-[60%] truncate text-sm text-[var(--ink)]",
-          mono ? "font-mono" : "",
-        ].join(" ")}
-      >
+      <dd className={["max-w-[60%] truncate text-sm text-[var(--ink)]", mono ? "font-mono" : ""].join(" ")}>
         {value}
       </dd>
     </div>
   );
 }
 
-function Section({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function Section({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-2">
-        <h3 className="text-base font-semibold text-[var(--ink)]">
-          {label}
-        </h3>
-        {hint && (
-          <p className="mt-1 text-sm leading-relaxed text-[var(--muted)]">
-            {hint}
-          </p>
-        )}
+        <h3 className="text-base font-semibold text-[var(--ink)]">{label}</h3>
+        {hint && <p className="mt-1 text-sm leading-relaxed text-[var(--muted)]">{hint}</p>}
       </div>
       {children}
     </section>
@@ -337,7 +307,7 @@ function ThemeTile({
   active,
   label,
   icon,
-  onClick,
+  onClick
 }: {
   active: boolean;
   label: string;
@@ -354,7 +324,7 @@ function ThemeTile({
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
         active
           ? "border-[var(--primary-bg)] bg-[var(--panel-accent)]"
-          : "border-[var(--line)] hover:border-[var(--line)] hover:bg-[var(--line-soft)]",
+          : "border-[var(--line)] hover:border-[var(--line)] hover:bg-[var(--line-soft)]"
       ].join(" ")}
     >
       <span className="flex items-center gap-2.5">
@@ -373,7 +343,7 @@ type MenuRect = { left: number; width: number; top: number; placement: "down" | 
 function AnimatedSelect({
   value,
   onChange,
-  options,
+  options
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -404,7 +374,7 @@ function AnimatedSelect({
         left: box.left,
         width: box.width,
         top: placement === "down" ? box.bottom + 6 : box.top - 6,
-        placement,
+        placement
       });
     };
     compute();
@@ -457,7 +427,7 @@ function AnimatedSelect({
           "bg-[var(--input-bg)] transition-all duration-200 ease-out",
           "hover:border-[var(--primary-bg)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/35",
-          open ? "border-[var(--primary-bg)]" : "border-[var(--line)]",
+          open ? "border-[var(--primary-bg)]" : "border-[var(--line)]"
         ].join(" ")}
       >
         <span className="flex min-w-0 items-center gap-3">
@@ -471,7 +441,7 @@ function AnimatedSelect({
           strokeWidth={1.75}
           className={[
             "shrink-0 text-[var(--muted)] transition-transform duration-200 ease-out",
-            open ? "rotate-180 text-[var(--primary-bg)]" : "group-hover:text-[var(--ink)]",
+            open ? "rotate-180 text-[var(--primary-bg)]" : "group-hover:text-[var(--ink)]"
           ].join(" ")}
         />
       </button>
@@ -495,68 +465,68 @@ function AnimatedSelect({
                   ...(rect.placement === "down"
                     ? { top: rect.top }
                     : { top: rect.top, transform: "translateY(-100%)" }),
-                  transformOrigin: rect.placement === "down" ? "top" : "bottom",
+                  transformOrigin: rect.placement === "down" ? "top" : "bottom"
                 }}
                 className="z-[60] max-h-52 overflow-y-auto overflow-x-hidden rounded-lg border border-[var(--line)] bg-[var(--paper)] shadow-[0_18px_42px_-20px_rgba(0,0,0,0.55)]"
               >
                 <div className="grid gap-1 p-1">
                   {options.map((option) => {
-                const active = option.value === value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    onClick={() => selectValue(option.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.stopPropagation();
-                        setOpen(false);
-                      }
-                    }}
-                    className={[
-                      "group relative flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left",
-                      "transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/35",
-                      active
-                        ? "bg-[var(--panel-accent)] text-[var(--ink)]"
-                        : "text-[var(--muted)] hover:bg-[var(--line-soft)] hover:text-[var(--ink)]",
-                    ].join(" ")}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span
+                    const active = option.value === value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => selectValue(option.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.stopPropagation();
+                            setOpen(false);
+                          }
+                        }}
                         className={[
-                          "flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-2xs font-semibold transition-colors",
+                          "group relative flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left",
+                          "transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/35",
                           active
-                            ? "border-[var(--primary-bg)] bg-[var(--paper)] text-[var(--primary-bg)]"
-                            : "border-[var(--line-soft)] bg-[var(--input-bg)] text-[var(--muted)] group-hover:text-[var(--ink)]",
+                            ? "bg-[var(--panel-accent)] text-[var(--ink)]"
+                            : "text-[var(--muted)] hover:bg-[var(--line-soft)] hover:text-[var(--ink)]"
                         ].join(" ")}
                       >
-                        {option.value.toUpperCase()}
-                      </span>
-                      <span className="block min-w-0 truncate text-sm font-medium">{option.label}</span>
-                    </span>
-                    <AnimatePresence initial={false}>
-                      {active && (
-                        <motion.span
-                          initial={{ scale: 0.72, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          exit={{ scale: 0.72, opacity: 0 }}
-                          transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary-bg)] text-[color:var(--primary-text)]"
-                        >
-                          <Check size={12} strokeWidth={2.2} />
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </button>
-                );
-              })}
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span
+                            className={[
+                              "flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-2xs font-semibold transition-colors",
+                              active
+                                ? "border-[var(--primary-bg)] bg-[var(--paper)] text-[var(--primary-bg)]"
+                                : "border-[var(--line-soft)] bg-[var(--input-bg)] text-[var(--muted)] group-hover:text-[var(--ink)]"
+                            ].join(" ")}
+                          >
+                            {option.value.toUpperCase()}
+                          </span>
+                          <span className="block min-w-0 truncate text-sm font-medium">{option.label}</span>
+                        </span>
+                        <AnimatePresence initial={false}>
+                          {active && (
+                            <motion.span
+                              initial={{ scale: 0.72, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.72, opacity: 0 }}
+                              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-[var(--primary-bg)] text-[color:var(--primary-text)]"
+                            >
+                              <Check size={12} strokeWidth={2.2} />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </button>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>,
-          document.body,
+          document.body
         )}
     </div>
   );

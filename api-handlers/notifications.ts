@@ -6,6 +6,7 @@ import {
   markAllNotificationsRead,
   readInboxAuth
 } from "../server/notifications.js";
+import { enforceRedisRateLimit } from "../server/rate-limit.js";
 
 /**
  * POST /api/notifications — the in-app notification inbox.
@@ -27,6 +28,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     assertMethod(request, "POST");
     const body = readJsonBody(request);
     const wallet = await readInboxAuth(body);
+    await enforceRedisRateLimit("notifications", wallet);
 
     const handle = await findHandleForWallet(wallet);
     if (!handle) {

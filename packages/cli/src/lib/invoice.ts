@@ -16,6 +16,8 @@ export type InvoiceInput = {
   pspDigest?: string;
   pspUid?: string;
   pspVerifierUrl?: string;
+  /** Independently trusted issuer; otherwise verification requires the trusted env setting. */
+  trustedPspIssuer?: string;
 };
 
 export type BatchInvoiceItem = InvoiceInput & {
@@ -196,9 +198,7 @@ function drawInvoicePage(page: PDFPage, input: InvoiceInput, fonts: Fonts, eyebr
   drawLabelValue(page, "PSP digest", input.pspDigest ?? "Not provided", 184, fonts, true);
   drawLabelValue(page, "Request ID", request.id, 144, fonts, true);
 
-  const verifyCommand = input.pspUid
-    ? `curl -s "${input.pspVerifierUrl || "https://app.disburse.online"}/api/psp?uid=${input.pspUid}" | npx @disburse/psp-verify --stdin`
-    : "npx @disburse/psp-verify disburse-psp-....json";
+  const verifyCommand = buildInvoiceVerificationCommand(input);
   drawWrappedText(page, `Verify: ${verifyCommand}`, {
     x: MARGIN,
     y: 104,
@@ -210,6 +210,36 @@ function drawInvoicePage(page: PDFPage, input: InvoiceInput, fonts: Fonts, eyebr
   });
 
   drawFooter(page, fonts);
+}
+
+export function buildInvoiceVerificationCommand(
+  input: Pick<InvoiceInput, "pspUid" | "pspVerifierUrl" | "trustedPspIssuer">
+): string {
+  const issuer = formatTrustedIssuerArgument(input.trustedPspIssuer);
+  if (!input.pspUid) {
+    return `npx @disburse/psp-verify 'disburse-psp-....json' --issuer ${issuer}`;
+  }
+
+  const endpoint = new URL(
+    "/api/psp",
+    ensureTrailingSlash(input.pspVerifierUrl || "https://app.disburse.online")
+  );
+  endpoint.searchParams.set("uid", input.pspUid);
+  return `curl --fail --silent --show-error ${shellQuote(endpoint.toString())} | npx @disburse/psp-verify --stdin --issuer ${issuer}`;
+}
+
+function formatTrustedIssuerArgument(trustedPspIssuer?: string): string {
+  return trustedPspIssuer
+    ? shellQuote(trustedPspIssuer)
+    : '"$DISBURSE_TRUSTED_PSP_ISSUER"';
+}
+
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function drawBatchSummaryPage(page: PDFPage, input: BatchInvoiceInput, fonts: Fonts) {

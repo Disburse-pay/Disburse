@@ -51,6 +51,8 @@ const psp = {
 describe("/api/psp-viewer", () => {
   beforeEach(() => {
     pspStore.readPspByUid.mockReset();
+    delete process.env.PSP_TRUSTED_ISSUER;
+    delete process.env.PSP_PUBLIC_URL;
   });
 
   it("serves the proof viewer as raw HTML", async () => {
@@ -61,8 +63,18 @@ describe("/api/psp-viewer", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["content-security-policy"]).toContain("default-src 'none'");
     expect(response.body).toContain("<!DOCTYPE html>");
     expect(response.body).toContain("npx @disburse/psp-verify");
+    expect(response.body).toContain("Independent verification required");
+    expect(response.body).not.toContain("Verified Settlement Proof");
+    expect(response.body).toContain(
+      "TRUSTED_ISSUER=replace-with-an-independently-trusted-issuer-address"
+    );
+    expect(response.body).toContain(
+      'npx @disburse/psp-verify --stdin --issuer "$TRUSTED_ISSUER"'
+    );
   });
 
   it("uses the canonical public origin and never leaks the Vercel deploy URL", async () => {
@@ -83,6 +95,44 @@ describe("/api/psp-viewer", () => {
         process.env.VERCEL_URL = previous;
       }
     }
+  });
+
+  it("uses only a separately configured issuer in generated commands", async () => {
+    pspStore.readPspByUid.mockResolvedValue(psp);
+    process.env.PSP_TRUSTED_ISSUER =
+      "0x9999999999999999999999999999999999999999";
+    const response = createResponse();
+
+    await handler({ method: "GET", query: { uid } }, response.api);
+
+    expect(response.body).toContain(
+      "TRUSTED_ISSUER=0x9999999999999999999999999999999999999999"
+    );
+    expect(response.body).toContain("Trusted verification failed");
+  });
+
+  it("escapes document-controlled HTML and rejects unsafe issuer URLs", async () => {
+    pspStore.readPspByUid.mockResolvedValue({
+      ...psp,
+      issuer: {
+        ...psp.issuer,
+        name: '<img src=x onerror="alert(1)">',
+        url: "javascript:alert(1)"
+      },
+      invoice: {
+        ...psp.invoice,
+        requestId: "<script>alert(1)</script>",
+        label: "<b>unsafe</b>"
+      }
+    });
+    const response = createResponse();
+
+    await handler({ method: "GET", query: { uid } }, response.api);
+
+    expect(response.body).not.toContain("<script>alert(1)</script>");
+    expect(response.body).not.toContain("javascript:alert(1)");
+    expect(response.body).toContain("&lt;b&gt;unsafe&lt;/b&gt;");
+    expect(response.body).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
   });
 });
 

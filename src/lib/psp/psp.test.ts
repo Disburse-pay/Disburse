@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import type { Address, Hex } from "viem";
+import {
+  concatHex,
+  encodeAbiParameters,
+  keccak256,
+  parseAbiParameters,
+  recoverAddress,
+  stringToHex,
+  type Address,
+  type Hex,
+} from "viem";
 import {
   buildDomainSeparator,
   canonicalBytes,
@@ -8,9 +17,24 @@ import {
   deterministicStringify,
   extractCore,
 } from "./canonical";
-import { buildSignedPsp, signPsp, verifyPspSignature } from "./sign";
-import { verify, verifyJson } from "./verify";
-import type { PspCore, PspInvoice, PspV1 } from "./types";
+import {
+  buildPspClaimTypedData,
+  computePspClaimDigest,
+  computePspClaimDomainSeparator,
+  PSP_CLAIM_TYPE_STRING,
+} from "./claim";
+import {
+  attachPspOnchainClaim,
+  buildSignedPsp,
+  signPsp,
+  verifyPspSignature,
+} from "./sign";
+import {
+  verify,
+  verifyJson,
+  verifySelfConsistency,
+} from "./verify";
+import type { PspCore, PspV1 } from "./types";
 
 // ---------- Fixtures ----------
 
@@ -20,12 +44,13 @@ function createTestKey(): { privateKey: Hex; address: Address } {
   return { privateKey, address: account.address };
 }
 
-// Narrow return type so test sites can dereference `.invoice.X` directly. The
-// PspCore type itself made `invoice` optional in v1.1 (market_claim PSPs omit
-// it), but every fixture here is a payment-shape PSP.
+const FALLBACK_TRUSTED_ISSUER =
+  "0x1111111111111111111111111111111111111111" as Address;
+
+// Every fixture is a payment-shape PSP.
 function createTestCore(
   issuerAddress: Address
-): PspCore & { invoice: PspInvoice } {
+): PspCore {
   return {
     version: 1,
     networkMode: "testnet",
@@ -284,6 +309,123 @@ describe("PSP Signing", () => {
     expect(sig1.signature.value).toBe(sig2.signature.value);
     expect(sig1.digest).toBe(sig2.digest);
   });
+
+  it("creates a domain-separated direct claim that binds every verifier field", async () => {
+    const { privateKey, address } = createTestKey();
+    const core = createTestCore(address);
+    const psp = await buildSignedPsp(core, privateKey);
+    const verifier =
+      "0x9999999999999999999999999999999999999999" as Address;
+    const descriptor = {
+      verifierAddress: verifier,
+      chainId: core.settlement.chainId,
+      mode: "direct-signature-only" as const,
+    };
+
+    const claimed = await attachPspOnchainClaim(psp, privateKey, descriptor);
+    const claim = claimed.onchainClaim!;
+    const recovered = await recoverAddress({
+      hash: computePspClaimDigest(claimed, descriptor),
+      signature: claim.signature,
+    });
+
+    expect(recovered.toLowerCase()).toBe(address.toLowerCase());
+    expect(claim.settlementRegistryVersion).toBe(0);
+
+    const tampered = {
+      ...claimed,
+      invoice: { ...claimed.invoice!, amount: "999.99" },
+    };
+    expect(computePspClaimDigest(tampered, descriptor)).not.toBe(
+      computePspClaimDigest(claimed, descriptor)
+    );
+    const typedData = buildPspClaimTypedData(claimed, descriptor);
+    expect(typedData.domain).toMatchObject({
+      chainId: core.settlement.chainId,
+      verifyingContract: verifier,
+    });
+
+    // Independent ABI encoding of the Solidity hashPspFields implementation.
+    const domainSeparator = keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "bytes32, bytes32, bytes32, uint256, address"
+        ),
+        [
+          keccak256(
+            stringToHex(
+              "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+            )
+          ),
+          keccak256(stringToHex("Disburse PSP Verifier")),
+          keccak256(stringToHex("2")),
+          BigInt(core.settlement.chainId),
+          verifier,
+        ]
+      )
+    );
+    const fields = typedData.message;
+    const structHash = keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "bytes32, bytes32, bytes32, bytes32, address, uint64, bytes32, address, address, bytes32, bytes32, bytes32, uint256, bytes32"
+        ),
+        [
+          keccak256(
+            stringToHex(PSP_CLAIM_TYPE_STRING)
+          ),
+          fields.documentDigest,
+          keccak256(stringToHex(fields.networkMode)),
+          keccak256(stringToHex(fields.verificationMode)),
+          fields.settlementContract,
+          fields.settlementRegistryVersion,
+          fields.settlementId,
+          fields.invoicePayer,
+          fields.invoiceRecipient,
+          keccak256(stringToHex(fields.invoiceToken)),
+          keccak256(stringToHex(fields.invoiceAmount)),
+          keccak256(stringToHex(fields.requestId)),
+          fields.settlementChainId,
+          fields.settlementTxHash,
+        ]
+      )
+    );
+    const solidityEquivalentDigest = keccak256(
+      concatHex(["0x1901", domainSeparator, structHash])
+    );
+    expect(computePspClaimDigest(claimed, descriptor)).toBe(
+      solidityEquivalentDigest
+    );
+    expect(
+      computePspClaimDomainSeparator(core.settlement.chainId, verifier)
+    ).toBe(domainSeparator);
+  });
+
+  it("rejects downgrading a cross-chain PSP to direct-signature-only", async () => {
+    const { privateKey, address } = createTestKey();
+    const psp = await buildSignedPsp(
+      {
+        ...createTestCore(address),
+        source: {
+          chainId: 84532,
+          txHash: `0x${"a".repeat(64)}` as Hex,
+          blockNumber: "8",
+          payer: createTestCore(address).invoice.payer,
+          token: "0x4444444444444444444444444444444444444444",
+          amount: "1000000",
+        },
+      },
+      privateKey
+    );
+
+    await expect(
+      attachPspOnchainClaim(psp, privateKey, {
+        verifierAddress: "0x9999999999999999999999999999999999999999",
+        chainId: psp.settlement.chainId,
+        mode: "direct-signature-only",
+      })
+    ).rejects.toThrow(/cannot be downgraded/);
+  });
 });
 
 // ---------- Verification ----------
@@ -294,7 +436,7 @@ describe("PSP Verification", () => {
     const core = createTestCore(address);
     const psp = await buildSignedPsp(core, privateKey);
 
-    const result = await verify(psp);
+    const result = await verify(psp, { expectedIssuer: address });
     expect(result.ok).toBe(true);
     expect(result.fields?.kind).toBe("payment");
     expect(result.fields?.requestId).toBe(core.invoice.requestId);
@@ -302,22 +444,76 @@ describe("PSP Verification", () => {
     expect(result.fields?.recipient?.toLowerCase()).toBe(core.invoice.recipient.toLowerCase());
     expect(result.fields?.issuer.toLowerCase()).toBe(address.toLowerCase());
     expect(result.fields?.networkMode).toBe("testnet");
+    expect(result.trust).toBe("trusted_issuer");
+    expect(result.settlementStatus).toBe("not_checked");
+  });
+
+  it("rejects unsigned top-level extension fields", async () => {
+    const { privateKey, address } = createTestKey();
+    const psp = await buildSignedPsp(createTestCore(address), privateKey);
+
+    const result = await verify(
+      { ...psp, untrustedMetadata: { value: "not signed" } },
+      { expectedIssuer: address }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("Unsupported PSP field: untrustedMetadata");
+  });
+
+  it("does not return a valid result without an independent trusted issuer", async () => {
+    const { privateKey, address } = createTestKey();
+    const psp = await buildSignedPsp(createTestCore(address), privateKey);
+
+    const result = await verify(psp, undefined as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.trust).toBe("not_established");
+    expect(result.reason).toContain("expectedIssuer");
+  });
+
+  it("labels claimed-issuer checking as untrusted self-consistency only", async () => {
+    const { privateKey, address } = createTestKey();
+    const psp = await buildSignedPsp(createTestCore(address), privateKey);
+
+    const result = await verifySelfConsistency(psp);
+
+    expect(result.selfConsistent).toBe(true);
+    expect(result.trust).toBe("untrusted_self_consistency_only");
+    expect(result).not.toHaveProperty("ok");
+  });
+
+  it("rejects a malformed trusted issuer", async () => {
+    const result = await verify({}, {
+      expectedIssuer: "0x1234" as Address,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("non-zero expectedIssuer");
   });
 
   it("verify rejects non-object input", async () => {
-    const result = await verify("not an object");
+    const result = await verify("not an object", {
+      expectedIssuer: FALLBACK_TRUSTED_ISSUER,
+    });
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("non-null object");
   });
 
   it("verify rejects unsupported version", async () => {
-    const result = await verify({ version: 2 });
+    const result = await verify(
+      { version: 2 },
+      { expectedIssuer: FALLBACK_TRUSTED_ISSUER }
+    );
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("version");
   });
 
   it("verify rejects invalid networkMode", async () => {
-    const result = await verify({ version: 1, networkMode: "devnet" });
+    const result = await verify(
+      { version: 1, networkMode: "devnet" },
+      { expectedIssuer: FALLBACK_TRUSTED_ISSUER }
+    );
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("networkMode");
   });
@@ -328,7 +524,7 @@ describe("PSP Verification", () => {
     const psp = await buildSignedPsp(core, privateKey);
 
     const tampered = { ...psp, invoice: { ...psp.invoice!, amount: "0.01" } };
-    const result = await verify(tampered);
+    const result = await verify(tampered, { expectedIssuer: address });
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("Digest mismatch");
   });
@@ -345,7 +541,7 @@ describe("PSP Verification", () => {
         recipient: "0x0000000000000000000000000000000000000001" as Address,
       },
     };
-    const result = await verify(tampered);
+    const result = await verify(tampered, { expectedIssuer: address });
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("Digest mismatch");
   });
@@ -356,7 +552,7 @@ describe("PSP Verification", () => {
     const psp = await buildSignedPsp(core, privateKey);
 
     const tampered = { ...psp, uid: "psp:0000000000000000" };
-    const result = await verify(tampered);
+    const result = await verify(tampered, { expectedIssuer: address });
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("UID mismatch");
   });
@@ -387,13 +583,15 @@ describe("PSP Verification", () => {
     const psp = await buildSignedPsp(core, privateKey);
 
     const json = JSON.stringify(psp);
-    const result = await verifyJson(json);
+    const result = await verifyJson(json, { expectedIssuer: address });
     expect(result.ok).toBe(true);
     expect(result.fields?.requestId).toBe(core.invoice.requestId);
   });
 
   it("verifyJson rejects malformed JSON", async () => {
-    const result = await verifyJson("{ not valid json }}}");
+    const result = await verifyJson("{ not valid json }}}", {
+      expectedIssuer: FALLBACK_TRUSTED_ISSUER,
+    });
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("JSON parse");
   });
@@ -413,7 +611,7 @@ describe("PSP Verification", () => {
     };
 
     const psp = await buildSignedPsp(core, privateKey);
-    const result = await verify(psp);
+    const result = await verify(psp, { expectedIssuer: address });
     expect(result.ok).toBe(true);
   });
 });

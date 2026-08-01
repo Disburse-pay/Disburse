@@ -1,12 +1,22 @@
-import { assertMethod, readQueryString, sendError, type ApiRequest, type ApiResponse } from "../server/http.js";
+import {
+  assertMethod,
+  HttpError,
+  readHeaderString,
+  readQueryString,
+  sendError,
+  sendJson,
+  type ApiRequest,
+  type ApiResponse
+} from "../server/http.js";
 import { readPspByRequestId, readPspByUid } from "../server/psp/issue.js";
+import { readRequestToken, readStoredQrStatus } from "../server/qr.js";
 
 /**
  * GET /api/psp?uid=psp:abc123...
  * GET /api/psp?request_id=<payment-request-uuid>
  *
- * Returns the full PSP document as JSON. Public endpoint — anyone with the
- * UID, or the originating request id, can verify.
+ * UID lookup is a bearer-style public lookup. Request-id lookup additionally
+ * requires the QR request capability so a UUID cannot bypass QR privacy.
  */
 export default async function handler(request: ApiRequest, response: ApiResponse) {
   try {
@@ -40,21 +50,25 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
     const psp = uid
       ? await readPspByUid(uid)
-      : await readPspByRequestId(requestId as string);
+      : await readPspForAuthorizedRequest(request, requestId as string);
     if (!psp) {
-      response.setHeader?.("cache-control", "no-store");
-      response.status(404).json({ error: "PSP not found." });
+      sendJson(response, 404, { error: "PSP not found." });
       return;
     }
 
-    // PSPs are immutable — can be cached aggressively
-    // Request-id lookups stay uncached because they may be queried before issuance.
-    response.setHeader?.(
-      "cache-control",
-      uid ? "public, max-age=31536000, immutable" : "no-store"
-    );
-    response.status(200).json(psp);
+    // PSPs contain payment-party and invoice metadata. Even UID lookups are
+    // bearer-style access and must not enter shared caches.
+    sendJson(response, 200, psp);
   } catch (error) {
     sendError(response, error);
   }
+}
+
+async function readPspForAuthorizedRequest(request: ApiRequest, requestId: string) {
+  const requestToken = readHeaderString(request, "x-disburse-request-token");
+  if (!requestToken) {
+    throw new HttpError(401, "QR request capability is required for request_id lookup.");
+  }
+  await readStoredQrStatus(requestId, readRequestToken(requestToken));
+  return readPspByRequestId(requestId);
 }

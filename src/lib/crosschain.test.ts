@@ -8,7 +8,6 @@ import {
 } from "./crosschain";
 import {
   decodeRequestPayload,
-  encodeRequestPayload,
   isCrossChainPaymentRequest,
   type PaymentRequest
 } from "./payments";
@@ -38,7 +37,20 @@ function encodeRawPayload(value: unknown): string {
 // cross-chain records must keep decoding and rendering.
 describe("legacy cross-chain QR payloads", () => {
   it("round-trips v2 QR requests without legacy Arc start block requirements", () => {
-    const decoded = decodeRequestPayload(encodeRequestPayload(crossChainRequest));
+    const decoded = decodeRequestPayload(
+      encodeRawPayload({
+        version: 2,
+        id: crossChainRequest.id,
+        recipient: crossChainRequest.recipient,
+        token: crossChainRequest.token,
+        amount: crossChainRequest.amount,
+        label: crossChainRequest.label,
+        createdAt: crossChainRequest.createdAt,
+        expiresAt: crossChainRequest.expiresAt,
+        destinationChainId: crossChainRequest.destinationChainId,
+        allowedSourceChainIds: crossChainRequest.allowedSourceChainIds
+      })
+    );
 
     expect(isCrossChainPaymentRequest(decoded)).toBe(true);
     expect(decoded).toMatchObject({

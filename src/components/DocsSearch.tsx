@@ -28,7 +28,7 @@ function buildIndex(categories: DocsCategory[]): Entry[] {
         pageSlug: page.slug,
         pageTitle: page.title,
         haystack: text.toLowerCase(),
-        text,
+        text
       });
     }
   }
@@ -45,12 +45,11 @@ function snippet(text: string, q: string): string {
 
 /**
  * Client-side docs search (⌘K). Indexes page titles + section bodies from the
- * in-memory docs content — no backend. Navigates via the same hash router the
- * sidebar uses.
+ * in-memory docs content — no backend. Navigates through the docs path router.
  */
 export default function DocsSearch({
   categories,
-  onNavigate,
+  onNavigate
 }: {
   categories: DocsCategory[];
   onNavigate: (categorySlug: string, pageSlug: string) => void;
@@ -111,7 +110,7 @@ export default function DocsSearch({
       setOpen(false);
       inputRef.current?.blur();
     },
-    [onNavigate],
+    [onNavigate]
   );
 
   function onKeyDown(ev: React.KeyboardEvent) {
@@ -132,9 +131,9 @@ export default function DocsSearch({
   }
 
   return (
-    <div ref={wrapRef} className="relative mb-5">
-      <div className="flex h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-2 focus-within:border-[var(--ink-soft)]">
-        <Search size={14} strokeWidth={1.75} className="shrink-0 text-[var(--muted)]" aria-hidden="true" />
+    <div ref={wrapRef} className="docs-search">
+      <div className="docs-search-control">
+        <Search size={15} strokeWidth={1.75} aria-hidden="true" />
         <input
           ref={inputRef}
           value={query}
@@ -144,18 +143,15 @@ export default function DocsSearch({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search docs…"
-          className="w-full min-w-0 bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--muted-soft)] focus:outline-none"
+          placeholder="Search documentation"
           aria-label="Search documentation"
         />
-        <kbd className="hidden shrink-0 rounded border border-[var(--line)] px-1.5 py-0.5 text-2xs font-medium text-[var(--muted)] sm:inline">
-          ⌘K
-        </kbd>
+        <kbd>Ctrl K</kbd>
       </div>
       {open && query.trim() && (
-        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-[60vh] overflow-y-auto rounded-md border border-[var(--line)] bg-[var(--paper)] py-1 shadow-md">
+        <div className="docs-search-results">
           {results.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-[var(--muted)]">No results for “{query.trim()}”.</p>
+            <p className="docs-search-empty">No results for “{query.trim()}”.</p>
           ) : (
             results.map((e, i) => (
               <button
@@ -163,16 +159,11 @@ export default function DocsSearch({
                 type="button"
                 onMouseEnter={() => setSel(i)}
                 onClick={() => choose(e)}
-                className={cx(
-                  "block w-full px-3 py-2 text-left transition-colors",
-                  i === sel ? "bg-[var(--paper-2)]" : "hover:bg-[var(--paper-2)]",
-                )}
+                className={cx("docs-search-result", i === sel && "is-selected")}
               >
-                <p className="text-2xs font-medium uppercase tracking-wider text-[var(--muted)]">
-                  {e.categoryTitle}
-                </p>
-                <p className="text-sm font-medium text-[var(--ink)]">{e.pageTitle}</p>
-                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{snippet(e.text, query.trim())}</p>
+                <span>{e.categoryTitle}</span>
+                <strong>{e.pageTitle}</strong>
+                <small>{snippet(e.text, query.trim())}</small>
               </button>
             ))
           )}

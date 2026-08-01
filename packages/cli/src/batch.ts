@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createPublicClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -6,6 +7,11 @@ import { TOKENS, arcTestnet, ARC_RPC_ENDPOINTS, erc20Abi } from "./lib/arc.js";
 import { formatTokenAmount, parseTokenAmount, validateRecipient, type PaymentToken } from "./lib/payments.js";
 import { buildBatchInvoiceFilename, generateBatchInvoicePdf, type BatchInvoiceItem } from "./lib/invoice.js";
 import { send } from "./send.js";
+import {
+  authorizeExecution,
+  type BatchPreview,
+  type ConfirmationCallback
+} from "./safety.js";
 
 export type BatchOptions = {
   csvPath: string;
@@ -14,6 +20,9 @@ export type BatchOptions = {
   outDir?: string;
   rpc?: string;
   yes?: boolean;
+  dryRun?: boolean;
+  confirm?: ConfirmationCallback;
+  trustedPspIssuer?: string;
   json?: boolean;
 };
 
@@ -32,6 +41,7 @@ export type BatchResult = {
   total: number;
   succeeded: number;
   failed: number;
+  reconciliationRequired: number;
   batchJsonPath: string;
   batchPdfPath?: string;
   results: Array<{
@@ -49,14 +59,31 @@ export type BatchResult = {
   } | {
     row: number;
     success: false;
+    broadcast?: false;
     error: string;
+  } | {
+    row: number;
+    success: false;
+    broadcast: true;
+    confirmed: boolean;
+    txHash: string;
+    explorer: string;
+    recoveryPath: string;
+    stage: string;
+    error: string;
+    retryGuidance: string;
   }>;
   totals: Partial<Record<PaymentToken, string>>;
+  dryRun?: true;
+  preview?: BatchPreview;
   error?: string;
 };
 
 export async function batch(opts: BatchOptions): Promise<BatchResult> {
   const rows = await readBatchCsv(opts.csvPath, opts.token || "USDC");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(opts.privateKey)) {
+    throw new Error("privateKey must be 0x + 64 hex characters");
+  }
   const account = privateKeyToAccount(opts.privateKey);
   const outDir = resolve(opts.outDir || process.cwd());
   const id = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
@@ -65,7 +92,44 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
   await validateBatch(rows);
   await ensureBatchBalances(rows, account.address, opts.rpc);
 
+  const previewTotals: Partial<Record<PaymentToken, string>> = {};
+  for (const row of rows) {
+    addTotal(previewTotals, row.token, row.amount);
+  }
+  const preview: BatchPreview = {
+    kind: "batch",
+    chainId: arcTestnet.id,
+    payer: account.address,
+    paymentCount: rows.length,
+    totals: previewTotals,
+    rows: rows.map((row) => ({
+      row: row.row,
+      recipient: validateRecipient(row.to),
+      token: row.token,
+      amount: formatTokenAmount(parseTokenAmount(row.amount, row.token), row.token),
+      label: row.label.trim()
+    }))
+  };
+  const authorization = await authorizeExecution(preview, opts);
+  if (authorization === "dry-run") {
+    log(opts, "Dry run complete. No batch transactions were broadcast.");
+    return {
+      success: true,
+      dryRun: true,
+      preview,
+      id,
+      total: rows.length,
+      succeeded: 0,
+      failed: 0,
+      reconciliationRequired: 0,
+      batchJsonPath,
+      results: [],
+      totals: previewTotals
+    };
+  }
+
   log(opts, `Starting batch ${id}: ${rows.length} payment(s)`);
+  await access(outDir, constants.W_OK);
 
   const result: BatchResult = {
     success: true,
@@ -73,11 +137,13 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
     total: rows.length,
     succeeded: 0,
     failed: 0,
+    reconciliationRequired: 0,
     batchJsonPath,
     results: [],
     totals: {}
   };
   const invoiceItems: BatchInvoiceItem[] = [];
+  await writeFile(batchJsonPath, JSON.stringify(result, null, 2), "utf8");
 
   for (const row of rows) {
     log(opts, `\n[${row.row}/${rows.length}] Sending ${row.amount} ${row.token} to ${row.to}`);
@@ -91,9 +157,34 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
         privateKey: opts.privateKey,
         outDir,
         rpc: opts.rpc,
-        yes: opts.yes,
+        yes: true,
+        trustedPspIssuer: opts.trustedPspIssuer,
         json: opts.json
       });
+      if ("dryRun" in sent) {
+        throw new Error("Unexpected dry-run result after batch confirmation.");
+      }
+      if (!sent.success) {
+        result.success = false;
+        result.reconciliationRequired += 1;
+        result.error =
+          `Batch stopped at row ${row.row}: transaction ${sent.txHash} was broadcast and requires reconciliation.`;
+        result.results.push({
+          row: row.row,
+          success: false,
+          broadcast: true,
+          confirmed: sent.confirmed,
+          txHash: sent.txHash,
+          explorer: sent.explorer,
+          recoveryPath: sent.recoveryPath,
+          stage: sent.stage,
+          error: sent.error,
+          retryGuidance: sent.retryGuidance
+        });
+        await writeFile(batchJsonPath, JSON.stringify(result, null, 2), "utf8");
+        log(opts, `\nBatch stopped at row ${row.row}: ${sent.retryGuidance}`);
+        break;
+      }
 
       result.succeeded += 1;
       addTotal(result.totals, row.token, sent.amount);
@@ -110,14 +201,44 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
         recipient: sent.recipient,
         label: sent.label
       });
+      await writeFile(batchJsonPath, JSON.stringify(result, null, 2), "utf8");
 
-      const psp = sent.psp as Record<string, any>;
-      const invoice = psp.invoice as Record<string, any> | undefined;
+      const psp = sent.psp as {
+        invoice?: {
+          requestId?: string;
+          recipient?: string;
+          payer?: string;
+          invoiceDate?: string;
+        };
+        settlement?: {
+          blockNumber?: string;
+          settledAt?: string;
+        };
+        digest?: string;
+      };
+      const invoice = psp.invoice;
+      const invoiceRecipient = invoice?.recipient
+        ? validateRecipient(invoice.recipient)
+        : sent.recipient;
+      const invoicePayer = invoice?.payer
+        ? validateRecipient(invoice.payer)
+        : account.address;
+      const settlementBlock = typeof psp.settlement?.blockNumber === "string"
+        && /^(0|[1-9]\d*)$/.test(psp.settlement.blockNumber)
+          ? psp.settlement.blockNumber
+          : "0";
+      const settledAt = typeof psp.settlement?.settledAt === "string"
+        && Number.isFinite(Date.parse(psp.settlement.settledAt))
+          ? psp.settlement.settledAt
+          : new Date().toISOString();
+      const pspDigest = typeof psp.digest === "string" && /^0x[0-9a-fA-F]{64}$/.test(psp.digest)
+        ? psp.digest
+        : undefined;
       invoiceItems.push({
         row: row.row,
         request: {
           id: invoice?.requestId || sent.requestId || `row-${row.row}`,
-          recipient: invoice?.recipient || sent.recipient,
+          recipient: invoiceRecipient,
           token: sent.token,
           amount: sent.amount,
           label: sent.label,
@@ -127,15 +248,15 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
         receipt: {
           requestId: invoice?.requestId || sent.requestId || `row-${row.row}`,
           txHash: sent.txHash,
-          from: invoice?.payer || account.address,
-          to: invoice?.recipient || sent.recipient,
+          from: invoicePayer,
+          to: invoiceRecipient,
           token: sent.token,
           amount: sent.amount,
-          blockNumber: psp.settlement?.blockNumber || "0",
-          confirmedAt: psp.settlement?.settledAt || new Date().toISOString(),
+          blockNumber: settlementBlock,
+          confirmedAt: settledAt,
           explorerUrl: sent.explorer
         },
-        pspDigest: psp.digest,
+        pspDigest,
         pspUid: sent.pspUid,
         pspVerifierUrl: "https://app.disburse.online",
         proofPath: sent.proofPath
@@ -146,6 +267,7 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
       result.failed += 1;
       result.error = `Batch stopped at row ${row.row}: ${message}`;
       result.results.push({ row: row.row, success: false, error: message });
+      await writeFile(batchJsonPath, JSON.stringify(result, null, 2), "utf8");
       log(opts, `\nBatch stopped at row ${row.row}: ${message}`);
       break;
     }
@@ -162,7 +284,14 @@ export async function batch(opts: BatchOptions): Promise<BatchResult> {
       items: invoiceItems,
       totals: result.totals,
       batchJsonPath,
-      failed: result.results.filter((row): row is { row: number; success: false; error: string } => !row.success)
+      failed: result.results
+        .filter((row) => !row.success)
+        .map((row) => ({
+          row: row.row,
+          error: row.broadcast
+            ? `${row.error} Transaction ${row.txHash} was broadcast; do not resend.`
+            : row.error
+        }))
     }))
   );
   await writeFile(batchJsonPath, JSON.stringify(result, null, 2), "utf8");

@@ -7,7 +7,7 @@
  * is safe. Failures per-request are logged and the loop continues.
  *
  * Requires the same env as the server: ENABLE_PSP=1, DISBURSE_PSP_SIGNING_KEY,
- * ARC_SETTLEMENT_CONTRACT, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL.
+ * ARC_SETTLEMENT_CONTRACT, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL.
  */
 
 import { getSupabaseAdmin } from "../server/supabase.js";

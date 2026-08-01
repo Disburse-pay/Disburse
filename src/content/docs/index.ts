@@ -1,11 +1,11 @@
 import type { LanguageCode } from "../../lib/settings";
 import { slugify } from "../../lib/cx";
 import type { DocsCategory, DocsPage, DocsSection, DocsSummaryItem } from "./types";
-import { docsSections, arcadeSections, docsSummaryItems } from "./en";
-import { docsSectionsId, arcadeSectionsId, docsSummaryItemsId } from "./id";
-import { docsSectionsDe, arcadeSectionsDe, docsSummaryItemsDe } from "./de";
-import { docsSectionsHi, arcadeSectionsHi, docsSummaryItemsHi } from "./hi";
-import { docsSectionsZh, arcadeSectionsZh, docsSummaryItemsZh } from "./zh";
+import { docsSections, docsSummaryItems } from "./en";
+import { docsSectionsId, docsSummaryItemsId } from "./id";
+import { docsSectionsDe, docsSummaryItemsDe } from "./de";
+import { docsSectionsHi, docsSummaryItemsHi } from "./hi";
+import { docsSectionsZh, docsSummaryItemsZh } from "./zh";
 
 export type { DocsSection, DocsSummaryItem, DocsPage, DocsCategory } from "./types";
 
@@ -15,14 +15,6 @@ export function getDocsSections(lang: LanguageCode): DocsSection[] {
   if (lang === "hi") return docsSectionsHi;
   if (lang === "zh") return docsSectionsZh;
   return docsSections;
-}
-
-export function getArcadeSections(lang: LanguageCode): DocsSection[] {
-  if (lang === "de") return arcadeSectionsDe;
-  if (lang === "id") return arcadeSectionsId;
-  if (lang === "hi") return arcadeSectionsHi;
-  if (lang === "zh") return arcadeSectionsZh;
-  return arcadeSections;
 }
 
 export function getDocsSummaryItems(lang: LanguageCode): DocsSummaryItem[] {
@@ -37,30 +29,41 @@ export function getDocsSummaryItems(lang: LanguageCode): DocsSummaryItem[] {
  * Wrap the existing flat DocsSection list for a locale into one page per
  * section. Each section becomes its own gitbook-style page in the sidebar.
  */
-function appPagesFromSections(sections: DocsSection[]): DocsPage[] {
+function pagesFromSections(sections: DocsSection[]): DocsPage[] {
   return sections.map((s) => ({
     slug: slugify(s.title),
     title: s.title,
-    sections: [s],
+    sections: [s]
   }));
 }
 
-/**
- * Gitbook categories for /docs. "App" is the payments / QR / PSP surface,
- * "Arcade" is Cluck Run, the coin-op game deployed separately at
- * arcade.disburse.online. Both are sourced from the locale files.
- */
+function pickSections(sections: DocsSection[], indexes: number[]): DocsSection[] {
+  return indexes.flatMap((index) => (sections[index] ? [sections[index]] : []));
+}
+
+/** Product-oriented navigation for the payment, ledger, and trust surfaces. */
 export function getDocsCategories(lang: LanguageCode): DocsCategory[] {
+  const sections = getDocsSections(lang);
   return [
     {
-      slug: "app",
-      title: "App",
-      pages: appPagesFromSections(getDocsSections(lang)),
+      slug: "start",
+      title: "Start",
+      pages: pagesFromSections(pickSections(sections, [0, 4]))
     },
     {
-      slug: "arcade",
-      title: "Arcade",
-      pages: appPagesFromSections(getArcadeSections(lang)),
+      slug: "integrate",
+      title: "Integrate",
+      pages: pagesFromSections(pickSections(sections, [5, 6, 11]))
     },
+    {
+      slug: "operate",
+      title: "Operate",
+      pages: pagesFromSections(pickSections(sections, [7, 8, 10]))
+    },
+    {
+      slug: "trust",
+      title: "Trust",
+      pages: pagesFromSections(pickSections(sections, [2, 3, 9, 1]))
+    }
   ];
 }

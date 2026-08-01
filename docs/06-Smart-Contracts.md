@@ -1,20 +1,33 @@
-# Smart Contracts
+# Smart contracts
 
-Disburse relies on several smart contracts deployed on Arc Testnet to facilitate settlements, verification, and prediction markets.
+## Source-controlled contract
 
-## Payment Contracts
+The contract source available in this checkout is
+[`PspVerifier.sol`](../contracts/src/PspVerifier.sol). Version 2 verifies
+field-bound EIP-712 PSP claims and maintains:
 
-* **QrPaymentSettlement**: The main settlement contract on Arc Testnet. It receives proofs from remote chains or handles direct Arc payments.
-* **QrPaymentSource**: The source escrow contract deployed on remote chains (Base Sepolia, Monad Testnet). It escrows funds and emits events for Polymer to prove.
+- a trusted-issuer registry;
+- a versioned settlement-contract registry;
+- explicit `direct-signature-only` and `settlement` verification modes; and
+- two-step ownership transfer.
 
-## Verification Contracts
+Direct mode verifies issuer trust and the signed fields but deliberately does
+not assert settlement existence. Settlement mode additionally asks an enabled,
+version-matched settlement contract whether the signed settlement ID is
+confirmed.
 
-* **PspVerifier**: An on-chain verifier for Portable Settlement Proofs (PSPs). It recovers the signer from the EIP-191 signed digest, checks the issuer, and confirms the settlement occurred.
+See [the verifier operator guide](../contracts/PSP_VERIFIER.md) for deployment
+and migration requirements. Deployment is an explicit operator action; source
+changes alone do not update any live contract.
 
-## Prediction Market Contracts
+## Supported contract boundary
 
-* **Exchange**: The central limit orderbook for trading YES and NO shares.
-* **MarketFactory**: Deploys new markets and manages administrative functions.
-* **Market**: Represents a single binary prediction market.
-* **OutcomeToken**: The ERC-20 contract for the YES and NO shares.
-* **AdminResolver**: Handles the resolution of markets by authorized administrators.
+Only the source-controlled PSP verifier and its reviewed deployment procedure
+are part of the supported payment product. Compiled artifacts and addresses
+are not a substitute for source, tests, and an operator review.
+
+Do not:
+
+- deploy or fund unsupported contracts or stale artifacts;
+- change live ownership, issuer, settlement, or route registries without a
+  separately reviewed operator migration.

@@ -1,10 +1,9 @@
 /**
  * Attestation Engine. Verifiable Settlement Receipts (VSR)
  *
- * Creates structured, verifiable attestation records for settled payments.
- * When EAS (Ethereum Attestation Service) is available on Arc or Base Sepolia,
- * these can be submitted onchain. Until then, they serve as locally-verifiable
- * settlement proofs with cryptographic fingerprints.
+ * Creates structured local fingerprints for independently verified settlement
+ * records. A fingerprint detects later edits; it is not an issuer signature or
+ * an onchain attestation. Portable issuer trust belongs to the signed PSP.
  */
 
 import type { Address, Hash } from "viem";
@@ -35,15 +34,8 @@ export type SettlementAttestation = {
   fingerprint: string;
   createdAt: string;
   version: 1;
-  attester: "local" | "eas";
-  easUid?: string;
-  easUrl?: string;
+  attester: "self-generated";
 };
-
-// EAS Schema Registry UID (Base Sepolia. registered for Disburse)
-export const EAS_SCHEMA_UID =
-  "0x0000000000000000000000000000000000000000000000000000000000000000";
-export const EAS_BASE_SEPOLIA_URL = "https://base-sepolia.easscan.org";
 
 // ---------- Core ----------
 
@@ -99,8 +91,7 @@ export async function generateAttestationFingerprint(
 }
 
 /**
- * Create a local settlement attestation.
- * Returns a structured attestation object with a cryptographic fingerprint.
+ * Create a self-generated settlement fingerprint.
  */
 export async function createSettlementAttestation(
   request: PaymentRequest,
@@ -116,7 +107,7 @@ export async function createSettlementAttestation(
     fingerprint,
     createdAt: new Date().toISOString(),
     version: 1,
-    attester: "local",
+    attester: "self-generated",
   };
 }
 

@@ -8,7 +8,8 @@ import {
   parseUnits,
   type Address,
   type EIP1193Provider,
-  type Hash
+  type Hash,
+  type TransactionReceipt
 } from "viem";
 import {
   ARC_CHAIN_ID,
@@ -20,18 +21,15 @@ import {
   arcTestnet,
   erc20Abi,
   publicClient,
-  transferEvent,
   type ArcRpcEndpoint
 } from "./arc.js";
 import {
   decodeTransferLog,
-  makeReceipt,
   parseTokenAmount,
   transferMatchesRequest,
   type DecodedTransfer,
   type PaymentRequest,
   type PaymentToken,
-  type Receipt,
   type TransferLog
 } from "./payments.js";
 
@@ -101,18 +99,6 @@ export type RpcHealth = {
   eurcDecimals?: number;
 };
 
-export type VerificationResult =
-  | { status: "paid"; receipt: Receipt; message: string }
-  | { status: "possible_match"; transfer: DecodedTransfer; message: string }
-  | { status: "open"; message: string };
-
-export const ARC_LOG_WINDOW_BLOCKS = 10_000n;
-
-export type BlockRange = {
-  fromBlock: bigint;
-  toBlock: bigint;
-};
-
 export type WalletTransferTransaction = {
   from: Address;
   to: Address;
@@ -134,7 +120,7 @@ export function getInjectedProvider(): EthereumProvider | undefined {
 }
 
 export async function connectWallet(provider: EthereumProvider): Promise<Address> {
-  const accounts = (await provider.request({ method: "eth_requestAccounts" } as any)) as string[];
+  const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
   if (!accounts?.[0]) {
     throw new Error("Wallet did not return an account.");
   }
@@ -142,7 +128,7 @@ export async function connectWallet(provider: EthereumProvider): Promise<Address
 }
 
 export async function getWalletChainId(provider: EthereumProvider): Promise<number> {
-  const chainId = (await provider.request({ method: "eth_chainId" } as any)) as string;
+  const chainId = (await provider.request({ method: "eth_chainId" })) as string;
   return Number.parseInt(chainId, 16);
 }
 
@@ -348,7 +334,7 @@ export async function requestWalletTransaction(
 }
 
 export async function waitForTransactionConfirmation(hash: Hash) {
-  return await withTimeout(
+  const receipt = await withTimeout(
     publicClient.waitForTransactionReceipt({
       hash,
       confirmations: 1
@@ -356,127 +342,67 @@ export async function waitForTransactionConfirmation(hash: Hash) {
     RECEIPT_WAIT_TIMEOUT_MS,
     `Transaction ${hash} was submitted, but Arc Testnet did not return a receipt yet. Use Verify in a minute.`
   );
+  assertSuccessfulTransactionReceipt(receipt, hash);
+  return receipt;
 }
 
-export async function verifyPayment(request: PaymentRequest): Promise<VerificationResult> {
-  if (request.txHash) {
-    try {
-      const receipt = await publicClient.getTransactionReceipt({ hash: request.txHash });
-      const transfer = receipt.logs
-        .filter((log) => log.address.toLowerCase() === TOKENS[request.token].address.toLowerCase())
-        .map((log) => decodeTransferLog(log as unknown as TransferLog))
-        .find(
-          (decoded): decoded is DecodedTransfer => Boolean(decoded && transferMatchesRequest(request, decoded))
-        );
-
-      if (transfer) {
-        return {
-          status: "paid",
-          receipt: makeReceipt(request, transfer),
-          message: "Receipt verified from transaction logs."
-        };
-      }
-    } catch {
-      return {
-        status: "open",
-        message: "Transaction hash is not available on Arcscan yet."
-      };
-    }
+export function assertSuccessfulTransactionReceipt(
+  receipt: Pick<TransactionReceipt, "status" | "transactionHash">,
+  expectedHash: Hash
+): void {
+  if (receipt.status !== "success") {
+    throw new Error(`Transaction ${expectedHash} reverted. No payment was recorded.`);
   }
-
-  const latestBlock = await publicClient.getBlockNumber();
-  const ranges = buildLogBlockRanges(BigInt(request.startBlock), latestBlock);
-  const logs = [];
-
-  for (const range of ranges) {
-    const batch = await publicClient.getLogs({
-      address: TOKENS[request.token].address,
-      event: transferEvent,
-      args: {
-        to: request.recipient
-      },
-      fromBlock: range.fromBlock,
-      toBlock: range.toBlock
-    });
-    logs.push(...batch);
+  if (receipt.transactionHash.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error(`Transaction ${expectedHash} was replaced. Review the replacement before retrying.`);
   }
-
-  const transfers = logs
-    .map((log) => ({
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber,
-      from: getAddress(log.args.from ?? "0x0000000000000000000000000000000000000000"),
-      to: getAddress(log.args.to ?? request.recipient),
-      value: log.args.value ?? 0n
-    }))
-    .filter((transfer): transfer is DecodedTransfer => Boolean(transfer.txHash && transfer.blockNumber));
-
-  return resolveTransferVerification(request, transfers);
 }
 
-export function buildLogBlockRanges(
-  fromBlock: bigint,
-  toBlock: bigint,
-  windowSize = ARC_LOG_WINDOW_BLOCKS
-): BlockRange[] {
-  if (windowSize <= 0n) {
-    throw new Error("Log scan window must be greater than zero.");
+export function getConfirmedTokenTransfer(
+  receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "blockNumber" | "logs">,
+  expectedHash: Hash,
+  transferRequest: TokenTransfer,
+  expectedSender?: Address
+): DecodedTransfer {
+  assertSuccessfulTransactionReceipt(receipt, expectedHash);
+
+  const transfers = receipt.logs
+    .filter((log) => log.address.toLowerCase() === TOKENS[transferRequest.token].address.toLowerCase())
+    .map((log) => decodeTransferLog(log as unknown as TransferLog))
+    .filter(
+      (decoded): decoded is DecodedTransfer =>
+        Boolean(
+          decoded &&
+            Number.isSafeInteger(decoded.logIndex) &&
+            (decoded.logIndex ?? -1) >= 0 &&
+            transferMatchesRequest(transferRequest, decoded) &&
+            (!expectedSender || decoded.from.toLowerCase() === expectedSender.toLowerCase())
+        )
+    );
+  if (transfers.length > 1) {
+    throw new Error(
+      `Transaction ${expectedHash} emitted multiple indistinguishable payment transfers. Verify the exact log before continuing.`
+    );
   }
+  const transfer = transfers[0];
 
-  if (fromBlock > toBlock) {
-    return [];
+  if (!transfer) {
+    throw new Error(
+      `Transaction ${expectedHash} did not emit the expected ${transferRequest.token} transfer to ${transferRequest.recipient}.`
+    );
   }
-
-  const ranges: BlockRange[] = [];
-  let cursor = fromBlock;
-
-  while (cursor <= toBlock) {
-    const end = cursor + windowSize - 1n;
-    ranges.push({
-      fromBlock: cursor,
-      toBlock: end > toBlock ? toBlock : end
-    });
-    cursor += windowSize;
-  }
-
-  return ranges;
+  return transfer;
 }
 
-export function resolveTransferVerification(
-  request: PaymentRequest,
-  transfers: DecodedTransfer[]
-): VerificationResult {
-  const sortedTransfers = [...transfers].sort((left, right) => {
-    if (left.blockNumber === right.blockNumber) {
-      return 0;
-    }
-    return left.blockNumber < right.blockNumber ? -1 : 1;
-  });
-  const recipientTransfers = sortedTransfers.filter(
-    (transfer) => transfer.to.toLowerCase() === request.recipient.toLowerCase()
-  );
-
-  const exact = recipientTransfers.find((transfer) => transferMatchesRequest(request, transfer));
-  if (exact) {
-    return {
-      status: "paid",
-      receipt: makeReceipt(request, exact),
-      message: "Exact transfer found on Arc Testnet."
-    };
-  }
-
-  const possible = recipientTransfers.at(-1);
-  if (possible) {
-    return {
-      status: "possible_match",
-      transfer: possible,
-      message: "A transfer to this recipient exists, but the amount differs."
-    };
-  }
-
+export async function waitForConfirmedTokenTransfer(
+  hash: Hash,
+  transferRequest: TokenTransfer,
+  expectedSender?: Address
+) {
+  const receipt = await waitForTransactionConfirmation(hash);
   return {
-    status: "open",
-    message: "No matching transfer found from the request start block."
+    receipt,
+    transfer: getConfirmedTokenTransfer(receipt, hash, transferRequest, expectedSender)
   };
 }
 
@@ -526,14 +452,18 @@ export function applyArcGasFloor(gasPrice: bigint): bigint {
 }
 
 function readArcContract<T>(parameters: unknown): Promise<T> {
-  return publicClient.readContract(parameters as any) as Promise<T>;
+  return publicClient.readContract(
+    parameters as Parameters<typeof publicClient.readContract>[0]
+  ) as Promise<T>;
 }
 
 function readEndpointContract<T>(
   client: ReturnType<typeof createEndpointPublicClient>,
   parameters: unknown
 ): Promise<T> {
-  return client.readContract(parameters as any) as Promise<T>;
+  return client.readContract(
+    parameters as Parameters<typeof client.readContract>[0]
+  ) as Promise<T>;
 }
 
 export function selectActiveRpcEndpoint(statuses: RpcEndpointStatus[]): RpcEndpointStatus | undefined {

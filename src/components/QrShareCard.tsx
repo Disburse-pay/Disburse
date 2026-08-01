@@ -10,42 +10,45 @@ type Props = {
   onDownload?: () => void;
 };
 
-const STATUS_TONE: Record<PaymentStatus, { bg: string; text: string; border: string; dot: string; label: string }> = {
+const STATUS_TONE: Record<
+  PaymentStatus,
+  { bg: string; text: string; border: string; accent: string; label: string }
+> = {
   open: {
     bg: "var(--green-bg)",
     text: "var(--green-text)",
     border: "rgba(76,201,154,0.25)",
-    dot: "var(--green-text)",
-    label: "Watching",
+    accent: "var(--green-text)",
+    label: "Watching"
   },
   possible_match: {
     bg: "var(--blue-bg)",
     text: "var(--blue-text)",
     border: "rgba(110,163,230,0.25)",
-    dot: "var(--blue-text)",
-    label: "Possible match",
+    accent: "var(--blue-text)",
+    label: "Possible match"
   },
   paid: {
     bg: "var(--green-bg)",
     text: "var(--green-text)",
     border: "rgba(76,201,154,0.25)",
-    dot: "var(--green-text)",
-    label: "Paid",
+    accent: "var(--green-text)",
+    label: "Paid"
   },
   failed: {
     bg: "var(--red-bg)",
     text: "var(--red-text)",
     border: "rgba(224,118,118,0.25)",
-    dot: "var(--red-text)",
-    label: "Failed",
+    accent: "var(--red-text)",
+    label: "Failed"
   },
   expired: {
     bg: "var(--input-bg)",
     text: "var(--muted)",
     border: "var(--line)",
-    dot: "var(--muted)",
-    label: "Expired",
-  },
+    accent: "var(--muted)",
+    label: "Expired"
+  }
 };
 
 /**
@@ -59,7 +62,7 @@ export default function QrShareCard({
   shareUrl,
   liveStatusLabel,
   onCopy,
-  onDownload,
+  onDownload
 }: Props) {
   const tone = STATUS_TONE[request.status] ?? STATUS_TONE.open;
   const shortAddr = `${request.recipient.slice(0, 6)}…${request.recipient.slice(-4)}`;
@@ -69,16 +72,12 @@ export default function QrShareCard({
     <section className="rounded-[var(--card-radius)] border border-[var(--line)] bg-[var(--paper)] p-5">
       <div className="mb-3.5 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-[var(--muted)]">
-            Active request
-          </p>
+          <p className="text-xs font-medium text-[var(--muted)]">Active request</p>
           <h3 className="mt-1.5 truncate text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)]">
             {request.label}
           </h3>
           {request.note && (
-            <p className="mt-1.5 max-w-[40ch] text-sm leading-snug text-[var(--muted)]">
-              {request.note}
-            </p>
+            <p className="mt-1.5 max-w-[40ch] text-sm leading-snug text-[var(--muted)]">{request.note}</p>
           )}
         </div>
         <span
@@ -86,13 +85,10 @@ export default function QrShareCard({
           style={{
             background: tone.bg,
             color: tone.text,
-            boxShadow: `inset 0 0 0 1px ${tone.border}`,
+            boxShadow: `inset 0 0 0 1px ${tone.border}`
           }}
         >
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ background: tone.dot }}
-          />
+          <span className="h-px w-3" style={{ background: tone.accent }} />
           {tone.label}
         </span>
       </div>
@@ -110,48 +106,31 @@ export default function QrShareCard({
 
         <div className="flex flex-col gap-3.5">
           <div>
-            <p className="text-xs font-medium text-[var(--muted)]">
-              Amount
-            </p>
+            <p className="text-xs font-medium text-[var(--muted)]">Amount</p>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="font-mono text-3xl font-semibold leading-none text-[var(--ink)] tabular-nums">
                 {request.amount}
               </span>
-              <span className="text-sm font-medium text-[var(--muted)]">
-                {request.token}
-              </span>
+              <span className="text-sm font-medium text-[var(--muted)]">{request.token}</span>
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-medium text-[var(--muted)]">
-              Recipient
-            </p>
+            <p className="text-xs font-medium text-[var(--muted)]">Recipient</p>
             <p className="mt-1 font-mono text-xs text-[var(--ink)]">{shortAddr}</p>
           </div>
 
           <div className="flex items-center gap-2" aria-live="polite">
-            <span
-              className="relative inline-flex h-2 w-2 items-center justify-center"
-              style={{ color: tone.text }}
-            >
-              {isWatching && (
-                <span
-                  className="absolute inset-0 rounded-full opacity-40"
-                  style={{
-                    background: "currentColor",
-                    animation: "ping 1.6s cubic-bezier(0,0,0.2,1) infinite",
-                  }}
-                />
-              )}
+            <span className="relative inline-flex h-3 w-5 items-center" style={{ color: tone.text }}>
               <span
-                className="relative h-1.5 w-1.5 rounded-full"
-                style={{ background: "currentColor" }}
+                className="h-0.5 bg-current"
+                style={{
+                  width: isWatching ? "100%" : "65%",
+                  animation: isWatching ? "status-scan 1.6s cubic-bezier(0.76,0,0.24,1) infinite" : undefined
+                }}
               />
             </span>
-            <span className="text-sm font-medium text-[var(--muted)]">
-              {liveStatusLabel}
-            </span>
+            <span className="text-sm font-medium text-[var(--muted)]">{liveStatusLabel}</span>
           </div>
 
           <div className="mt-1 flex flex-wrap gap-2">

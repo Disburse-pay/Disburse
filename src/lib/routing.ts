@@ -12,10 +12,22 @@ export type Page =
 
 export type NavigateHandler = (event: MouseEvent<HTMLAnchorElement>, target: string) => void;
 
+export const APP_PAGE_PATHS = {
+  "/": "dashboard",
+  "/dashboard": "dashboard",
+  "/payments": "payments",
+  "/qr-payments": "qr-payments",
+  "/pay": "pay",
+  "/import-export": "import-export",
+  "/statements": "statements",
+  "/settings": "dashboard"
+} as const satisfies Record<string, Exclude<Page, "landing" | "docs">>;
+
 export const LEGACY_DOCS_PATH = "/docs";
 export const PRODUCTION_DOCS_HOSTNAME = "docs.disburse.online";
 export const PRODUCTION_APP_HOSTNAME = "app.disburse.online";
 export const PRODUCTION_PAY_HOSTNAME = "pay.disburse.online";
+export const PRODUCTION_BRIDGE_HOSTNAME = "bridge.disburse.online";
 
 export function getInitialPage(): Page {
   const hostname = window.location.hostname;
@@ -39,11 +51,8 @@ export function getInitialPage(): Page {
   const isApp = hostname.startsWith("app.") || isLocalAppPreview(hostname, p);
 
   if (isApp) {
-    if (p === "/payments") return "payments";
-    if (p === "/qr-payments") return "qr-payments";
-    if (p === "/pay") return "pay";
-    if (p === "/import-export") return "import-export";
-    if (p === "/statements") return "statements";
+    const matchedPage = APP_PAGE_PATHS[p as keyof typeof APP_PAGE_PATHS];
+    if (matchedPage) return matchedPage;
     // /settings was a dedicated page; it is now a dialog that opens from the header.
     // Keep the URL working by falling through to the dashboard. The dialog
     // auto-opens via an effect in the App component.
@@ -65,10 +74,7 @@ export function isLocalAppPreview(hostname: string, pathname: string): boolean {
   const appPreview = new URLSearchParams(window.location.search).get("app") === "1";
   // "/docs" is deliberately absent: it is not an app route on any host — the
   // docs host is documentation's only home.
-  return (
-    appPreview ||
-    ["/payments", "/qr-payments", "/pay", "/import-export", "/settings"].includes(pathname)
-  );
+  return appPreview || (pathname !== "/" && pathname in APP_PAGE_PATHS);
 }
 
 export function isDocsHostname(hostname = window.location.hostname): boolean {
@@ -77,6 +83,10 @@ export function isDocsHostname(hostname = window.location.hostname): boolean {
 
 export function isPayHostname(hostname = window.location.hostname): boolean {
   return hostname === "pay.localhost" || hostname === PRODUCTION_PAY_HOSTNAME;
+}
+
+export function isBridgeHostname(hostname = window.location.hostname): boolean {
+  return hostname === "bridge.localhost" || hostname === PRODUCTION_BRIDGE_HOSTNAME;
 }
 
 // Naked-localhost preview of the hosted pay page via ?pay=1. This does NOT
@@ -89,10 +99,24 @@ export function isLocalPayPreview(hostname = window.location.hostname): boolean 
   return new URLSearchParams(window.location.search).get("pay") === "1";
 }
 
+export function isLocalBridgePreview(hostname = window.location.hostname): boolean {
+  if (!isLocalHostname(hostname)) {
+    return false;
+  }
+  return (
+    window.location.pathname === "/bridge" ||
+    new URLSearchParams(window.location.search).get("bridge") === "1"
+  );
+}
+
 // True when the current surface should render the dedicated mobile-first pay
 // page instead of the full app shell.
 export function isPaySurface(hostname = window.location.hostname): boolean {
   return isPayHostname(hostname) || isLocalPayPreview(hostname);
+}
+
+export function isBridgeSurface(hostname = window.location.hostname): boolean {
+  return isBridgeHostname(hostname) || isLocalBridgePreview(hostname);
 }
 
 export function stripPublicSubdomain(hostname: string): string {
@@ -101,6 +125,9 @@ export function stripPublicSubdomain(hostname: string): string {
   }
   if (hostname.startsWith("pay.")) {
     return hostname.slice("pay.".length);
+  }
+  if (hostname.startsWith("bridge.")) {
+    return hostname.slice("bridge.".length);
   }
   if (hostname.startsWith("www.")) {
     return hostname.slice("www.".length);
@@ -138,6 +165,16 @@ export function getPayHostname(hostname: string): string {
   return PRODUCTION_PAY_HOSTNAME;
 }
 
+export function getBridgeHostname(hostname: string): string {
+  if (hostname.startsWith("bridge.")) {
+    return hostname;
+  }
+  if (isLocalHostname(hostname) || hostname.endsWith(".localhost")) {
+    return "bridge.localhost";
+  }
+  return PRODUCTION_BRIDGE_HOSTNAME;
+}
+
 // Origin a freshly generated QR / share link should point at, so a scanned
 // code opens the hosted mobile pay page. Naked localhost has no product
 // subdomain in its origin, so we keep the current origin there and let the
@@ -165,6 +202,17 @@ export function getDocsHref(): string {
     return "/";
   }
   return `${getOriginForHostname(getDocsHostname(hostname))}/`;
+}
+
+export function getBridgeHref(): string {
+  const hostname = window.location.hostname;
+  if (isBridgeHostname(hostname)) {
+    return "/";
+  }
+  if (isLocalHostname(hostname) && !hostname.startsWith("bridge.")) {
+    return "/bridge";
+  }
+  return `${getOriginForHostname(getBridgeHostname(hostname))}/`;
 }
 
 export function getAppHref(path: string): string {

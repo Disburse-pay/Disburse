@@ -79,10 +79,16 @@ export async function claimDisburseId(
     message: { ...typedData.message, expiresAt: expiresAt.toString() }
   };
 
-  const signature = (await provider.request({
+  const signature = await provider.request({
     method: "eth_signTypedData_v4",
     params: [account, JSON.stringify(payload)]
-  })) as string;
+  });
+  if (
+    typeof signature !== "string" ||
+    !/^0x(?:[a-fA-F0-9]{2}){64,2048}$/.test(signature)
+  ) {
+    throw new Error("Wallet did not return a valid ID authorization signature.");
+  }
 
   const claimed = await requestJson<DisburseId>("/api/ids", {
     method: "POST",

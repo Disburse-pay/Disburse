@@ -6,7 +6,6 @@ export type InvoiceInput = {
   request: PaymentRequest;
   receipt: Receipt;
   pspDigest?: string;
-  pspVerifierUrl?: string;
 };
 
 type InvoiceRow = {
@@ -144,7 +143,7 @@ export async function generateInvoicePdf(input: InvoiceInput): Promise<Uint8Arra
       font: mono,
       color: rgb(0.45, 0.44, 0.4)
     });
-    page.drawText(`Verify: npx @disburse/psp-verify proof.json | ${input.pspVerifierUrl || "https://disburse.app"}/api/psp-viewer`, {
+    page.drawText('Verify: npx @disburse/psp-verify proof.json --issuer "$DISBURSE_TRUSTED_PSP_ISSUER"', {
       x: MARGIN,
       y: 60,
       size: 6.5,

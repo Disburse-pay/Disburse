@@ -1,4 +1,13 @@
-import { assertMethod, HttpError, readJsonBody, readQueryString, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
+import {
+  assertMethod,
+  HttpError,
+  readJsonBody,
+  readQueryString,
+  sendError,
+  sendJson,
+  type ApiRequest,
+  type ApiResponse
+} from "../server/http.js";
 import { getSupabaseAdmin } from "../server/supabase.js";
 import {
   buildIdClaimTypedData,
@@ -6,7 +15,8 @@ import {
   isValidHandle,
   normalizeHandle
 } from "../src/lib/ids.js";
-import { getAddress, isAddress, verifyTypedData, type Address, type Hex } from "viem";
+import { readWalletSignature, verifyWalletTypedData } from "../server/wallet-auth.js";
+import { getAddress, isAddress, type Address } from "viem";
 
 /**
  * /api/ids — Disburse ID directory.
@@ -101,16 +111,17 @@ async function handleClaim(request: ApiRequest, response: ApiResponse) {
     throw new HttpError(400, `expiresAt may be at most ${ID_CLAIM_TTL_SECONDS} seconds in the future.`);
   }
 
-  const signature = typeof body.signature === "string" ? body.signature.trim() : "";
-  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
-    throw new HttpError(400, "signature must be a valid 65-byte hex signature.");
-  }
+  const signature = readWalletSignature(
+    body.signature,
+    400,
+    "signature must be a valid bounded hex wallet signature."
+  );
 
-  const verified = await verifyTypedData({
+  const verified = await verifyWalletTypedData({
     ...buildIdClaimTypedData({ handle, wallet, expiresAt }),
     address: wallet,
-    signature: signature as Hex
-  }).catch(() => false);
+    signature
+  });
   if (!verified) {
     throw new HttpError(401, "Signature does not match the wallet.");
   }
@@ -143,7 +154,7 @@ async function handleClaim(request: ApiRequest, response: ApiResponse) {
     if (error.code === "23505") {
       throw new HttpError(409, "That name is already claimed. Pick another.");
     }
-    throw new HttpError(500, `Failed to claim Disburse ID: ${error.message}`);
+    throw new HttpError(500, "Failed to claim the Disburse ID.");
   }
 
   sendJson(response, 200, toPublicId(data as IdRow));
@@ -157,7 +168,7 @@ async function findByHandle(handle: string): Promise<IdRow | null> {
     .eq("handle", handle)
     .maybeSingle();
   if (error) {
-    throw new HttpError(500, `Failed to resolve Disburse ID: ${error.message}`);
+    throw new HttpError(500, "Failed to resolve the Disburse ID.");
   }
   return (data as IdRow | null) ?? null;
 }
@@ -170,7 +181,7 @@ async function findByAddress(address: string): Promise<IdRow | null> {
     .eq("address", address.toLowerCase())
     .maybeSingle();
   if (error) {
-    throw new HttpError(500, `Failed to resolve Disburse ID: ${error.message}`);
+    throw new HttpError(500, "Failed to resolve the Disburse ID.");
   }
   return (data as IdRow | null) ?? null;
 }

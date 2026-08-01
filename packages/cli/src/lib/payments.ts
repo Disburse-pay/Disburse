@@ -6,7 +6,8 @@ import {
   parseUnits,
   type Address,
   type Hash,
-  type Hex
+  type Hex,
+  type TransactionReceipt
 } from "viem";
 import { ARC_EXPLORER_URL, TOKENS, erc20Abi } from "./arc.js";
 
@@ -62,6 +63,27 @@ export function normalizeNote(value: string): string | undefined {
   return note;
 }
 
+export function normalizeInvoiceDate(value: string): string {
+  const trimmed = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) {
+    throw new Error("Add a valid invoice date.");
+  }
+  const [, yearValue, monthValue, dayValue] = match;
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error("Add a valid invoice date.");
+  }
+  return trimmed;
+}
+
 export function parseTokenAmount(amount: string, token: PaymentToken): bigint {
   const trimmed = amount.trim();
   const decimals = TOKENS[token].decimals;
@@ -114,6 +136,7 @@ export type Receipt = {
   token: PaymentToken;
   amount: string;
   blockNumber: string;
+  blockHash?: Hash;
   confirmedAt: string;
   explorerUrl: string;
   directSettlementLogIndex?: number;
@@ -128,6 +151,7 @@ export function makeReceipt(request: { id: string; token: PaymentToken }, transf
     token: request.token,
     amount: formatTokenAmount(transfer.value, request.token),
     blockNumber: transfer.blockNumber.toString(),
+    directSettlementLogIndex: transfer.logIndex,
     confirmedAt: new Date().toISOString(),
     explorerUrl: toExplorerTxUrl(transfer.txHash)
   };
@@ -166,6 +190,50 @@ export function decodeTransferLog(log: TransferLog): DecodedTransfer | undefined
   } catch {
     return undefined;
   }
+}
+
+export function getConfirmedTransferFromReceipt(
+  receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "logs">,
+  input: {
+    hash: Hash;
+    payer: Address;
+    recipient: Address;
+    token: PaymentToken;
+    amount: bigint;
+  }
+): DecodedTransfer {
+  if (receipt.status !== "success") {
+    throw new Error(`Transaction ${input.hash} reverted. No disbursement was registered.`);
+  }
+  if (receipt.transactionHash.toLowerCase() !== input.hash.toLowerCase()) {
+    throw new Error(`Transaction ${input.hash} was replaced. Review the replacement before retrying.`);
+  }
+  const transfers = receipt.logs
+    .filter((log) => log.address.toLowerCase() === TOKENS[input.token].address.toLowerCase())
+    .map((log) => decodeTransferLog(log as unknown as TransferLog))
+    .filter(
+      (decoded): decoded is DecodedTransfer =>
+        Boolean(
+          decoded &&
+          Number.isSafeInteger(decoded.logIndex) &&
+          (decoded.logIndex ?? -1) >= 0 &&
+          decoded.from.toLowerCase() === input.payer.toLowerCase() &&
+          decoded.to.toLowerCase() === input.recipient.toLowerCase() &&
+          decoded.value === input.amount
+        )
+    );
+  if (transfers.length > 1) {
+    throw new Error(
+      `Transaction ${input.hash} emitted multiple indistinguishable payment transfers. Register it by exact log index before continuing.`
+    );
+  }
+  const transfer = transfers[0];
+  if (!transfer) {
+    throw new Error(
+      `Transaction ${input.hash} did not emit the expected ${formatTokenAmount(input.amount, input.token)} ${input.token} transfer.`
+    );
+  }
+  return transfer;
 }
 
 export function toExplorerTxUrl(hash: Hash): string {

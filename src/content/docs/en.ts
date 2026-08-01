@@ -7,15 +7,15 @@ export const docsSections: DocsSection[] = [
   {
     title: "What Disburse is",
     body: [
-      "Disburse is a payments and receipts layer for stablecoins on Arc. It does three things: it lets anyone publish a payment request as a QR invoice, it lets anyone send USDC or EURC directly, and it turns every settled payment into a Portable Settlement Proof that software can verify without trusting Disburse.",
-      "The wallet keeps custody and signs every transaction. Disburse prepares requests, checks the network before signing, verifies settlement against chain data afterwards, and issues the paperwork: invoices, statement bundles, and signed proofs. No balances are held and no keys ever leave the wallet.",
-      "The near-term direction is Circle Gateway and CCTP V2. Gateway provides a unified USDC balance across chains without Disburse custodying funds, and CCTP V2 covers one-shot payments into Arc from other chains. Deposit, withdraw, transfer, and batch transfer against a Disburse ID are the four verbs this build is growing toward."
+      "Disburse is a testnet payments and receipts layer for stablecoins on Arc. It creates wallet-authorized QR invoices, sends USDC or EURC directly, verifies confirmed transfers, and issues Portable Settlement Proofs for accounting workflows.",
+      "The wallet keeps custody and signs every transaction. Requests, payment status, PSP documents, statements, and notifications are processed by Disburse services. Historical ledger data is loaded only after a wallet signature and is never cached in browser storage.",
+      "A signed proof is not automatically trustworthy merely because its embedded issuer key verifies it. Trusted PSP verification requires an issuer address obtained independently, and offline verification does not assert that settlement exists onchain."
     ],
     points: [
-      "Live today: QR invoicing, direct send, settlement verification, PSP issuance, statements, webhooks.",
+      "Implemented in this checkout: Arc QR invoicing, direct send, exact settlement verification, PSP issuance, private statements, notifications, and wallet-owned webhooks.",
       `Documentation is served from ${PRODUCTION_DOCS_HOSTNAME}.`,
-      "Planned next: Gateway-backed deposit and withdraw, batch payouts in one transaction, handle-based recipients.",
-      "Out of scope for this release: custodial balances, Permit2, backend-enforced 402 flows, and server-side replay protection."
+      "Testnet only: do not treat the application, tokens, or deployment records as production payment infrastructure.",
+      "The supported payment surface is Arc Testnet only; unrelated historical artifacts are not part of the product."
     ]
   },
   {
@@ -48,13 +48,14 @@ export const docsSections: DocsSection[] = [
   {
     title: "Contracts",
     body: [
-      "Three contracts back this build. PspVerifier anchors proof checking on-chain: it reconstructs a PSP digest from the document fields, recovers the issuer from the signature, and confirms the referenced settlement actually happened. It is view-only, holds no funds, and cannot be paused, so a proof stays checkable even if every Disburse server disappears.",
-      "QrPaymentSource and QrPaymentSettlement carry the cross-chain testnet route. The source contract escrows the payer's funds on the origin chain; the settlement contract pays the recipient on Arc from prefunded liquidity once the escrow is proven. This pair is scheduled for retirement: once deposits and transfers run through Circle Gateway, the escrow route has no job left."
+      "The source-controlled contract in this checkout is PspVerifier v2. It verifies an EIP-712 claim that binds the canonical PSP digest and every field the contract consumes to one chain and verifier deployment.",
+      "The verifier distinguishes direct signature-only claims from full settlement claims. Its owner manages trusted issuers and versioned settlement contracts through explicit registries and two-step ownership.",
+      "Historical artifacts mention QrPaymentSource and QrPaymentSettlement, but their audited Solidity source and deployment helper are absent. Stale artifacts must not be used to deploy fund-holding contracts."
     ],
     points: [
-      "PspVerifier: on-chain verification of signed settlement proofs, digest plus ecrecover plus settlement lookup.",
-      "QrPaymentSource: origin-chain escrow for cross-chain QR payments.",
-      "QrPaymentSettlement: Arc-side payout from prefunded liquidity."
+      "Direct mode verifies a registered issuer's field-bound signature and reports settlement as not checked.",
+      "Settlement mode also requires an enabled, version-matched settlement contract to confirm the settlement ID.",
+      "A PSP needs a matching onchainClaim, and the v2 verifier must be deployed and configured, before online verification can succeed."
     ]
   },
   {
@@ -66,21 +67,22 @@ export const docsSections: DocsSection[] = [
     points: [
       "Payments: the sender enters recipient, token, and amount, then signs a wallet transfer.",
       "QR Payments: the requester enters recipient, token, amount, label, note, and invoice date, then shares a request URL as a QR code.",
-      "Direct Payments do not create QR request records in the local ledger."
+      "Confirmed direct payments are registered as canonical account history and PSP records; they do not create QR capabilities."
     ]
   },
   {
-    title: "QR request payload",
+    title: "QR capability payload",
     body: [
-      "A QR code contains a /pay URL with a base64url JSON payload in the r query parameter. The payload is only a portable request description; it never contains a private key, wallet approval, token balance, or signed transaction.",
-      "The request records the token, amount, recipient, label, creation time, and start block. That start block limits verification to transfers that happened after the request was created."
+      "A payable QR code contains a /pay URL with a base64url v3 reference in the r query parameter. The reference contains only the server request ID and a random bearer capability; invoice fields are fetched from the canonical API before the pay button is enabled.",
+      "Every request is authorized by its recipient wallet. The server stores a SHA-256 digest with the request plus an owner-bound encrypted recovery envelope in a private table, chooses the next Arc block as the verification start, and enforces a short payment expiry."
     ],
     points: [
-      "Required fields: version, id, recipient, token, amount, label, createdAt, and startBlock.",
-      "Optional fields: note, invoiceDate, expiresAt, and dueAt.",
-      `Default expiry: ${PAYMENT_VALIDITY_MINUTES} minutes after creation. A submitted payment attempt that started before expiry can still be verified.`
+      "v3 fields: version, id, and requestToken.",
+      "Treat the URL as a bearer capability; do not put it in analytics, public screenshots, or support tickets.",
+      `Default payment window: ${PAYMENT_VALIDITY_MINUTES} minutes. The confirmed block timestamp, not the browser clock, determines whether a transfer was in time.`,
+      "Legacy v1/v2 links embedded unsigned invoice fields and are intentionally rejected."
     ],
-    code: "/pay?r=<base64url({ version, id, recipient, token, amount, label, note?, invoiceDate?, expiresAt?, dueAt?, createdAt, startBlock })>"
+    code: "/pay?r=<base64url({ version: 3, id, requestToken })>"
   },
   {
     title: "Wallet execution",
@@ -96,16 +98,17 @@ export const docsSections: DocsSection[] = [
     ]
   },
   {
-    title: "Local ledger and realtime",
+    title: "Wallet-scoped history",
     body: [
-      "QR requests and receipts are stored in browser localStorage so the requester can manage work without creating an account. The ledger supports JSON export and import for backup or migration.",
-      "When Supabase is configured, QR requests can also be written through Vercel API functions. Realtime events allow the requester view to close a QR code when the payer submits, confirms, fails, or expires a request."
+      "Payment requests and receipts are loaded from Supabase only after the active wallet signs a short-lived history authorization. Switching or disconnecting the wallet clears the ledger from browser memory before the next account is loaded.",
+      "QR bearer capabilities are encrypted at rest with AES-256-GCM and bound to the owner wallet plus request id. The database stores only the capability digest with the public request row; only the authenticated owner-history path unwraps the private envelope.",
+      "The browser retains no historical ledger cache. Its only payment-related persistent state is an account-scoped recovery journal for a transaction that was broadcast but has not yet completed canonical server registration."
     ],
     points: [
-      "Storage keys: disburse.requests and disburse.receipts.",
-      "Legacy keys are still read: arc-pay-desk.requests and arc-pay-desk.receipts.",
-      "Requests are keyed by request id. Receipts are upserted by request id or transaction hash.",
-      "Imported explorer URLs are regenerated from the verified Arcscan transaction hash."
+      "History access is EIP-712 signed, wallet-scoped, short-lived, and served with cache-control: no-store.",
+      "Global legacy browser-ledger keys are removed on application startup.",
+      "Routine JSON exports omit QR bearer capabilities and payer authorizations.",
+      "Only a canonical server confirmation may transition a server-backed payment to paid."
     ]
   },
   {
@@ -124,85 +127,44 @@ export const docsSections: DocsSection[] = [
   {
     title: "Portable Settlement Proofs",
     body: [
-      "A PSP is the machine-verifiable receipt artifact. It is a signed, content-addressed JSON document proving that a specific invoice settled on Arc Testnet.",
-      "The same proof can be verified by API, CLI, or the on-chain verifier contract without depending on Disburse's hosted UI."
+      "A PSP is a content-addressed JSON receipt signed by an issuer. Digest, UID, and signature self-consistency prove that the document has not changed since that issuer signed it; they do not prove that the embedded issuer is trustworthy.",
+      "Trusted offline verification requires an issuer address from independent configuration. It explicitly reports settlement as not checked. Full online settlement verification also requires a matching PspVerifier v2 claim and a configured onchain registry."
     ],
     points: [
       "Lookup by UID: /api/psp?uid=psp:...",
-      "Lookup by request: /api/psp?request_id=<uuid>.",
+      "Lookup by request requires /api/psp?request_id=<uuid> plus the QR request capability header.",
       "Viewer: /api/psp-viewer?uid=psp:...",
-      "CLI: npx @disburse/psp-verify proof.json --issuer 0x..."
+      "CLI: npx @disburse/psp-verify proof.json --issuer 0xIndependentlyTrustedIssuer",
+      "The public API supports lookup by an unguessable PSP identifier; database-wide PSP enumeration is disabled."
     ]
   },
   {
-    title: "Verification",
+    title: "Payment confirmation",
     body: [
-      "Verification first checks a known transaction hash. If no hash is present, it scans ERC-20 Transfer logs in 10,000-block windows from the request start block to latest and compares recipient plus exact token amount.",
-      "A request is marked paid only when the token contract, recipient, and amount match. Transfers to the right recipient with a different amount are surfaced separately so the user can review them without treating them as settled."
+      "Server-backed QR confirmation accepts a caller-supplied transaction hash only as a candidate. It fetches the receipt and block, rejects reverted transactions, and requires the exact token contract, transaction hash, payer, recipient, amount, start block, and block timestamp.",
+      "The payer signs an EIP-712 authorization over the canonical request. The database then atomically prevents transaction reuse, inserts the receipt, updates paid state, and records the event. A bad candidate hash returns an error without failing the invoice."
     ],
     points: [
-      "Paid: exact transfer to the recipient for the requested token amount.",
-      "Possible match: transfer to the recipient exists, but the amount differs.",
-      "Open: no matching transfer was found from the request start block."
+      "Paid: canonical server confirmation committed the exact transfer atomically.",
+      "Submitted: a transaction may exist, but trusted confirmation is still pending.",
+      "Expired: no valid in-window transfer was confirmed.",
+      "Imported or legacy data never creates a trusted paid state."
     ],
-    code: "match = log.address == token && log.args.to == recipient && log.args.value == parseUnits(amount, token.decimals)"
+    code: "match = log.address == token && log.transactionHash == txHash && log.args.from == payer && log.args.to == recipient && log.args.value == amount"
   },
   {
     title: "API and webhooks",
     body: [
-      "The API is a small JSON surface and is unauthenticated in this testnet build. QR request state, PSP lookup, statement bundles, and webhook management are all plain HTTPS endpoints served by the same Vercel dispatcher.",
-      "Webhooks fire when a PSP is issued. Each delivery is signed with HMAC-SHA256 using the webhook's secret and carries the signature in the X-Disburse-Signature header, so the receiver can check integrity before acting. Statement bundles aggregate PSP proofs over a date range with filters for recipient, payer, and token."
+      "Sensitive APIs are authenticated by scope. QR status and mutations require the request capability; QR creation, history, statements, notifications, and webhook management require short-lived wallet signatures. PSP retrieval remains capability-like by unguessable UID.",
+      "Webhooks are wallet-owned and may subscribe only to PSPs received by that wallet. HTTPS destinations are DNS-vetted and IP-pinned to prevent private-network SSRF and DNS rebinding. Redirects are rejected.",
+      "Each webhook delivery signs the exact JSON body with HMAC-SHA256. Statements filter in the database before pagination, require the authorizing wallet as payer or recipient, and keep mixed-token totals separate."
     ],
     points: [
       "GET /api/psp?uid=... or ?request_id=... fetches a proof.",
-      "POST /api/statements builds a statement bundle; GET works for simple queries via query params.",
-      "GET, POST, and DELETE on /api/webhooks manage endpoints; secrets are masked on read.",
-      "Webhook deliveries time out after 10 seconds and are signed per delivery."
-    ]
-  }
-];
-
-/**
- * Arcade docs: Cluck Run, the coin-op game on Arc Testnet. Written from the
- * actual source in the separate arcade repo; deployed at arcade.disburse.online.
- */
-export const arcadeSections: DocsSection[] = [
-  {
-    title: "Cluck Run",
-    body: [
-      "Cluck Run is a coin-op arcade game on Arc Testnet, deployed at arcade.disburse.online as its own build, separate from the payments app. It is an endless lane runner: grass, roads, rails, and rivers scroll ahead of a chicken, and the score is the number of rows crossed before the run ends.",
-      "The arcade exists to prove the payment rail in the most literal way possible. One play costs one coin, the coin is a real on-chain payment in native USDC, and the day's prize pot is simply the sum of the day's coins."
-    ],
-    points: [
-      "Runs at arcade.disburse.online as a separate deployment.",
-      "Wallet connection via Dynamic; chain access via viem.",
-      "Built with React 19 and Vite; the game itself is plain TypeScript on a canvas renderer."
-    ]
-  },
-  {
-    title: "The coin slot",
-    body: [
-      "CoinSlot is the single contract behind the game. insertCoin() is payable and requires exactly pricePerPlay in native USDC, currently 1 USDC. Every coin increments an on-chain counter and emits CoinInserted, and the contract balance is the prize pot.",
-      "Prizes are paid by an operator account. payPrize sends part of the pot to a winner and emits PrizePaid tagged with the day it covers, so payouts are auditable from event logs alone. The owner can change the price and rotate the operator, and both changes emit events."
-    ],
-    points: [
-      "Contract: 0xb69a635c1e39e2a96e1707335be1d5a0199e645a on Arc Testnet (5042002).",
-      "insertCoin() reverts unless msg.value equals pricePerPlay.",
-      "prizePot() is the contract balance; there is no separate accounting.",
-      "PrizePaid(player, amount, day) makes daily payouts verifiable from logs."
-    ],
-    code: "function insertCoin() external payable;\nevent CoinInserted(address indexed player, uint256 amount, uint256 indexed nonce);\nevent PrizePaid(address indexed player, uint256 amount, uint256 indexed day);"
-  },
-  {
-    title: "Runs and the leaderboard",
-    body: [
-      "A run starts server-side. The client submits the coin transaction hash; the server reads the receipt, confirms the transaction targeted the coin slot and that its CoinInserted event names the player's wallet, then issues a run id and a random seed. One transaction buys exactly one run, and reusing a spent hash is rejected.",
-      "Scores are checked against physics before they reach the board. The server caps the score by elapsed time, using a ceiling of 4 rows per second plus a small start allowance, and by an absolute maximum, so impossible scores are refused. The leaderboard is daily by UTC date, shows the top ten, and lives in Supabase alongside runs and profiles."
-    ],
-    points: [
-      "Usernames are claimed by signing cluckrun:username:v1:<name> with the wallet.",
-      "Username rules: 3 to 16 characters, letters, digits, underscore; taken names return a conflict.",
-      "Runs, daily scores, and profiles are stored in Supabase keyed by wallet address."
+      "POST /api/psp/verify?issuer=0x... requires an independently trusted issuer and does not claim an onchain settlement check.",
+      "GET or POST /api/statements requires signed wallet, expiry, and signature headers.",
+      "GET, POST, and DELETE /api/webhooks require signed owner authorization; returned secrets and URLs are redacted.",
+      "Webhook delivery uses bounded concurrency and a five-second timeout."
     ]
   }
 ];

@@ -641,6 +641,49 @@ a[aria-disabled="true"] {
   gap: 12px;
 }
 
+.qr-composer {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+  max-width: 720px;
+}
+
+.qr-composer-form {
+  width: 100%;
+  min-width: 0;
+}
+
+.qr-composer .input-row,
+.qr-composer input,
+.qr-composer textarea {
+  min-width: 0;
+}
+
+.qr-composer-output {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.amount-input {
+  position: relative;
+}
+
+.amount-input input {
+  padding-right: 70px;
+}
+
+.amount-input > span {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 input,
 select,
 textarea {
@@ -4587,3 +4630,120 @@ blockquote {
 
 } /* end @layer components */
 
+/* Route loading: a compact settlement stack, shared by every lazy surface. */
+.surface-loader {
+  display: grid;
+  min-height: 100dvh;
+  place-content: center;
+  justify-items: center;
+  gap: 28px;
+  color: #f1f2ee;
+  background: #090a0c;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.surface-loader-mark {
+  position: relative;
+  width: 88px;
+  height: 76px;
+  transform: skewY(-12deg);
+}
+
+.surface-loader-mark span {
+  position: absolute;
+  left: 0;
+  width: 88px;
+  height: 22px;
+  border: 1px solid #73767b;
+  background: #15171a;
+  box-shadow: 8px 8px 0 rgba(255, 255, 255, 0.035);
+  animation: surface-loader-transfer 1.8s cubic-bezier(0.76, 0, 0.24, 1) infinite;
+}
+
+.surface-loader-mark span:nth-child(1) { top: 0; }
+.surface-loader-mark span:nth-child(2) { top: 27px; animation-delay: 120ms; }
+.surface-loader-mark span:nth-child(3) { top: 54px; animation-delay: 240ms; }
+
+.surface-loader-copy {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.surface-loader-copy strong {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.surface-loader-copy span {
+  color: #85888e;
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+@keyframes surface-loader-transfer {
+  0%, 18%, 100% { transform: translateX(0); background: #15171a; }
+  42%, 58% { transform: translateX(18px); background: #2d3035; }
+  82% { transform: translateX(0); background: #15171a; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-loader-mark span { animation: none; }
+}
+
+/* App status language: compact glyphs and rules replace circular indicators. */
+.wallet-pill,
+.pay-host-wallet,
+.status-badge,
+.attestation-badge,
+.psp-proof-badge {
+  border-radius: 3px;
+}
+
+.status-badge.expired,
+.status-badge.draft { border-style: solid; }
+
+.stage-step-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  color: var(--muted);
+  background: var(--paper);
+  font: 0.68rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-step.active .stage-step-mark,
+.stage-step.done .stage-step-mark {
+  border-color: var(--primary-bg);
+  color: var(--primary-text);
+  background: var(--primary-bg);
+}
+
+.status-mark {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  color: var(--muted);
+  font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.status-mark::before { content: "—"; }
+.status-mark.paid::before { content: "✓"; color: var(--ink); }
+.status-mark.expired::before { content: "×"; }
+.status-mark.failed::before { content: "!"; color: var(--ink); }
+.status-mark.possible_match::before { content: "~"; color: var(--ink-soft); }
+
+@keyframes status-scan {
+  0%, 100% { transform: scaleX(.35); transform-origin: left; opacity: .5; }
+  50% { transform: scaleX(1); transform-origin: left; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="status-scan"] { animation: none !important; }
+}

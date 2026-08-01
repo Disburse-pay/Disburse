@@ -7,16 +7,17 @@ Use it from agents, scripts, CI, or any automated system that needs to send USDC
 ## Install / Usage (no global install required)
 
 ```bash
-# Via npx (recommended for agents)
+# Inject DISBURSE_PRIVATE_KEY through a scoped secret store first.
+# The CLI shows a full preflight and asks you to type SEND.
 npx @disburse/cli send \
   --to 0xRecipientAddress \
   --amount 25.5 \
   --label "Invoice 1" \
-  --note "Subscription - May 2026" \
-  --private-key 0xYourFundedArcTestnetPrivateKey
+  --note "Subscription - May 2026"
 
-# Or with private key via environment variable (safer for logs/history)
-DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli send --to 0x... --amount 10 --label "Payout"
+# Or stream the key without placing it in argv or shell history.
+secret-tool lookup service disburse | npx @disburse/cli send \
+  --private-key-stdin --dry-run --to 0x... --amount 10 --label "Payout"
 ```
 
 After `npm install -g @disburse/cli` you can also use the `disburse` command directly.
@@ -26,7 +27,8 @@ After `npm install -g @disburse/cli` you can also use the `disburse` command dir
 Agents can send a safe sequential batch and receive one complete batch PDF plus individual PSP JSON files:
 
 ```bash
-DISBURSE_PRIVATE_KEY=0x... npx @disburse/cli batch --csv payouts.csv --json
+# DISBURSE_PRIVATE_KEY is already available in this scoped process.
+npx @disburse/cli batch --csv payouts.csv --dry-run
 ```
 
 CSV format:
@@ -41,7 +43,9 @@ Safety behavior:
 - The full CSV is validated before any transaction is sent.
 - Required token balances are summed by token and checked before the first transfer.
 - Transfers run sequentially only, avoiding nonce conflicts.
-- The batch stops on the first transfer/register failure and writes exactly what succeeded or failed.
+- The batch stops on the first failure. A post-broadcast failure is classified
+  separately as `reconciliationRequired` and always includes the transaction
+  hash; it is never reported as an unpaid row that is safe to resend.
 - One batch PDF contains summary totals and all successful payment PSP details.
 
 ## Example agent flow (as described by users)
@@ -52,7 +56,8 @@ User: "Hermes, use Disburse CLI and send some usdc to this address
        is verified using PSP from Disburse CLI too."
 
 Hermes (with funded Arc testnet wallet):
-  DISBURSE_PRIVATE_KEY=... npx @disburse/cli send \
+  # DISBURSE_PRIVATE_KEY was injected by a scoped secret store.
+  npx @disburse/cli send \
     --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8fA4c \
     --amount 42 \
     --label "Invoice 1" \
@@ -62,22 +67,27 @@ Hermes replies with:
   • tx hash + explorer link
   • disburse-psp-....json  (signed PSP)
   • disburse-invoice-....pdf
-  • verification command: npx @disburse/psp-verify ...
+  • verification command pinned to an independently trusted PSP issuer
 ```
 
-The recipient (or any auditor) can verify the proof **without trusting Hermes or Disburse infrastructure**:
+The recipient (or any auditor) can verify the proof against an issuer address obtained from independent trusted configuration:
 
 ```bash
-npx @disburse/psp-verify disburse-psp-abc123.json
+# Never source this address from the PSP being checked.
+npx @disburse/psp-verify disburse-psp-abc123.json \
+  --issuer "$DISBURSE_TRUSTED_PSP_ISSUER"
 # or pipe from the public API
-curl -s "https://app.disburse.online/api/psp?uid=psp:..." | npx @disburse/psp-verify --stdin
+curl --fail --silent --show-error "https://app.disburse.online/api/psp?uid=psp:..." \
+  | npx @disburse/psp-verify --stdin --issuer "$DISBURSE_TRUSTED_PSP_ISSUER"
 ```
 
 ## What the CLI does
 
 1. Performs a plain ERC-20 `transfer` of the chosen token on Arc Testnet using your private key (headless, no browser wallet).
 2. Waits for 1 confirmation.
-3. Registers the transfer + your `label`/`note` with Disburse via the public API.
+3. Immediately journals the transaction hash to
+   `disburse-recovery-<hash>.json`, then registers the transfer + your
+   `label`/`note` with Disburse via the public API.
 4. Receives a **cryptographically signed PSP** (Portable Settlement Proof) that includes:
    - The exact payer, recipient, token, amount from the on-chain Transfer event
    - Your label and note
@@ -94,20 +104,28 @@ Both artifacts are written to disk. The PSP is the durable, portable source of t
 --amount <number>           Amount in human units, e.g. 10 or 0.01 (required)
 --label <text>              Invoice label (required, max ~80 chars)
 --note <text>               Optional note (max ~240 chars)
+--invoice-date <YYYY-MM-DD> Optional invoice date
 --token <USDC|EURC>         Default: USDC
---private-key <0x...>       Signing key (or use DISBURSE_PRIVATE_KEY env)
+--private-key-stdin         Read the key from stdin; pair with --yes or --dry-run
 --out-dir <path>            Where to write proof.json + PDF (default: current dir)
 --rpc <url>                 Override Arc RPC endpoint
+--trusted-psp-issuer <0x...> Independently trusted issuer for generated verification commands
 --json                      Print machine-readable JSON for agents
---yes                       Skip interactive confirmations (future)
+--dry-run                   Validate balances and print the full plan without broadcasting
+--yes                       Skip the typed confirmation for reviewed unattended use
 ```
 
 ## Security notes (important for agents)
 
-- **Never** commit private keys or pass them on command lines in shared logs/CI.
-- Prefer `DISBURSE_PRIVATE_KEY=0x...` in a scoped environment variable.
+- **Never** commit private keys or pass them on command lines in shared logs/CI. The CLI rejects `--private-key`.
+- Inject `DISBURSE_PRIVATE_KEY` from a scoped secret store or use `--private-key-stdin`.
+- Run with `--dry-run` first. Interactive sends require typing `SEND` or `BATCH`; use `--yes` only after review.
+- The output directory is checked before broadcast. After broadcast, every RPC,
+  registration, or artifact failure returns `success: false`,
+  `broadcast: true`, the transaction hash, and a recovery path. **Do not resend
+  that payment**; reconcile the same hash.
 - The CLI only uses the key to sign the `transfer` transaction. It never sends the key to Disburse.
-- Proofs are verifiable by anyone with the JSON + the issuer address printed in the document.
+- Verify PSP signatures only against `--trusted-psp-issuer` or `DISBURSE_TRUSTED_PSP_ISSUER` obtained independently. An issuer address printed inside a PSP is not a trust anchor.
 - Disburse does **not** custody funds. A successful debit (on-chain transfer) is not the same as fulfillment of any off-chain obligation.
 
 ## PSP + Invoice for direct payments (not only QR)

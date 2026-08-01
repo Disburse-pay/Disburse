@@ -1,12 +1,12 @@
 # @disburse/psp-verify
 
-Verify [Disburse](https://disburse.app) **Portable Settlement Proofs (PSP)** — independently, with zero Disburse infrastructure dependency.
+Verify Disburse Portable Settlement Proofs (PSPs) without trusting Disburse
+infrastructure.
 
-A PSP is a signed, content-addressed proof that a specific stablecoin invoice was settled onchain (on Arc, optionally via cross-chain Polymer proof). This package lets anyone verify a PSP:
-
-- **Offline** — from a single JSON blob + issuer address
-- **In CI** — via the CLI
-- **Onchain** — via `verifyOnline()` calling `PspVerifier.sol` on Arc
+The trust root matters: a signature that matches an issuer address copied from
+the same PSP is only self-consistent. Trusted verification requires an issuer
+address obtained independently, such as from audited configuration or a
+published key registry.
 
 ## Install
 
@@ -14,67 +14,109 @@ A PSP is a signed, content-addressed proof that a specific stablecoin invoice wa
 npm install @disburse/psp-verify
 ```
 
-## Library usage
+## Trusted offline verification
 
 ```typescript
 import { verify, verifyJson } from "@disburse/psp-verify";
 
-// From a parsed object
-const result = await verify(pspDocument);
-// result.ok === true means valid
+const trustedIssuer = "0x..."; // obtain independently from the PSP
 
-// From a JSON string
-const result2 = await verifyJson(jsonString, {
-  expectedIssuer: "0x..." // optional: restrict to a known issuer
+const result = await verify(pspDocument, {
+  expectedIssuer: trustedIssuer,
+});
+const resultFromJson = await verifyJson(jsonString, {
+  expectedIssuer: trustedIssuer,
 });
 
-if (result2.ok) {
-  console.log(result2.fields.requestId);
-  console.log(result2.fields.amount);
+if (result.ok) {
+  console.log(result.fields?.requestId);
+  console.log(result.trust); // "trusted_issuer"
+  console.log(result.settlementStatus); // "not_checked"
 }
 ```
 
-## CLI usage
+Offline verification checks structure, canonical digest, UID, and the signature
+against the supplied issuer. It does not query a chain and therefore never
+claims that settlement existence was checked.
+
+`createdAt` is envelope metadata in PSP v1 and is not part of the signed core.
+Do not use it as an authenticated timestamp; `settlement.settledAt` is signed.
+
+For diagnostics only, `verifySelfConsistency()` and
+`verifySelfConsistencyJson()` check against the issuer embedded in the
+document. Their result uses `selfConsistent`, not `ok`, and is explicitly marked
+`untrusted_self_consistency_only`.
+
+## CLI
+
+The trusted issuer is required exactly once:
 
 ```bash
-# Verify a PSP file
-npx psp-verify proof.json
-
-# Verify with a specific expected issuer
-npx psp-verify proof.json --issuer 0xYourIssuerAddress
-
-# Pipe from stdin
-cat proof.json | npx psp-verify --stdin
+npx psp-verify proof.json --issuer 0xYourIndependentlyTrustedIssuer
+curl -fsS "https://example/proof.json" |
+  npx psp-verify --stdin --issuer 0xYourIndependentlyTrustedIssuer
 ```
 
-### Exit codes
+Exit code `0` means the document is valid for the supplied issuer. Settlement
+status remains `not checked`; exit code `1` means invalid input, ambiguous
+arguments, or failed verification.
 
-| Code | Meaning |
-|------|---------|
-| 0 | Valid PSP |
-| 1 | Invalid or error |
+## PspVerifier v2 claims
 
-## What is verified
+PspVerifier v2 does not accept a caller-supplied digest. It verifies a separate
+EIP-712 claim binding:
 
-1. **Structure** — version, required fields, format checks
-2. **Digest** — recomputes canonical bytes → keccak256 matches the claimed digest
-3. **UID** — derived from digest, must match
-4. **Signature** — `ecrecover` on the EIP-191 signed digest matches the claimed issuer
+- the canonical PSP document digest;
+- every field consumed by the Solidity verifier;
+- `settlement` or `direct-signature-only` mode;
+- the settlement registry version;
+- the verifier contract and chain through the EIP-712 domain.
+
+Attach a claim at issuance time:
+
+```typescript
+import { attachPspOnchainClaim } from "@disburse/psp-verify";
+
+const claimedPsp = await attachPspOnchainClaim(psp, issuerPrivateKey, {
+  verifierAddress: "0x...",
+  chainId: 5_042_002,
+  mode: "settlement",
+  settlementRegistryVersion: 2,
+});
+```
+
+For a direct payment, choose `mode: "direct-signature-only"` and omit the
+registry version. Cross-chain PSPs cannot be downgraded to that reduced scope.
+
+Online verification also requires the mode explicitly:
+
+```typescript
+const result = await verifyOnline(claimedPsp, {
+  rpcUrl: "https://...",
+  verifierAddress: "0x...",
+  mode: "settlement",
+});
+
+// Full claim:
+// result.verificationLevel === "trusted_issuer_and_settlement"
+// result.settlementStatus === "confirmed"
+```
+
+A successful direct result is instead
+`trusted_issuer_signature_only` with settlement status `not_checked`.
 
 ## Canonicalization
 
-The canonical form is:
+The portable document digest is:
 
+```text
+keccak256(
+  "DISBURSE-PSP-v1\n" + networkMode + "\n" + deterministicJSON(core)
+)
 ```
-"DISBURSE-PSP-v1\n" + networkMode + "\n" + deterministicJSON(core)
-```
 
-- Keys sorted lexicographically at every depth
-- Hex values lowercased
-- Undefined/null fields omitted
-- Arrays preserve order
-
-The digest is `keccak256(canonicalBytes)`.
+Keys are sorted recursively, hex values are lowercased, null/undefined fields
+are omitted, and arrays retain order.
 
 ## License
 

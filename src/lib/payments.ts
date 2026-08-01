@@ -22,6 +22,8 @@ export type PaymentStatus = "open" | "paid" | "possible_match" | "expired" | "fa
 
 export type PaymentRequest = {
   id: string;
+  /** Local capability used to resolve a server-backed QR request. Never sent in a URL outside the opaque share payload. */
+  requestToken?: string;
   recipient: Address;
   token: PaymentToken;
   amount: string;
@@ -35,6 +37,8 @@ export type PaymentRequest = {
   startBlock: string;
   status: PaymentStatus;
   txHash?: Hash;
+  /** Payer EIP-712 authorization retained locally so a submitted payment can be re-confirmed. */
+  paymentAuthorization?: Hex;
   destinationChainId?: typeof ARC_DESTINATION_CHAIN_ID;
   allowedSourceChainIds?: PaymentSourceChainId[];
   settlement?: CrossChainPaymentState;
@@ -48,6 +52,8 @@ export type Receipt = {
   token: PaymentToken;
   amount: string;
   blockNumber: string;
+  /** Canonical block hash containing the exact settlement event. */
+  blockHash?: Hash;
   confirmedAt: string;
   explorerUrl: string;
   chainId?: number;
@@ -78,6 +84,12 @@ export type CrossChainSharePayload = {
   allowedSourceChainIds: PaymentSourceChainId[];
 };
 
+export type QrRequestReference = {
+  version: 3;
+  id: string;
+  requestToken: string;
+};
+
 export type DecodedTransfer = {
   txHash: Hash;
   blockNumber: bigint;
@@ -98,6 +110,8 @@ export type TransferLog = {
 const MAX_LABEL_LENGTH = 80;
 const MAX_NOTE_LENGTH = 240;
 export const PAYMENT_VALIDITY_MINUTES = 15;
+const MIN_REQUEST_TOKEN_LENGTH = 32;
+const MAX_REQUEST_TOKEN_LENGTH = 256;
 
 export function validateRecipient(value: string): Address {
   const trimmed = value.trim();
@@ -203,6 +217,18 @@ export function normalizeDateTime(value: string, fieldName: string): string {
   return new Date(timestamp).toISOString();
 }
 
+export function normalizeRequestToken(value: string): string {
+  const token = value.trim();
+  if (
+    token.length < MIN_REQUEST_TOKEN_LENGTH ||
+    token.length > MAX_REQUEST_TOKEN_LENGTH ||
+    !/^[A-Za-z0-9_-]+$/.test(token)
+  ) {
+    throw new Error("Payment request capability is invalid.");
+  }
+  return token;
+}
+
 export function isPaymentExpired(request: PaymentRequest, now = new Date()): boolean {
   const expiry = request.expiresAt ?? request.dueAt;
   if (!expiry) {
@@ -253,50 +279,43 @@ export function refreshDerivedStatus(request: PaymentRequest, now = new Date()):
 }
 
 export function encodeRequestPayload(request: PaymentRequest): string {
-  if (isArcSettlementPaymentRequest(request)) {
-    const payload: CrossChainSharePayload = {
-      version: 2,
-      id: request.id,
-      recipient: request.recipient,
-      token: "USDC",
-      amount: request.amount,
-      label: request.label,
-      note: request.note,
-      invoiceDate: request.invoiceDate,
-      expiresAt: request.expiresAt,
-      dueAt: request.dueAt,
-      createdAt: request.createdAt,
-      destinationChainId: ARC_DESTINATION_CHAIN_ID,
-      allowedSourceChainIds: request.allowedSourceChainIds?.length
-        ? request.allowedSourceChainIds
-        : [ARC_DESTINATION_CHAIN_ID]
-    };
-    return encodeBase64UrlJson(payload);
+  if (!request.requestToken) {
+    throw new Error(
+      "Only server-verified payment requests can be shared. Create a fresh verified QR request."
+    );
   }
 
-  const payload: SharePayload = {
-    version: 1,
+  const payload: QrRequestReference = {
+    version: 3,
     id: request.id,
-    recipient: request.recipient,
-    token: request.token,
-    amount: request.amount,
-    label: request.label,
-    note: request.note,
-    invoiceDate: request.invoiceDate,
-    expiresAt: request.expiresAt,
-    dueAt: request.dueAt,
-    createdAt: request.createdAt,
-    startBlock: request.startBlock
+    requestToken: normalizeRequestToken(request.requestToken)
   };
   return encodeBase64UrlJson(payload);
 }
 
+/**
+ * Decode the only QR format that is safe to pay: an opaque server-backed
+ * request reference. Invoice fields are intentionally absent and must be
+ * fetched from the canonical API with the capability.
+ */
+export function decodeRequestReference(encoded: string): QrRequestReference {
+  const value = decodeBase64UrlJson(encoded) as Partial<QrRequestReference>;
+  if (value.version !== 3 || typeof value.id !== "string" || !value.id.trim()) {
+    throw new Error("This payment link is not a server-verified request. Ask the requester for a fresh QR code.");
+  }
+  return {
+    version: 3,
+    id: value.id.trim(),
+    requestToken: normalizeRequestToken(String(value.requestToken ?? ""))
+  };
+}
+
 export function decodeRequestPayload(encoded: string): PaymentRequest {
-  const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  const value = JSON.parse(new TextDecoder().decode(bytes)) as Partial<SharePayload | CrossChainSharePayload>;
+  const value = decodeBase64UrlJson(encoded) as Partial<SharePayload | CrossChainSharePayload | QrRequestReference>;
+
+  if (value.version === 3) {
+    throw new Error("Resolve this server-backed payment reference through the canonical QR API.");
+  }
 
   if (value.version === 2) {
     return decodeCrossChainRequestPayload(value);
@@ -397,6 +416,7 @@ export function makeReceipt(request: PaymentRequest, transfer: DecodedTransfer):
     token: request.token,
     amount: formatTokenAmount(transfer.value, request.token),
     blockNumber: transfer.blockNumber.toString(),
+    directSettlementLogIndex: transfer.logIndex,
     confirmedAt: new Date().toISOString(),
     explorerUrl: toExplorerTxUrl(transfer.txHash)
   };
@@ -428,7 +448,10 @@ export function makeCrossChainReceipt(input: {
   };
 }
 
-export function transferMatchesRequest(request: PaymentRequest, transfer: DecodedTransfer): boolean {
+export function transferMatchesRequest(
+  request: Pick<PaymentRequest, "recipient" | "token" | "amount">,
+  transfer: DecodedTransfer
+): boolean {
   return (
     transfer.to.toLowerCase() === request.recipient.toLowerCase() &&
     transfer.value === parseTokenAmount(request.amount, request.token)
@@ -470,7 +493,7 @@ export function decodeTransferLog(log: TransferLog): DecodedTransfer | undefined
   }
 }
 
-function hasSameRequestPayload(left: PaymentRequest, right: PaymentRequest): boolean {
+export function hasSameRequestPayload(left: PaymentRequest, right: PaymentRequest): boolean {
   return (
     left.id === right.id &&
     left.recipient.toLowerCase() === right.recipient.toLowerCase() &&
@@ -542,4 +565,12 @@ function encodeBase64UrlJson(value: unknown): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64UrlJson(encoded: string): unknown {
+  const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
 }

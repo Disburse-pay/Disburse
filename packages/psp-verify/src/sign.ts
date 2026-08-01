@@ -2,13 +2,13 @@
  * PSP Signing
  *
  * Signs and verifies PSP documents using secp256k1 + keccak256.
- * The signature is produced over the canonical bytes so it can be verified:
- * - Off-chain with this library
- * - On-chain with ecrecover in PspVerifier.sol
+ * The portable signature is produced over the canonical bytes for offline
+ * verification. PspVerifier v2 uses a separate EIP-712 claim so every
+ * Solidity-consumed field is bound to the signature and verifier domain.
  *
- * Uses viem's signing primitives which produce EIP-191-style personal_sign
- * signatures. For PSP we use raw keccak256 signing (no prefix) so the
- * Solidity verifier can ecrecover without EIP-191 overhead.
+ * The portable PSP signature uses EIP-191 over the canonical digest. The
+ * separate verifier claim uses EIP-712 and is the only signature accepted by
+ * PspVerifier v2.
  */
 
 import {
@@ -19,8 +19,18 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import {
+  buildPspClaimTypedData,
+  validateClaimDescriptor,
+  type PspClaimDescriptor,
+} from "./claim.js";
 import { computeDigest, extractCore } from "./canonical.js";
-import type { PspCore, PspSignature, PspV1 } from "./types.js";
+import type {
+  PspCore,
+  PspOnchainClaim,
+  PspSignature,
+  PspV1,
+} from "./types.js";
 
 // ---------- Key management ----------
 
@@ -95,11 +105,60 @@ export async function buildSignedPsp(
   };
 }
 
+/**
+ * Create the separate EIP-712 claim consumed by PspVerifier v2.
+ *
+ * Callers must choose settlement or direct-signature-only mode explicitly.
+ * A settlement claim also requires the registered settlement contract version.
+ */
+export async function signPspOnchainClaim(
+  psp: PspV1,
+  privateKey: Hex,
+  descriptor: PspClaimDescriptor
+): Promise<PspOnchainClaim> {
+  const account = getIssuerAccount(privateKey);
+  if (psp.issuer.publicKey.toLowerCase() !== account.address.toLowerCase()) {
+    throw new Error(
+      `Issuer publicKey ${psp.issuer.publicKey} does not match signing key address ${account.address}`
+    );
+  }
+
+  const validated = validateClaimDescriptor(psp, descriptor);
+  const signature = await account.signTypedData(buildPspClaimTypedData(psp, descriptor));
+
+  return {
+    version: 1,
+    scheme: "eip712",
+    mode: descriptor.mode,
+    verifier: validated.verifierAddress,
+    chainId: descriptor.chainId,
+    settlementRegistryVersion: validated.settlementRegistryVersion,
+    signature,
+  };
+}
+
+/**
+ * Return a PSP copy with a PspVerifier v2 claim attached.
+ */
+export async function attachPspOnchainClaim(
+  psp: PspV1,
+  privateKey: Hex,
+  descriptor: PspClaimDescriptor
+): Promise<PspV1> {
+  return {
+    ...psp,
+    onchainClaim: await signPspOnchainClaim(psp, privateKey, descriptor),
+  };
+}
+
 // ---------- Verification ----------
 
 /**
- * Verify that a PSP signature was produced by the claimed issuer.
- * Returns true if the recovered signer matches psp.issuer.publicKey.
+ * Check that a PSP signature was produced by the issuer named inside the PSP.
+ *
+ * This proves self-consistency only. It does not establish that the claimed
+ * issuer is trusted; use verify() with an independently supplied issuer for
+ * a trusted result.
  */
 export async function verifyPspSignature(
   psp: PspV1

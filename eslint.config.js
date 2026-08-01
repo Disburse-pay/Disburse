@@ -44,7 +44,22 @@ export default tseslint.config(
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }]
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          allowConstantExport: true,
+          allowExportNames: [
+            "buildFetchCommand",
+            "createDynamicEthereumProvider",
+            "DYNAMIC_ENVIRONMENT_ID",
+            "dynamicBridgeNetworks",
+            "dynamicPaymentNetworks",
+            "useDisburseDynamicWallet",
+            "useI18n",
+            "useInboxUnread"
+          ]
+        }
+      ]
     }
   },
 

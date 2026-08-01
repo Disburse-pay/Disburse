@@ -1,79 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { parseExportBundle } from "./storage";
+import { buildExportBundle, upsertReceipt, upsertRequest } from "./storage";
+import type { PaymentRequest, Receipt } from "./payments";
 
-const recipient = "0x1111111111111111111111111111111111111111";
-const sender = "0x2222222222222222222222222222222222222222";
-const txHash = `0x${"a".repeat(64)}`;
+const recipient = "0x1111111111111111111111111111111111111111" as const;
+const sender = "0x2222222222222222222222222222222222222222" as const;
+const txHash = `0x${"a".repeat(64)}` as `0x${string}`;
 
-describe("ledger import recovery", () => {
-  it("normalizes valid imported records and drops malformed entries", () => {
-    const bundle = parseExportBundle(
-      JSON.stringify({
-        exportedAt: "2026-04-28T00:00:00.000Z",
-        requests: [
-          {
-            id: "req_imported",
-            recipient,
-            token: "USDC",
-            amount: "1.230000",
-            label: "  Imported   invoice ",
-            note: "  settled   by desk ",
-            invoiceDate: "2026-04-29",
-            expiresAt: "2026-04-28T00:15:00.000Z",
-            submittedAt: "2026-04-28T00:03:00.000Z",
-            createdAt: "2026-04-28T00:00:00.000Z",
-            startBlock: "700",
-            status: "mystery",
-            txHash: "not-a-hash"
-          },
-          {
-            id: "bad_request",
-            token: "DOGE"
-          }
-        ],
-        receipts: [
-          {
-            requestId: "req_imported",
-            txHash,
-            from: sender,
-            to: recipient,
-            token: "USDC",
-            amount: "1.230000",
-            blockNumber: "701",
-            confirmedAt: "2026-04-28T00:01:00.000Z",
-            explorerUrl: "https://example.invalid"
-          },
-          {
-            requestId: "bad_receipt",
-            txHash: "0x123",
-            token: "USDC"
-          }
-        ]
-      })
-    );
+const request: PaymentRequest = {
+  id: "request-1",
+  requestToken: "a".repeat(43),
+  paymentAuthorization: `0x${"b".repeat(128)}`,
+  recipient,
+  token: "USDC",
+  amount: "1",
+  label: "Invoice",
+  createdAt: "2026-04-28T00:00:00.000Z",
+  startBlock: "700",
+  status: "open"
+};
 
-    expect(bundle.requests).toHaveLength(1);
-    expect(bundle.requests[0]).toMatchObject({
-      id: "req_imported",
-      amount: "1.23",
-      label: "Imported invoice",
-      note: "settled by desk",
-      invoiceDate: "2026-04-29",
-      expiresAt: "2026-04-28T00:15:00.000Z",
-      submittedAt: "2026-04-28T00:03:00.000Z",
-      status: "open",
-      txHash: undefined
-    });
-    expect(bundle.receipts).toHaveLength(1);
-    expect(bundle.receipts[0]).toMatchObject({
-      requestId: "req_imported",
-      txHash,
-      amount: "1.23",
-      explorerUrl: `https://testnet.arcscan.app/tx/${txHash}`
-    });
+const receipt: Receipt = {
+  requestId: request.id,
+  txHash,
+  from: sender,
+  to: recipient,
+  token: "USDC",
+  amount: "1",
+  blockNumber: "701",
+  confirmedAt: "2026-04-28T00:01:00.000Z",
+  explorerUrl: `https://testnet.arcscan.app/tx/${txHash}`
+};
+
+describe("memory-only ledger helpers", () => {
+  it("excludes bearer capabilities and payer signatures from exports", () => {
+    const exported = buildExportBundle([request], [receipt]);
+    expect(exported.requests[0]).not.toHaveProperty("requestToken");
+    expect(exported.requests[0]).not.toHaveProperty("paymentAuthorization");
+    expect(exported.receipts).toEqual([receipt]);
   });
 
-  it("rejects files without request and receipt arrays", () => {
-    expect(() => parseExportBundle(JSON.stringify({ requests: [] }))).toThrow("missing requests or receipts");
+  it("upserts requests and receipts without duplicating canonical identifiers", () => {
+    const paid = { ...request, status: "paid" as const, txHash };
+    expect(upsertRequest([request], paid)).toEqual([paid]);
+    expect(upsertRequest([], request)).toEqual([request]);
+
+    const updatedReceipt = { ...receipt, confirmedAt: "2026-04-28T00:02:00.000Z" };
+    expect(upsertReceipt([receipt], updatedReceipt)).toEqual([updatedReceipt]);
+    expect(upsertReceipt([], receipt)).toEqual([receipt]);
   });
 });

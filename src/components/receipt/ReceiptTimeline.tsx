@@ -34,13 +34,14 @@ export default function ReceiptTimeline() {
   return (
     <div className="px-5 pb-5 pt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-[var(--muted)]">
-          Settlement timeline
-        </p>
+        <p className="text-sm font-medium text-[var(--muted)]">Settlement timeline</p>
         <p className="text-xs text-[var(--muted)]">{route}</p>
       </div>
 
-      <div className="mt-4 grid items-start" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}>
+      <div
+        className="mt-4 grid items-start"
+        style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
+      >
         {stages.map((stage, i) => (
           <PipelineNode key={stage.id} stage={stage} next={stages[i + 1]} isLast={i === stages.length - 1} />
         ))}
@@ -56,17 +57,17 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
   const color = isFailed
     ? "var(--red-text)"
     : isComplete
-    ? "var(--green-text)"
-    : isActive
-    ? "var(--blue-text)"
-    : "var(--muted)";
+      ? "var(--green-text)"
+      : isActive
+        ? "var(--blue-text)"
+        : "var(--muted)";
   const ringBg = isFailed
     ? "var(--red-bg)"
     : isComplete
-    ? "var(--green-bg)"
-    : isActive
-    ? "var(--blue-bg)"
-    : "var(--paper)";
+      ? "var(--green-bg)"
+      : isActive
+        ? "var(--blue-bg)"
+        : "var(--paper)";
   const connectorComplete = isComplete && next && (next.status === "complete" || next.status === "active");
 
   return (
@@ -81,7 +82,7 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
             right: "calc(-50% + 22px)",
             height: 1,
             background: connectorComplete ? "var(--green-text)" : "var(--line)",
-            opacity: connectorComplete ? 0.55 : 1,
+            opacity: connectorComplete ? 0.55 : 1
           }}
         >
           {isActive && next && (
@@ -94,7 +95,7 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
                 height: 5,
                 borderRadius: 999,
                 background: "var(--blue-text)",
-                animation: "pipeline-flow 1.8s ease-in-out infinite",
+                animation: "pipeline-flow 1.8s ease-in-out infinite"
               }}
             />
           )}
@@ -102,11 +103,11 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
       )}
 
       <span
-        className="relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full font-mono"
+        className="relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-sm font-mono"
         style={{
           background: ringBg,
           border: `1px solid ${isFailed || isComplete || isActive ? color : "var(--line)"}`,
-          color,
+          color
         }}
       >
         {isComplete ? (
@@ -125,7 +126,7 @@ function PipelineNode({ stage, next, isLast }: { stage: Stage; next?: Stage; isL
               borderRadius: 999,
               border: `1px solid ${color}`,
               opacity: 0.35,
-              animation: "pipeline-pulse 2s ease-out infinite",
+              animation: "pipeline-pulse 2s ease-out infinite"
             }}
           />
         )}
@@ -158,7 +159,7 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
         icon: <Wallet size={16} strokeWidth={1.7} />,
         label: "Payer signs",
         sub: shortAddr(receipt?.from) ?? "Awaiting payer signature",
-        time: submittedAt,
+        time: submittedAt
       },
       {
         id: "settle",
@@ -167,14 +168,14 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
           request.status === "paid"
             ? "complete"
             : request.status === "failed"
-            ? "failed"
-            : request.txHash
-            ? "active"
-            : "pending",
+              ? "failed"
+              : request.txHash
+                ? "active"
+                : "pending",
         icon: <Zap size={16} strokeWidth={1.7} />,
         label: "Arc confirms",
         sub: receipt ? `block #${Number(receipt.blockNumber).toLocaleString()}` : "Awaiting confirmation",
-        time: confirmedAt,
+        time: confirmedAt
       },
       {
         id: "receipt",
@@ -183,41 +184,40 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
         icon: <FileText size={16} strokeWidth={1.7} />,
         label: "Receipt issued",
         sub: "VSR · UBL 2.1 · PDF",
-        time: receipt ? "issued" : undefined,
-      },
+        time: receipt ? "issued" : undefined
+      }
     ];
   }
 
   const signStatus: NodeStatus = settlement?.sourceTxHash || request.txHash ? "complete" : "active";
-  const sourceConfStatus: NodeStatus =
-    settlement?.sourceBlockNumber
-      ? "complete"
-      : stage === "submitted" || request.txHash
+  const sourceConfStatus: NodeStatus = settlement?.sourceBlockNumber
+    ? "complete"
+    : stage === "submitted" || request.txHash
       ? "active"
       : "pending";
   const proofStatus: NodeStatus =
     stage === "settled" || request.status === "paid"
       ? "complete"
       : stage === "failed"
-      ? "failed"
-      : stage === "proving"
-      ? "active"
-      : stage === "settling" || settlement?.destinationTxHash
-      ? "complete"
-      : "pending";
+        ? "failed"
+        : stage === "proving"
+          ? "active"
+          : stage === "settling" || settlement?.destinationTxHash
+            ? "complete"
+            : "pending";
   const settleStatus: NodeStatus =
     request.status === "paid" || stage === "settled"
       ? "complete"
       : stage === "failed"
-      ? "failed"
-      : stage === "settling" || settlement?.destinationTxHash
-      ? "active"
-      : "pending";
+        ? "failed"
+        : stage === "settling" || settlement?.destinationTxHash
+          ? "active"
+          : "pending";
   const receiptStatus: NodeStatus = receipt
     ? "complete"
     : request.status === "failed" || stage === "failed"
-    ? "failed"
-    : "pending";
+      ? "failed"
+      : "pending";
 
   return [
     {
@@ -226,8 +226,9 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
       status: signStatus,
       icon: <Wallet size={16} strokeWidth={1.7} />,
       label: "Payer signs",
-      sub: shortAddr(receipt?.from ?? (request.txHash ? request.recipient : undefined)) ?? "Awaiting signature",
-      time: submittedAt,
+      sub:
+        shortAddr(receipt?.from ?? (request.txHash ? request.recipient : undefined)) ?? "Awaiting signature",
+      time: submittedAt
     },
     {
       id: "source",
@@ -238,7 +239,9 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
       sub: settlement?.sourceChainId
         ? `${getCrossChainLabel(settlement.sourceChainId)}`
         : "Source chain confirmation",
-      time: settlement?.sourceBlockNumber ? `block #${Number(settlement.sourceBlockNumber).toLocaleString()}` : undefined,
+      time: settlement?.sourceBlockNumber
+        ? `block #${Number(settlement.sourceBlockNumber).toLocaleString()}`
+        : undefined
     },
     {
       id: "proof",
@@ -248,11 +251,11 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
       label: "Polymer proof",
       sub:
         stage === "proving"
-          ? "Generating attestation"
+          ? "Generating local fingerprint"
           : proofStatus === "complete"
-          ? "Attestation generated"
-          : "Awaiting confirmation",
-      time: proofStatus === "active" ? "in progress" : undefined,
+            ? "Attestation generated"
+            : "Awaiting confirmation",
+      time: proofStatus === "active" ? "in progress" : undefined
     },
     {
       id: "settle",
@@ -263,7 +266,7 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
       sub: settlement?.destinationBlockNumber
         ? `block #${Number(settlement.destinationBlockNumber).toLocaleString()}`
         : "Awaiting proof",
-      time: confirmedAt,
+      time: confirmedAt
     },
     {
       id: "receipt",
@@ -272,8 +275,8 @@ function buildStages(request: PaymentRequest, receipt?: Receipt): Stage[] {
       icon: <FileText size={16} strokeWidth={1.7} />,
       label: "Receipt issued",
       sub: "VSR · UBL 2.1 · PDF",
-      time: receipt ? "issued" : undefined,
-    },
+      time: receipt ? "issued" : undefined
+    }
   ];
 }
 

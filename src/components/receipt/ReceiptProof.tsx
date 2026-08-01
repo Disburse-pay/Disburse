@@ -25,8 +25,17 @@ export default function ReceiptProof() {
     async function fetchPsp() {
       setLoading(true);
       setError(null);
+      if (!request.requestToken) {
+        setPsp(null);
+        setLoading(false);
+        return;
+      }
       try {
-        const response = await fetch(`/api/psp?request_id=${encodeURIComponent(requestId)}`);
+        const response = await fetch(`/api/psp?request_id=${encodeURIComponent(requestId)}`, {
+          headers: {
+            "X-Disburse-Request-Token": request.requestToken
+          }
+        });
         if (response.status === 404) {
           if (!cancelled) {
             setPsp(null);
@@ -50,7 +59,7 @@ export default function ReceiptProof() {
     return () => {
       cancelled = true;
     };
-  }, [requestId]);
+  }, [request.requestToken, requestId]);
 
   const jsonContent = useMemo(() => (psp ? JSON.stringify(psp, null, 2) : ""), [psp]);
 
@@ -82,7 +91,7 @@ export default function ReceiptProof() {
           <span className="inline-flex h-[20px] w-[20px] items-center justify-center rounded-[var(--btn-radius)] border border-[var(--green-text)] bg-[var(--green-bg)] text-[var(--green-text)]">
             <ShieldCheck size={11} strokeWidth={1.9} />
           </span>
-          Portable Settlement Proof
+          Portable Settlement Proof (issuer not trusted here)
         </p>
         <span
           className="max-w-[50%] truncate rounded-[2px] border border-[var(--line)] bg-[var(--input-bg)] px-1.5 py-0.5 font-mono text-2xs text-[var(--muted)]"
@@ -96,14 +105,16 @@ export default function ReceiptProof() {
         <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
           {loading
             ? "Checking Arc Testnet proof issuance for this request."
-            : "The receipt is verified on Arc Testnet. A PSP will appear here when the backend issuer has signed the portable proof document."}
+            : request.requestToken
+              ? "The receipt is verified on Arc Testnet. A PSP will appear here when the backend issuer has signed the portable proof document."
+              : "This saved receipt has no PSP lookup capability. Use a trusted PSP UID supplied at issuance."}
         </p>
       ) : (
         <>
           <dl className="mt-3 border-y border-[var(--line-soft)]">
             <Field.Row label="Digest">{`${psp.digest.slice(0, 10)}...${psp.digest.slice(-8)}`}</Field.Row>
-            <Field.Row label="Issuer">{`${psp.issuer.publicKey.slice(0, 6)}...${psp.issuer.publicKey.slice(-4)}`}</Field.Row>
-            <Field.Row label="Network">{`${psp.networkMode} · Arc Testnet`}</Field.Row>
+            <Field.Row label="Claimed issuer">{`${psp.issuer.publicKey.slice(0, 6)}...${psp.issuer.publicKey.slice(-4)}`}</Field.Row>
+            <Field.Row label="Claimed network">{`${psp.networkMode} · chain ${psp.settlement.chainId}`}</Field.Row>
           </dl>
 
           <div className="mt-3 flex items-center gap-2.5 rounded-[var(--btn-radius)] border border-[var(--line)] bg-[var(--input-bg)] p-2.5">
@@ -114,6 +125,9 @@ export default function ReceiptProof() {
               <code className="block truncate font-mono text-xs text-[var(--ink-soft)]">
                 {buildFetchCommand(psp)}
               </code>
+              <span className="mt-1 block text-2xs text-[var(--muted)]">
+                Set the issuer variable from independent trusted configuration, never from this proof.
+              </span>
             </div>
             <Button
               variant="secondary"
@@ -149,6 +163,8 @@ export default function ReceiptProof() {
   );
 }
 
-function buildFetchCommand(psp: PspV1): string {
-  return `curl -s "${window.location.origin}/api/psp?uid=${psp.uid}" | npx @disburse/psp-verify --stdin --issuer ${psp.issuer.publicKey}`;
+export function buildFetchCommand(psp: PspV1, origin = window.location.origin): string {
+  const endpoint = new URL("/api/psp", origin);
+  endpoint.searchParams.set("uid", psp.uid);
+  return `curl --fail --silent --show-error "${endpoint.toString()}" | npx @disburse/psp-verify --stdin --issuer "$DISBURSE_TRUSTED_PSP_ISSUER"`;
 }

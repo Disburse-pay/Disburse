@@ -56,6 +56,8 @@ export type PaymentReceiptRow = {
   token: PaymentToken;
   amount: string;
   block_number: string;
+  block_hash?: string | null;
+  settlement_log_index?: number | null;
   confirmed_at: string;
   explorer_url: string;
   chain_id?: number | null;
@@ -168,6 +170,8 @@ export function receiptToRow(receipt: Receipt): PaymentReceiptRow {
     token: receipt.token,
     amount: receipt.amount,
     block_number: receipt.blockNumber,
+    block_hash: receipt.blockHash ?? null,
+    settlement_log_index: receipt.directSettlementLogIndex ?? null,
     confirmed_at: receipt.confirmedAt,
     explorer_url: receipt.explorerUrl,
     chain_id: receipt.chainId ?? null,
@@ -185,12 +189,20 @@ export function rowToReceipt(row: PaymentReceiptRow): Receipt {
     token: row.token,
     amount: row.amount,
     blockNumber: row.block_number,
+    blockHash: normalizeHash(row.block_hash),
+    directSettlementLogIndex: normalizeLogIndex(row.settlement_log_index),
     confirmedAt: row.confirmed_at,
     explorerUrl: row.explorer_url,
     chainId: row.chain_id ?? undefined,
     sourceChainId: normalizeCrossChainId(row.source_chain_id),
     sourceTxHash: normalizeHash(row.source_tx_hash)
   };
+}
+
+function normalizeLogIndex(value: unknown): number | undefined {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+    ? (value as number)
+    : undefined;
 }
 
 export function applyQrRealtimeEvent(request: PaymentRequest, event: QrRealtimeEvent): AppliedQrEvent {

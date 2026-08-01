@@ -1,7 +1,7 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
 import type { DocsSection, DocsSummaryItem } from "./types";
-import { docsSections, arcadeSections } from "./en";
+import { docsSections } from "./en";
 
 /**
  * Fully translated sections, keyed by the canonical English title from en.ts.
@@ -61,19 +61,6 @@ const translated: Record<string, DocsSection> = {
       "Gas: 估算用于展示和余额检查；钱包在签名时最终确定交易 gas。"
     ]
   },
-  "Local ledger and realtime": {
-    title: "本地账本和 realtime",
-    body: [
-      "QR 请求和收据存储在浏览器 localStorage 中，请求方无需创建账户即可管理工作。账本支持 JSON 导出和导入，用于备份或迁移。",
-      "配置 Supabase 后，QR 请求也可以通过 Vercel API 函数写入。Realtime 事件可在付款人提交、确认、失败或请求过期时关闭请求方视图中的 QR 码。"
-    ],
-    points: [
-      "Storage keys: disburse.requests 和 disburse.receipts。",
-      "仍会读取旧 key: arc-pay-desk.requests 和 arc-pay-desk.receipts。",
-      "请求按 request id 存储。收据按 request id 或 transaction hash upsert。",
-      "导入的 explorer URL 会从已验证的 Arcscan transaction hash 重新生成。"
-    ]
-  },
   "Invoice output": {
     title: "发票输出",
     body: [
@@ -105,23 +92,14 @@ const translated: Record<string, DocsSection> = {
 const fallbackTitles: Record<string, string> = {
   "What Disburse is": "Disburse 是什么",
   "Tech and stack": "技术栈",
+  "Wallet-scoped history": "钱包范围的付款历史",
   Contracts: "合约",
   "Portable Settlement Proofs": "结算证明 (PSP)",
   "API and webhooks": "API 与 webhook"
 };
 
-const arcadeTitles: Record<string, string> = {
-  "Cluck Run": "Cluck Run",
-  "The coin slot": "投币口",
-  "Runs and the leaderboard": "对局与排行榜"
-};
-
 export const docsSectionsZh: DocsSection[] = docsSections.map(
   (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
-);
-
-export const arcadeSectionsZh: DocsSection[] = arcadeSections.map(
-  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
 );
 
 export const docsSummaryItemsZh: DocsSummaryItem[] = [

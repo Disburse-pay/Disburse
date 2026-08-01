@@ -34,33 +34,35 @@ export type InboxPayload = {
 };
 
 const AUTH_STORAGE_PREFIX = "disburse.inboxAuth.";
+const inMemoryInboxAuthorizations = new Map<string, InboxAuth>();
 
 /**
- * Return cached inbox access for the wallet if it is still valid. The cached
- * signature is a bearer credential scoped to inbox reads and status updates
- * only; it cannot move funds or claim names.
+ * Return memory-only inbox access for the wallet if it is still valid. Inbox
+ * bearer credentials never survive a reload or move through browser storage.
  */
 export function readCachedInboxAuth(wallet: Address): InboxAuth | undefined {
+  const key = wallet.toLowerCase();
   try {
-    const raw = window.localStorage.getItem(AUTH_STORAGE_PREFIX + wallet.toLowerCase());
-    if (!raw) {
-      return undefined;
-    }
-    const parsed = JSON.parse(raw) as InboxAuth;
-    if (
-      typeof parsed.expiresAt !== "number" ||
-      typeof parsed.signature !== "string" ||
-      parsed.expiresAt <= Math.floor(Date.now() / 1000) + 60
-    ) {
-      return undefined;
-    }
-    return { ...parsed, wallet };
+    // Remove credentials written by older releases as soon as this wallet is
+    // observed. This is cleanup only; the value is never read or trusted.
+    window.localStorage.removeItem(AUTH_STORAGE_PREFIX + key);
   } catch {
+    // Storage can be unavailable in hardened/private browser contexts.
+  }
+  const parsed = inMemoryInboxAuthorizations.get(key);
+  if (
+    !parsed ||
+    typeof parsed.expiresAt !== "number" ||
+    typeof parsed.signature !== "string" ||
+    parsed.expiresAt <= Math.floor(Date.now() / 1000) + 60
+  ) {
+    inMemoryInboxAuthorizations.delete(key);
     return undefined;
   }
+  return { ...parsed, wallet };
 }
 
-/** Sign a fresh 24h inbox-access credential and cache it for the wallet. */
+/** Sign a fresh inbox-access credential and retain it only for this page session. */
 export async function requestInboxAuth(provider: EthereumProvider, wallet: Address): Promise<InboxAuth> {
   const expiresAt = Math.floor(Date.now() / 1000) + INBOX_ACCESS_TTL_SECONDS;
   const typedData = buildInboxAccessTypedData({ wallet, expiresAt: BigInt(expiresAt) });
@@ -79,21 +81,28 @@ export async function requestInboxAuth(provider: EthereumProvider, wallet: Addre
     message: { wallet, expiresAt: expiresAt.toString() }
   };
 
-  const signature = (await provider.request({
+  const signature = await provider.request({
     method: "eth_signTypedData_v4",
     params: [wallet, JSON.stringify(payload)]
-  })) as string;
+  });
+  if (
+    typeof signature !== "string" ||
+    !/^0x(?:[a-fA-F0-9]{2}){64,2048}$/.test(signature)
+  ) {
+    throw new Error("Wallet did not return a valid inbox authorization signature.");
+  }
 
   const auth: InboxAuth = { wallet, expiresAt, signature };
-  try {
-    window.localStorage.setItem(AUTH_STORAGE_PREFIX + wallet.toLowerCase(), JSON.stringify(auth));
-  } catch {
-    // Private mode: the credential just will not survive a reload.
-  }
+  inMemoryInboxAuthorizations.set(wallet.toLowerCase(), auth);
   return auth;
 }
 
-export function clearInboxAuth(wallet: Address): void {
+export function clearInboxAuth(wallet?: Address): void {
+  if (!wallet) {
+    inMemoryInboxAuthorizations.clear();
+    return;
+  }
+  inMemoryInboxAuthorizations.delete(wallet.toLowerCase());
   try {
     window.localStorage.removeItem(AUTH_STORAGE_PREFIX + wallet.toLowerCase());
   } catch {

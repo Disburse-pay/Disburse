@@ -1,44 +1,115 @@
 # Webhooks and API
 
-Disburse provides webhooks and an API to integrate with external systems.
+Disburse exposes APIs for server-backed QR requests, PSP retrieval and
+verification, private statements, notifications, direct-payment registration,
+and wallet-owned webhooks.
 
 ## Webhooks
 
-You can register webhook endpoints that receive POST notifications whenever a new Portable Settlement Proof (PSP) is issued.
+Webhook management is not anonymous. Every list, create/rotate, and deactivate
+operation requires a short-lived EIP-712 authorization in:
 
-### Security
+- `X-Disburse-Wallet`
+- `X-Disburse-Expires-At`
+- `X-Disburse-Signature`
 
-Each delivery is signed with HMAC-SHA256. The receiver can verify the payload's authenticity using the `X-Disburse-Signature` header.
+An active webhook is scoped to PSPs whose invoice recipient is the owner wallet.
+Each wallet may have at most five active registrations. Creation accepts only
+HTTPS on port 443, rejects embedded credentials, private/reserved IP addresses,
+unsafe DNS results, redirects, and non-public single-label hosts. Delivery pins
+the vetted IP address to close DNS-rebinding gaps.
 
-### Reliability
+Every `psp.issued` delivery contains the full PSP and is signed over the exact
+JSON body with HMAC-SHA256 in `X-Disburse-Signature`. Use the signed `createdAt`
+and PSP UID for freshness and deduplication. Deliveries time out, run with
+bounded concurrency, and a registration is disabled after ten consecutive
+failures.
 
-Delivery is non-fatal. Failures are logged, the failure count is incremented, and webhooks are automatically deactivated after 10 consecutive failures.
+Webhook secrets are returned only in masked form. Store the original secret in
+a secret manager.
 
-## API Endpoints
+## Direct disbursements
 
-The API allows for programmatic interaction with Disburse features. This is particularly useful for automated systems or agents that need to issue invoices, verify payments, or fetch PSPs.
+`POST /api/disburse` registers an Arc transfer only after the payer authorizes
+the exact transaction hash and normalized invoice metadata with EIP-712:
 
-Use cases include pushing paid-state events into accounting software like QuickBooks or Xero, or updating Notion and Zapier workflows.
-
-### Direct Disbursements (for agents / CLI)
-
-Agents can execute direct transfers and obtain signed PSPs + invoices without going through the QR flow:
-
-```
-POST /api/disburse
+```json
 {
   "txHash": "0x...",
+  "rail": "direct",
+  "recipient": "0x...",
+  "amount": "25",
+  "token": "USDC",
   "label": "Invoice 1",
   "note": "Subscription",
-  "token": "USDC"
+  "invoiceDate": "2026-07-29",
+  "signature": "0x..."
 }
 ```
 
-Returns the full signed PSP. The Disburse CLI (`@disburse/cli`) wraps this + the on-chain send for a one-command experience:
+The server independently reads the Arc receipt and exact token `Transfer` log.
+For a Disburse-balance payment, use `"rail": "gateway"`; the server instead
+requires the exact Circle Gateway `AttestationUsed` event, including its Arc
+source domain, depositor/signer, recipient, token, amount, block, and log index.
+The signed registration binds the selected rail so the interpretation cannot
+be changed after approval. The `@disburse/cli` uses the direct rail.
 
-```
-npx @disburse/cli send --to 0x... --amount 25 --label "Invoice 1" --note "..."
-```
+## Wallet history
 
-The resulting `proof.json` is verifiable with `npx @disburse/psp-verify`.
-See the `@disburse/cli` README for full details.
+`POST /api/history` requires a short-lived EIP-712 signature from the wallet.
+It returns only requests received by that wallet and receipts paid by it. Owner
+QR capabilities are decrypted only for the request recipient, responses use
+`Cache-Control: no-store`, and the browser keeps the ledger in memory only.
+
+## PSP retrieval and verification
+
+A PSP may be fetched by its unguessable UID through `/api/psp`. A
+`request_id` lookup additionally requires that QR request's
+`X-Disburse-Request-Token`; knowing a UUID is not enough. Responses use
+`Cache-Control: no-store`, and database-wide PSP enumeration is not public.
+
+`POST /api/psp/verify?issuer=0x...` verifies structure, digest, UID, and
+signature against an issuer supplied independently from the PSP. It explicitly
+does not claim that settlement was checked onchain. Never use the issuer field
+inside the same PSP as its own trust root.
+
+## Statements
+
+`GET` and `POST /api/statements` require a short-lived EIP-712 authorization in
+the same wallet/expiry/signature headers used above. The signed query must name
+the authorizing wallet as payer or recipient.
+
+The server applies recipient, payer, token, network, and date filters before
+pagination. Results above the signed proof limit fail instead of silently
+truncating. USDC and EURC totals are summed in integer base units and kept
+separate when a statement contains both tokens.
+
+## QR API
+
+All server-backed QR status and mutation calls require the request capability in
+`X-Disburse-Request-Token`. Creation additionally requires the recipient
+wallet's short-lived EIP-712 authorization. Confirmation additionally requires
+the payer's request authorization and a transaction hash that passes the exact
+onchain checks.
+
+## Authorization migration
+
+These authorization requirements are intentionally incompatible with the
+earlier anonymous API:
+
+- Re-register legacy webhooks. Existing registrations are deactivated by the
+  privacy migration and cannot be adopted without a new owner signature.
+- Send `X-Disburse-Wallet`, `X-Disburse-Expires-At`, and
+  `X-Disburse-Signature` with every statement request. The signature covers the
+  normalized filters and proof limit; the default is 100 and the hard maximum
+  is 500.
+- Sign every QR-creation body as
+  `DisbursePaymentRequestAuthorization`. The body includes `wallet`,
+  `expiresAt`, and `signature`, and the signed message binds the normalized
+  recipient, optional notification target, token, amount, label, note, and
+  invoice date.
+- Upgrade direct-payment clients that predate the EIP-712 registration schema;
+  legacy plaintext or incomplete registration signatures are rejected.
+
+Deploy the application and migrations `202607290101` through `202607290103`
+as one tested release. Do not expose the new handlers against an older schema.

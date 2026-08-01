@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { I18nProvider } from "./lib/i18n";
 import { getInitialTheme, THEME_KEY, type Theme } from "./lib/theme";
 import DocsTopNav from "./components/DocsTopNav";
+import "./docs.css";
 
 const DocsPage = lazy(() => import("./pages/DocsPage"));
 
@@ -27,7 +28,7 @@ export default function DocsApp() {
 
   return (
     <I18nProvider initialLang="en">
-      <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
+      <div className="docs-root">
         <DocsTopNav theme={theme} onToggleTheme={onToggleTheme} />
         {/* DocsPage owns the full-width frame: edge-anchored sidebar +
             article + on-this-page. No centering wrapper here. */}
@@ -40,9 +41,5 @@ export default function DocsApp() {
 }
 
 function DocsFallback() {
-  return (
-    <div className="px-6 py-12 text-base text-[var(--muted)]">
-      Loading documentation…
-    </div>
-  );
+  return <div className="docs-fallback">Opening documentation</div>;
 }

@@ -1,42 +1,44 @@
-import { type ComponentProps, type FormEvent, type MouseEvent, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Check,
-  Download,
-  FileText,
-  Moon,
-  ShieldCheck,
-  Sun
-} from "lucide-react";
+  type ComponentProps,
+  type FormEvent,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
+import { Check, Download, FileText, Moon, ShieldCheck, Sun, Wallet } from "lucide-react";
 import Sidebar from "@/src/components/Sidebar";
 import Header from "@/src/components/Header";
 import SidePanel from "@/src/components/ui/SidePanel";
 import DateInput from "@/src/components/ui/DateInput";
+import StatementsPage from "@/src/components/StatementsPage";
 import SettingsPanel from "@/src/components/SettingsPanel";
-import TransactionsTable from "@/src/components/TransactionsTable";
+import DashboardPage from "@/src/components/DashboardPage";
+import ImportExportPage from "@/src/components/ImportExportPage";
 import QrShareCard from "@/src/components/QrShareCard";
-import DisburseIdCard from "@/src/components/DisburseIdCard";
 import HandleHint from "@/src/components/HandleHint";
 import InboxPanel, { useInboxUnread } from "@/src/components/InboxPanel";
 import DepositPanel from "@/src/components/DepositPanel";
 import { fetchGatewayBalance } from "@/src/lib/gateway/balance";
 import { transferViaGateway } from "@/src/lib/gateway/transfer";
+import { registerDirectPayment } from "@/src/lib/directApi";
+import { clearHistoryAuthorization, fetchWalletHistory } from "@/src/lib/historyApi";
+import { clearInboxAuth } from "@/src/lib/notificationsApi";
+import { isCurrentWalletAccount, isSameWalletAccount } from "@/src/lib/accountScope";
+import { assertProviderAccount } from "@/src/lib/providerAccount";
 import ReceiptView from "@/src/components/receipt";
 import { cn } from "@/src/lib/utils";
 import { createSettlementAttestation, type SettlementAttestation } from "./lib/attestation";
 import { generateSettlementProof, downloadSettlementProof, downloadUBLInvoice } from "./lib/compliance";
 
-
-import { formatUnits, type Hash } from "viem";
-import {
-  ARC_CHAIN_ID,
-  ARC_FAUCET_URL
-} from "./lib/arc";
+import { formatUnits, zeroAddress, type Hash } from "viem";
+import { ARC_CHAIN_ID, ARC_FAUCET_URL } from "./lib/arc";
 import { errorToMessage } from "./lib/errors";
 import { I18nProvider, useI18n } from "./lib/i18n";
-import {
-  type AppSettings,
-  loadSettings
-} from "./lib/settings";
+import { type AppSettings, loadSettings } from "./lib/settings";
 import { buildInvoiceFilename, formatInvoiceDate, generateInvoicePdf } from "./lib/invoice";
 import {
   checkArcRpc,
@@ -50,8 +52,7 @@ import {
   submitPayment,
   submitTokenTransfer,
   switchToArc,
-  verifyPayment,
-  waitForTransactionConfirmation,
+  waitForConfirmedTokenTransfer,
   type Balances,
   type EthereumProvider,
   type SpendableTransfer,
@@ -60,12 +61,11 @@ import {
 } from "./lib/onchain";
 import {
   buildShareUrl,
-  createExpiry,
-  decodeRequestPayload,
+  decodeRequestReference,
   formatTokenAmount,
+  hasSameRequestPayload,
   isPaymentExpired,
   isPaymentPayable,
-  mergeScannedRequest,
   normalizeInvoiceDate,
   normalizeLabel,
   normalizeNote,
@@ -81,18 +81,7 @@ import {
   type Receipt
 } from "./lib/payments";
 import { buildQrDataUrl } from "./lib/qr";
-import {
-  buildExportBundle,
-  loadReceipts,
-  loadRequests,
-  parseExportBundle,
-  RECEIPTS_KEY,
-  REQUESTS_KEY,
-  saveReceipts,
-  saveRequests,
-  upsertReceipt,
-  upsertRequest
-} from "./lib/storage";
+import { buildExportBundle, clearBrowserLedgerCache, upsertReceipt, upsertRequest } from "./lib/storage";
 import { handleFromInput, looksLikeHandleInput, resolveIdByHandle } from "./lib/idsApi";
 import {
   confirmRemoteQrPayment,
@@ -101,23 +90,24 @@ import {
   recordRemoteQrSubmission,
   type QrConfirmationPayload
 } from "./lib/qrApi";
-import { applyQrRealtimeEvent, shouldHideQrForStatus, type QrRealtimeEvent, type QrStatusPayload } from "./lib/realtime";
-import { getSupabaseBrowserClient } from "./lib/supabaseClient";
+import { shouldHideQrForStatus, type QrStatusPayload } from "./lib/realtime";
+import { requestQrPaymentAuthorization } from "./lib/qrAuthorization";
+import {
+  buildPaymentRequestAuthorizationTypedData,
+  PAYMENT_REQUEST_AUTH_TTL_SECONDS
+} from "./lib/paymentRequestNotificationAuthorization";
 import { useDisburseDynamicWallet } from "./lib/dynamic";
-import LandingPage from "./LandingPage";
-import { lazyChart } from "./lib/lazyChart";
 
-// Chart cards pull in recharts (heavy). Load them on demand so the `charts`
-// chunk stays off the initial bundle and the mobile pay page.
-const BalanceCard = lazyChart(() => import("@/src/components/BalanceCard"));
-const MonthlyStats = lazyChart(() => import("@/src/components/MonthlyStats"));
+const QR_STATUS_POLL_INTERVAL_MS = 5_000;
+const QR_STATUS_MAX_POLLS = 60;
+const DISBURSE_EIP712_DOMAIN_TYPES = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" }
+] as const;
 
 import { cx } from "./lib/cx";
-import {
-  THEME_KEY,
-  getInitialTheme,
-  type Theme
-} from "./lib/theme";
+import { THEME_KEY, getInitialTheme, type Theme } from "./lib/theme";
 import {
   getInitialPage,
   isPaySurface,
@@ -126,8 +116,6 @@ import {
   getCurrentRouteKey,
   type Page
 } from "./lib/routing";
-
-
 
 type DirectFormState = {
   recipient: string;
@@ -148,6 +136,18 @@ type QrFormState = DirectFormState & {
 type Notice = {
   tone: "info" | "success" | "error";
   text: string;
+};
+
+type PendingDirectTransfer = {
+  owner: `0x${string}`;
+  hash: Hash;
+  transfer: TokenTransfer;
+  expectedFrom: `0x${string}`;
+  label: string;
+  note?: string;
+  invoiceDate: string;
+  gatewayHandle?: string;
+  submittedAt: string;
 };
 
 type RpcHealth = Awaited<ReturnType<typeof checkArcRpc>>;
@@ -181,17 +181,17 @@ const emptyQrForm: QrFormState = {
 };
 
 function App() {
-  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [page, setPage] = useState<Page>(() => getInitialPage());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [routeKey, setRouteKey] = useState(() => getCurrentRouteKey());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [directForm, setDirectForm] = useState<DirectFormState>(emptyDirectForm);
   const [qrForm, setQrForm] = useState<QrFormState>(emptyQrForm);
-  const [requests, setRequests] = useState<PaymentRequest[]>(() => loadRequests());
-  const [receipts, setReceipts] = useState<Receipt[]>(() => loadReceipts());
-  const [selectedId, setSelectedId] = useState<string | undefined>(() => loadRequests()[0]?.id);
-  const [payRequestId, setPayRequestId] = useState<string | undefined>();
+  const [requests, setRequests] = useState<PaymentRequest[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [paySurfaceRequest, setPaySurfaceRequest] = useState<PaymentRequest | undefined>();
+  const [paySurfaceReceipt, setPaySurfaceReceipt] = useState<Receipt | undefined>();
   const [shareUrl, setShareUrl] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [directNotice, setDirectNotice] = useState<Notice | undefined>();
@@ -199,11 +199,15 @@ function App() {
   const [payNotice, setPayNotice] = useState<Notice | undefined>();
   const [walletNotice, setWalletNotice] = useState<Notice | undefined>();
   const [account, setAccount] = useState<`0x${string}` | undefined>();
+  const activeAccountRef = useRef<`0x${string}` | undefined>(account);
+  activeAccountRef.current = account;
   const [chainId, setChainId] = useState<number | undefined>();
   const [directBalances, setDirectBalances] = useState<Balances | undefined>();
   const [payBalances, setPayBalances] = useState<Balances | undefined>();
   const [directEstimate, setDirectEstimate] = useState<TransferEstimate | undefined>();
   const [payEstimate, setPayEstimate] = useState<TransferEstimate | undefined>();
+  const [pendingDirect, setPendingDirect] = useState<PendingDirectTransfer | undefined>();
+  const pendingDirectByOwnerRef = useRef(new Map<string, PendingDirectTransfer>());
   const [directHash, setDirectHash] = useState<Hash | undefined>();
   const [rpcHealth, setRpcHealth] = useState<RpcHealth | undefined>();
   const [now, setNow] = useState(() => new Date());
@@ -211,9 +215,11 @@ function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isEstimatingDirect, setIsEstimatingDirect] = useState(false);
   const [isSendingDirect, setIsSendingDirect] = useState(false);
+  const [isReconcilingDirect, setIsReconcilingDirect] = useState(false);
   const [isEstimatingPay, setIsEstimatingPay] = useState(false);
   const [isPayingQr, setIsPayingQr] = useState(false);
   const [payLifecycle, setPayLifecycle] = useState<PayLifecycle>("idle");
+  const [payRequestVerified, setPayRequestVerified] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [payAttestation, setPayAttestation] = useState<SettlementAttestation | undefined>();
@@ -232,34 +238,30 @@ function App() {
     [requests, selectedId]
   );
 
-  const payRequest = useMemo(
-    () => (payRequestId ? requests.find((request) => request.id === payRequestId) : undefined),
-    [requests, payRequestId]
-  );
+  const payRequest = paySurfaceRequest;
 
   const selectedReceipt = useMemo(
     () => receipts.find((receipt) => receipt.requestId === selectedRequest?.id),
     [receipts, selectedRequest?.id]
   );
 
-  const payReceipt = useMemo(
-    () => receipts.find((receipt) => receipt.requestId === payRequest?.id),
-    [receipts, payRequest?.id]
-  );
+  const payReceipt = paySurfaceReceipt;
 
   const wrongChain = Boolean(account && chainId !== undefined && chainId !== ARC_CHAIN_ID);
   const payWrongChain = wrongChain;
   const hasWalletProvider = dynamicWallet.enabled || Boolean(getInjectedProvider());
   const payDisplayStatus = payRequest ? refreshDerivedStatus(payRequest, now).status : "open";
   const payIsExpired = payRequest ? isPaymentExpired(payRequest, now) : false;
-  const payIsPayable = payRequest ? isPaymentPayable(payRequest, now) : false;
+  const payIsPayable = payRequestVerified && payRequest ? isPaymentPayable(payRequest, now) : false;
   // A Disburse ID is paid from the sender's Circle Gateway balance, not the
   // wallet token balance shown for ordinary address transfers.
   const directUsesGateway = looksLikeHandleInput(directForm.recipient);
   const directWalletInsufficientToken = useInsufficientToken(directBalances, directForm);
   const directInsufficientToken = directUsesGateway ? false : directWalletInsufficientToken;
   const payInsufficientToken = useInsufficientToken(payBalances, payRequest);
-  const directMissingGas = directUsesGateway ? false : hasInsufficientGas(directBalances, directForm, directEstimate);
+  const directMissingGas = directUsesGateway
+    ? false
+    : hasInsufficientGas(directBalances, directForm, directEstimate);
   const payMissingGas = hasInsufficientGas(payBalances, payRequest, payEstimate);
   const rpcIsStale = Boolean(rpcHealth && Date.now() - new Date(rpcHealth.checkedAt).getTime() > 18_000);
   const rpcStatusLabel = !rpcHealth
@@ -268,15 +270,85 @@ function App() {
       ? "rpc down"
       : rpcIsStale
         ? "stale"
-        : rpcHealth.activeEndpoint?.label ?? "active";
-  const rpcBlockLabel = rpcHealth?.healthy && rpcHealth.blockNumber ? `block ${rpcHealth.blockNumber}` : rpcStatusLabel;
+        : (rpcHealth.activeEndpoint?.label ?? "active");
+  const rpcBlockLabel =
+    rpcHealth?.healthy && rpcHealth.blockNumber ? `block ${rpcHealth.blockNumber}` : rpcStatusLabel;
 
   const getWalletProvider = useCallback(async (): Promise<EthereumProvider | undefined> => {
     if (dynamicWallet.enabled) {
       return dynamicWallet.getEthereumProvider();
     }
     return getInjectedProvider();
-  }, [dynamicWallet.enabled, dynamicWallet.primaryWallet]);
+  }, [dynamicWallet]);
+
+  const transitionAccount = useCallback((nextAccount: `0x${string}` | undefined) => {
+    const previousAccount = activeAccountRef.current;
+    if (isSameWalletAccount(previousAccount, nextAccount)) {
+      setAccount(nextAccount);
+      return;
+    }
+
+    // Change the ownership guard before React renders the new wallet. This
+    // prevents late responses and even a single paint from exposing the prior
+    // wallet's ledger or bearer-style authorizations.
+    activeAccountRef.current = nextAccount;
+    clearHistoryAuthorization();
+    clearInboxAuth(previousAccount);
+    setRequests([]);
+    setReceipts([]);
+    setSelectedId(undefined);
+    const nextPending = nextAccount
+      ? pendingDirectByOwnerRef.current.get(nextAccount.toLowerCase())
+      : undefined;
+    setPendingDirect(nextPending);
+    setDirectHash(nextPending?.hash);
+    setDirectForm(emptyDirectForm);
+    setQrForm({
+      ...emptyQrForm,
+      recipient: nextAccount ?? "",
+      invoiceDate: todayInputValue()
+    });
+    setDirectNotice(undefined);
+    setQrNotice(undefined);
+    setWalletNotice(undefined);
+    setShareUrl("");
+    setQrDataUrl("");
+    setDirectBalances(undefined);
+    setPayBalances(undefined);
+    setDirectEstimate(undefined);
+    setPayEstimate(undefined);
+    setAccount(nextAccount);
+  }, []);
+
+  function applyPaySurfacePayload(
+    payload: QrStatusPayload,
+    requestToken: string,
+    paymentAuthorization?: `0x${string}`
+  ) {
+    const request: PaymentRequest = {
+      ...payload.request,
+      requestToken,
+      paymentAuthorization
+    };
+    setPaySurfaceRequest(request);
+    setPaySurfaceReceipt(payload.receipt);
+
+    const activeAccount = activeAccountRef.current;
+    if (!activeAccount) {
+      return;
+    }
+    const accountLower = activeAccount.toLowerCase();
+    const isOwnedLedgerRecord =
+      request.recipient.toLowerCase() === accountLower ||
+      payload.receipt?.from.toLowerCase() === accountLower;
+    if (!isOwnedLedgerRecord) {
+      return;
+    }
+    setRequests((current) => upsertRequest(current, request));
+    if (payload.receipt) {
+      setReceipts((current) => upsertReceipt(current, payload.receipt as Receipt));
+    }
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -285,6 +357,10 @@ function App() {
       .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
       ?.setAttribute("content", theme === "dark" ? "#0a0b0e" : "#f6f6f3");
   }, [theme]);
+
+  useEffect(() => {
+    clearBrowserLedgerCache();
+  }, []);
 
   // (/docs never reaches this component — main.tsx redirects it to the docs
   // host before anything mounts.)
@@ -307,7 +383,7 @@ function App() {
       "qr-payments": "QR · Disburse",
       pay: "Pay request · Disburse",
       "import-export": "Backup · Disburse",
-      statements: "Statements · Disburse",
+      statements: "Statements · Disburse"
     };
     document.title = titles[page] ?? "Disburse";
   }, [page]);
@@ -328,116 +404,78 @@ function App() {
   }, []);
 
   useEffect(() => {
-    saveRequests(requests);
-  }, [requests]);
-
-  useEffect(() => {
-    saveReceipts(receipts);
-  }, [receipts]);
-
-  useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === REQUESTS_KEY) {
-        setRequests(loadRequests());
-      }
-      if (event.key === RECEIPTS_KEY) {
-        setReceipts(loadReceipts());
-      }
-    };
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  useEffect(() => {
-    if (page !== "qr-payments" || !selectedRequest) {
+    const ledgerOwner = activeAccountRef.current;
+    if (page !== "qr-payments" || !selectedRequest?.requestToken || !ledgerOwner) {
       return;
     }
 
     let isActive = true;
-    fetchRemoteQrStatus(selectedRequest.id)
-      .then((payload) => {
-        if (isActive && payload) {
-          applyQrStatusPayload(payload, setRequests, setReceipts);
+    let timer: number | undefined;
+    let pollCount = 0;
+    let requestInFlight = false;
+    const requestToken = selectedRequest.requestToken;
+
+    const scheduleNext = () => {
+      if (isActive && pollCount < QR_STATUS_MAX_POLLS) {
+        timer = window.setTimeout(poll, QR_STATUS_POLL_INTERVAL_MS);
+      }
+    };
+
+    const poll = async () => {
+      if (!isActive || requestInFlight || pollCount >= QR_STATUS_MAX_POLLS) {
+        return;
+      }
+      requestInFlight = true;
+      pollCount += 1;
+      try {
+        const payload = await fetchRemoteQrStatus(selectedRequest.id, requestToken);
+        if (!isActive || !isCurrentWalletAccount(activeAccountRef.current, ledgerOwner)) {
+          return;
         }
-      })
-      .catch((error) => {
+        if (payload) {
+          applyQrStatusPayload(payload, setRequests, setReceipts, requestToken);
+          if (payload.message) {
+            setQrNotice({
+              tone:
+                payload.request.status === "paid"
+                  ? "success"
+                  : shouldHideQrForStatus(payload.request.status)
+                    ? "error"
+                    : "info",
+              text: payload.message
+            });
+          }
+          if (shouldHideQrForStatus(payload.request.status)) {
+            return;
+          }
+        }
+      } catch (error) {
         if (isActive) {
           setQrNotice({ tone: "error", text: errorToMessage(error) });
         }
-      });
+      } finally {
+        requestInFlight = false;
+      }
+      scheduleNext();
+    };
+
+    void poll();
 
     return () => {
       isActive = false;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
     };
-  }, [page, selectedRequest?.id]);
+  }, [account, page, selectedRequest?.id, selectedRequest?.requestToken]);
 
   useEffect(() => {
-    if (page !== "qr-payments" || !selectedRequest) {
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
-      return;
-    }
-
-    const channel = supabase
-      .channel(`qr-request:${selectedRequest.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "payment_request_events",
-          filter: `request_id=eq.${selectedRequest.id}`
-        },
-        (payload) => {
-          const event = payload.new as QrRealtimeEvent;
-          // psp_error is a backend diagnostic for a payment that already
-          // settled — it must not drive live request state or raise a
-          // (status: paid) success toast. Operators read it from the DB.
-          if (event.event_type === "psp_error") {
-            return;
-          }
-          setRequests((current) => {
-            const request = current.find((item) => item.id === event.request_id) ?? selectedRequest;
-            return upsertRequest(current, applyQrRealtimeEvent(request, event).request);
-          });
-          if (event.receipt) {
-            setReceipts((current) => upsertReceipt(current, event.receipt as Receipt));
-          }
-          setQrNotice({
-            tone: event.status === "paid" ? "success" : shouldHideQrForStatus(event.status) ? "error" : "info",
-            text: event.message
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [page, selectedRequest?.id]);
-
-  useEffect(() => {
-    if (!selectedRequest) {
+    if (!selectedRequest?.requestToken) {
       setShareUrl("");
       return;
     }
     setShareUrl(buildShareUrl(selectedRequest, getPayShareOrigin()));
-  }, [
-    selectedRequest?.id,
-    selectedRequest?.recipient,
-    selectedRequest?.token,
-    selectedRequest?.amount,
-    selectedRequest?.label,
-    selectedRequest?.note,
-    selectedRequest?.invoiceDate,
-    selectedRequest?.expiresAt,
-    selectedRequest?.createdAt,
-    selectedRequest?.startBlock
-  ]);
+  }, [selectedRequest]);
 
   useEffect(() => {
     let isActive = true;
@@ -469,33 +507,53 @@ function App() {
       return;
     }
 
+    let isActive = true;
     const encoded = new URLSearchParams(window.location.search).get("r");
+    setPayRequestVerified(false);
+    setPaySurfaceRequest(undefined);
+    setPaySurfaceReceipt(undefined);
+    setPayBalances(undefined);
+    setPayEstimate(undefined);
+    setPayLifecycle("idle");
+
     if (!encoded) {
-      setPayRequestId(undefined);
-      setPayBalances(undefined);
-      setPayEstimate(undefined);
-      setPayLifecycle("idle");
       setPayNotice({ tone: "error", text: "Payment QR link is missing request data." });
       return;
     }
 
     try {
-      const decoded = decodeRequestPayload(encoded);
-      setRequests((current) =>
-        upsertRequest(current, mergeScannedRequest(current.find((request) => request.id === decoded.id), decoded))
-      );
-      setPayRequestId(decoded.id);
-      setPayBalances(undefined);
-      setPayEstimate(undefined);
-      setPayLifecycle("idle");
-      setPayNotice({ tone: "info", text: "QR payment request loaded." });
+      const reference = decodeRequestReference(encoded);
+      setPayNotice({ tone: "info", text: "Verifying this payment request with Disburse." });
+      void fetchRemoteQrStatus(reference.id, reference.requestToken)
+        .then((payload) => {
+          if (!isActive) {
+            return;
+          }
+          if (!payload || payload.request.id !== reference.id) {
+            throw new Error(
+              "Disburse could not verify this payment request. Ask the requester for a fresh QR code."
+            );
+          }
+          applyPaySurfacePayload(payload, reference.requestToken);
+          setPayRequestVerified(true);
+          setPayNotice({ tone: "success", text: "Payment request verified with Disburse." });
+        })
+        .catch((error) => {
+          if (!isActive) {
+            return;
+          }
+          setPaySurfaceRequest(undefined);
+          setPaySurfaceReceipt(undefined);
+          setPayRequestVerified(false);
+          setPayNotice({ tone: "error", text: errorToMessage(error) });
+        });
     } catch (error) {
-      setPayRequestId(undefined);
-      setPayBalances(undefined);
-      setPayEstimate(undefined);
-      setPayLifecycle("idle");
       setPayNotice({ tone: "error", text: errorToMessage(error) });
     }
+
+    return () => {
+      isActive = false;
+    };
   }, [page, routeKey]);
 
   useEffect(() => {
@@ -506,7 +564,7 @@ function App() {
     let isActive = true;
     const syncDynamicWallet = async () => {
       if (!dynamicWallet.primaryWallet) {
-        setAccount(undefined);
+        transitionAccount(undefined);
         setChainId(undefined);
         setDirectBalances(undefined);
         setPayBalances(undefined);
@@ -517,7 +575,7 @@ function App() {
 
       const nextAccount = dynamicWallet.getAccount();
       if (!nextAccount) {
-        setAccount(undefined);
+        transitionAccount(undefined);
         setChainId(undefined);
         setWalletNotice({ tone: "error", text: "Dynamic connected wallet is not an EVM wallet." });
         return;
@@ -528,7 +586,7 @@ function App() {
         return;
       }
 
-      setAccount(nextAccount);
+      transitionAccount(nextAccount);
       setChainId(nextChainId);
       setDirectBalances(undefined);
       setPayBalances(undefined);
@@ -541,7 +599,7 @@ function App() {
     return () => {
       isActive = false;
     };
-  }, [dynamicWallet.enabled, dynamicWallet.primaryWallet]);
+  }, [dynamicWallet, transitionAccount]);
 
   useEffect(() => {
     if (dynamicWallet.enabled) {
@@ -554,7 +612,7 @@ function App() {
 
     const handleAccounts = (value: unknown) => {
       const accounts = value as string[];
-      setAccount(accounts?.[0] ? validateRecipient(accounts[0]) : undefined);
+      transitionAccount(accounts?.[0] ? validateRecipient(accounts[0]) : undefined);
       setDirectBalances(undefined);
       setPayBalances(undefined);
       setDirectEstimate(undefined);
@@ -576,14 +634,66 @@ function App() {
       provider.removeListener?.("accountsChanged", handleAccounts);
       provider.removeListener?.("chainChanged", handleChain);
     };
-  }, [dynamicWallet.enabled]);
+  }, [dynamicWallet.enabled, transitionAccount]);
 
   useEffect(() => {
+    let isActive = true;
+    clearHistoryAuthorization();
+
+    // Ledger state is deliberately memory-only and keyed by the active wallet.
+    // Clear synchronously before any fetch so account B never renders account
+    // A's history while its signed Supabase snapshot is loading.
+    setRequests([]);
+    setReceipts([]);
+    setSelectedId(undefined);
+    const accountPending = account ? pendingDirectByOwnerRef.current.get(account.toLowerCase()) : undefined;
+    setPendingDirect(accountPending);
+    setDirectHash(accountPending?.hash);
+    setDirectForm(emptyDirectForm);
+    setQrForm({ ...emptyQrForm, recipient: account ?? "", invoiceDate: todayInputValue() });
+    setDirectNotice(undefined);
+    setQrNotice(undefined);
+    setShareUrl("");
+    setQrDataUrl("");
+
     if (!account) {
-      return;
+      return () => {
+        isActive = false;
+      };
     }
-    setQrForm((current) => (current.recipient ? current : { ...current, recipient: account }));
-  }, [account]);
+    const historyOwner = account;
+
+    const loadHistory = async () => {
+      const provider = await getWalletProvider();
+      if (!provider || !isActive || !isCurrentWalletAccount(activeAccountRef.current, historyOwner)) {
+        return;
+      }
+      try {
+        const history = await fetchWalletHistory(provider, historyOwner);
+        if (!isActive || !isCurrentWalletAccount(activeAccountRef.current, historyOwner)) {
+          return;
+        }
+        setRequests(history.requests);
+        setReceipts(history.receipts);
+        setSelectedId(history.requests[0]?.id);
+        if (history.hasMore) {
+          setWalletNotice({
+            tone: "info",
+            text: "Showing the newest 200 account-scoped payment records. Export a statement for a complete accounting range."
+          });
+        }
+      } catch (error) {
+        if (isActive && isCurrentWalletAccount(activeAccountRef.current, historyOwner)) {
+          setWalletNotice({ tone: "error", text: errorToMessage(error) });
+        }
+      }
+    };
+
+    void loadHistory();
+    return () => {
+      isActive = false;
+    };
+  }, [account, getWalletProvider]);
 
   useEffect(() => {
     let isActive = true;
@@ -611,22 +721,52 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
     if (!account) {
-      return;
+      return () => {
+        isActive = false;
+      };
     }
-    if (page === "payments" && hasTransferInput(directForm)) {
-      if (wrongChain) {
-        return;
+
+    const balanceOwner = account;
+    if (page === "payments" && directForm.recipient.trim() && directForm.amount.trim() && !wrongChain) {
+      try {
+        const transfer = buildTokenTransfer(directForm);
+        void readBalances(balanceOwner, transfer)
+          .then((balances) => {
+            if (isActive && activeAccountRef.current === balanceOwner) {
+              setDirectBalances(balances);
+            }
+          })
+          .catch((error) => {
+            if (isActive && activeAccountRef.current === balanceOwner) {
+              setDirectNotice({ tone: "error", text: errorToMessage(error) });
+            }
+          });
+      } catch (error) {
+        setDirectNotice({ tone: "error", text: errorToMessage(error) });
       }
-      void refreshDirectBalances();
     }
-    if (page === "pay" && payRequest) {
-      if (payWrongChain) {
-        return;
-      }
-      void refreshPayBalances(payRequest);
+
+    if (page === "pay" && payRequest && payRequestVerified && !payWrongChain) {
+      const request = payRequest;
+      void readBalances(balanceOwner, request)
+        .then((balances) => {
+          if (isActive && activeAccountRef.current === balanceOwner) {
+            setPayBalances(balances);
+          }
+        })
+        .catch((error) => {
+          if (isActive && activeAccountRef.current === balanceOwner) {
+            setPayNotice({ tone: "error", text: errorToMessage(error) });
+          }
+        });
     }
-  }, [account, wrongChain, payWrongChain, page, payRequest?.id, payRequest?.token, payRequest?.amount]);
+
+    return () => {
+      isActive = false;
+    };
+  }, [account, directForm, wrongChain, payWrongChain, page, payRequestVerified, payRequest]);
 
   async function handleConnectWallet() {
     if (dynamicWallet.enabled && !dynamicWallet.sdkHasLoaded) {
@@ -656,7 +796,7 @@ function App() {
     try {
       const nextAccount = await connectWallet(provider);
       const nextChainId = await getWalletChainId(provider);
-      setAccount(nextAccount);
+      transitionAccount(nextAccount);
       setChainId(nextChainId);
       setWalletNotice({ tone: "success", text: "Wallet connected." });
     } catch (error) {
@@ -667,6 +807,7 @@ function App() {
   }
 
   async function handleDisconnectWallet() {
+    const disconnectedAccount = account;
     try {
       if (dynamicWallet.enabled) {
         await dynamicWallet.disconnect();
@@ -675,7 +816,10 @@ function App() {
       setWalletNotice({ tone: "error", text: errorToMessage(error) });
       return;
     }
-    setAccount(undefined);
+    if (disconnectedAccount) {
+      clearHistoryAuthorization(disconnectedAccount);
+    }
+    transitionAccount(undefined);
     setChainId(undefined);
     setWalletNotice({ tone: "info", text: "Wallet disconnected." });
   }
@@ -717,12 +861,17 @@ function App() {
       return;
     }
 
+    const estimateOwner = account;
     setIsEstimatingDirect(true);
-    setDirectNotice({ tone: "info", text: directUsesGateway ? "Checking Disburse balance." : "Estimating direct transfer." });
+    setDirectNotice({
+      tone: "info",
+      text: directUsesGateway ? "Checking Disburse balance." : "Estimating direct transfer."
+    });
 
     try {
       if (directUsesGateway) {
         await resolveGatewayRecipient(directForm);
+        if (!isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) return;
         setDirectEstimate(undefined);
         setDirectNotice({
           tone: "success",
@@ -731,18 +880,115 @@ function App() {
         return;
       }
       const transfer = buildTokenTransfer(directForm);
-      const nextEstimate = await estimatePayment(account, transfer);
+      const nextEstimate = await estimatePayment(estimateOwner, transfer);
+      if (!isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) return;
       setDirectEstimate(nextEstimate);
       await refreshDirectBalances(transfer);
-      setDirectNotice({ tone: "success", text: "Estimate ready." });
+      if (isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) {
+        setDirectNotice({ tone: "success", text: "Estimate ready." });
+      }
     } catch (error) {
-      setDirectNotice({ tone: "error", text: errorToMessage(error) });
+      if (isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) {
+        setDirectNotice({ tone: "error", text: errorToMessage(error) });
+      }
     } finally {
       setIsEstimatingDirect(false);
     }
   }
 
+  function rememberPendingDirect(
+    next: PendingDirectTransfer | undefined,
+    owner = next?.owner ?? pendingDirect?.owner ?? account
+  ) {
+    if (!owner) return;
+    const ownerKey = owner.toLowerCase();
+    if (next) {
+      pendingDirectByOwnerRef.current.set(ownerKey, next);
+    } else {
+      pendingDirectByOwnerRef.current.delete(ownerKey);
+    }
+    if (isCurrentWalletAccount(activeAccountRef.current, owner)) {
+      setPendingDirect(next);
+      setDirectHash(next?.hash);
+    }
+  }
+
+  async function settlePendingDirect(pending: PendingDirectTransfer) {
+    if (!account || pending.owner.toLowerCase() !== account.toLowerCase()) {
+      throw new Error(
+        "This recovery journal belongs to a different wallet. Switch back to that wallet before verifying it."
+      );
+    }
+    await waitForConfirmedTokenTransfer(pending.hash, pending.transfer, pending.expectedFrom);
+    if (activeAccountRef.current?.toLowerCase() !== pending.owner.toLowerCase()) {
+      throw new Error(
+        "Wallet changed while verification was running. Switch back to the submitting wallet and retry Verify; do not resend."
+      );
+    }
+    const provider = await getWalletProvider();
+    if (!provider) {
+      throw new Error("The transfer is confirmed, but its wallet is unavailable for server registration.");
+    }
+    await assertProviderAccount(provider, pending.owner);
+    const { request, receipt } = await registerDirectPayment(provider, pending.owner, {
+      txHash: pending.hash,
+      rail: pending.gatewayHandle ? "gateway" : "direct",
+      token: pending.transfer.token,
+      recipient: pending.transfer.recipient,
+      amount: pending.transfer.amount,
+      label: pending.label,
+      note: pending.note,
+      invoiceDate: pending.invoiceDate
+    });
+    if (activeAccountRef.current?.toLowerCase() !== pending.owner.toLowerCase()) {
+      return;
+    }
+    setRequests((current) => upsertRequest(current, request));
+    setReceipts((current) => upsertReceipt(current, receipt));
+    setBalanceRefreshKey((current) => current + 1);
+    rememberPendingDirect(undefined, pending.owner);
+    setDirectForm(emptyDirectForm);
+    setDirectEstimate(undefined);
+    setDirectBalances(undefined);
+    setDirectNotice({
+      tone: "success",
+      text: pending.gatewayHandle
+        ? `Payment sent to @${pending.gatewayHandle}'s Disburse balance. They can withdraw it to their wallet from Disburse.`
+        : "Direct payment confirmed. Receipt saved to your history."
+    });
+  }
+
+  async function handleReconcileDirect() {
+    if (!pendingDirect) {
+      return;
+    }
+    const reconcileOwner = pendingDirect.owner;
+    setIsReconcilingDirect(true);
+    setDirectNotice({
+      tone: "info",
+      text: "Checking the already-submitted transaction. Do not send another payment."
+    });
+    try {
+      await settlePendingDirect(pendingDirect);
+    } catch (error) {
+      if (!isCurrentWalletAccount(activeAccountRef.current, reconcileOwner)) return;
+      setDirectNotice({
+        tone: "info",
+        text: `${errorToMessage(error)} The transaction is still journaled. Do not resend; use Verify again after the RPC recovers.`
+      });
+    } finally {
+      setIsReconcilingDirect(false);
+    }
+  }
+
   async function handleDirectSend() {
+    if (pendingDirect) {
+      setDirectNotice({
+        tone: "info",
+        text: "A transaction was already submitted and is awaiting reconciliation. Verify it before starting another payment."
+      });
+      return;
+    }
     const provider = await getWalletProvider();
     if (!provider || !account) {
       setDirectNotice({ tone: "error", text: "Connect a wallet before sending." });
@@ -752,80 +998,96 @@ function App() {
       setDirectNotice({ tone: "error", text: "Switch to Arc Testnet before sending." });
       return;
     }
+    const paymentOwner = account;
 
     setIsSendingDirect(true);
     setDirectNotice({ tone: "info", text: "Preparing direct transfer." });
+    let submitted: PendingDirectTransfer | undefined;
 
     try {
+      await assertProviderAccount(provider, paymentOwner);
+      const metadata = normalizeDirectPaymentMetadata(directForm);
       if (directUsesGateway) {
         const { id, transfer } = await resolveGatewayRecipient(directForm);
-        const gatewayBalance = await fetchGatewayBalance(account);
+        const gatewayBalance = await fetchGatewayBalance(paymentOwner);
         const amount = parseTokenAmount(transfer.amount, "USDC");
         if (gatewayBalance.available < amount) {
           throw new Error("Insufficient Disburse balance. Deposit USDC before sending to a Disburse ID.");
         }
 
-        setDirectNotice({ tone: "info", text: `Sending to @${id.handle}'s Disburse balance. Approve the Gateway transfer in your wallet.` });
-        const { mintHash } = await transferViaGateway(provider, account, {
+        setDirectNotice({
+          tone: "info",
+          text: `Sending to @${id.handle}'s Disburse balance. Approve the Gateway transfer in your wallet.`
+        });
+        if (!isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+          throw new Error("The connected wallet changed. Review the payment again.");
+        }
+        await assertProviderAccount(provider, paymentOwner);
+        const { mintHash } = await transferViaGateway(provider, paymentOwner, {
           recipient: transfer.recipient,
           amount
         });
-        setDirectHash(mintHash);
-        const txReceipt = await waitForTransactionConfirmation(mintHash);
-        const { request, receipt } = buildDirectSendRecord({
+        submitted = {
+          owner: paymentOwner,
+          hash: mintHash,
           transfer,
-          payer: account,
-          txHash: mintHash,
-          blockNumber: txReceipt.blockNumber.toString(),
-          label: directForm.label,
-          note: directForm.note
-        });
-        setRequests((current) => upsertRequest(current, request));
-        setReceipts((current) => upsertReceipt(current, receipt));
-        setBalanceRefreshKey((current) => current + 1);
-        setDirectNotice({
-          tone: "success",
-          text: `Payment sent to @${id.handle}'s Disburse balance. They can withdraw it to their wallet from Disburse.`
-        });
+          expectedFrom: zeroAddress,
+          label: metadata.label,
+          note: metadata.note,
+          invoiceDate: metadata.invoiceDate,
+          gatewayHandle: id.handle,
+          submittedAt: new Date().toISOString()
+        };
+        rememberPendingDirect(submitted);
+        if (isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+          setDirectNotice({ tone: "info", text: "Transaction submitted. Waiting for confirmation." });
+        }
+        await settlePendingDirect(submitted);
         return;
       }
 
       const transfer = buildTokenTransfer(directForm);
-      const balances = await readBalances(account, transfer);
+      const balances = await readBalances(paymentOwner, transfer);
       setDirectBalances(balances);
       ensureTokenBalance(balances, transfer);
 
       let transferEstimate = directEstimate;
       if (!transferEstimate) {
         setDirectNotice({ tone: "info", text: "Estimating direct transfer." });
-        transferEstimate = await estimatePayment(account, transfer);
+        transferEstimate = await estimatePayment(paymentOwner, transfer);
         setDirectEstimate(transferEstimate);
       }
       ensureGasBalance(balances, transfer, transferEstimate);
 
       setDirectNotice({ tone: "info", text: "Open your wallet and approve the transfer." });
-      const hash = await submitTokenTransfer(provider, account, transfer);
-      setDirectHash(hash);
-      setDirectNotice({ tone: "info", text: "Transaction submitted. Waiting for confirmation." });
-
-      try {
-        const txReceipt = await waitForTransactionConfirmation(hash);
-        const { request, receipt } = buildDirectSendRecord({
-          transfer,
-          payer: account,
-          txHash: hash,
-          blockNumber: txReceipt.blockNumber.toString(),
-          label: directForm.label,
-          note: directForm.note
-        });
-        setRequests((current) => upsertRequest(current, request));
-        setReceipts((current) => upsertReceipt(current, receipt));
-        setDirectNotice({ tone: "success", text: "Direct payment confirmed. Receipt saved to your history." });
-      } catch (error) {
-        setDirectNotice({ tone: "info", text: errorToMessage(error) });
+      if (!isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+        throw new Error("The connected wallet changed. Review the payment again.");
       }
+      await assertProviderAccount(provider, paymentOwner);
+      const hash = await submitTokenTransfer(provider, paymentOwner, transfer);
+      submitted = {
+        owner: paymentOwner,
+        hash,
+        transfer,
+        expectedFrom: paymentOwner,
+        label: metadata.label,
+        note: metadata.note,
+        invoiceDate: metadata.invoiceDate,
+        submittedAt: new Date().toISOString()
+      };
+      rememberPendingDirect(submitted);
+      if (isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+        setDirectNotice({ tone: "info", text: "Transaction submitted. Waiting for confirmation." });
+      }
+      await settlePendingDirect(submitted);
     } catch (error) {
-      setDirectNotice({ tone: "error", text: errorToMessage(error) });
+      if (!isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) return;
+      setDirectNotice({
+        tone: submitted ? "info" : "error",
+        text: submitted
+          ? `${errorToMessage(error)} The transaction was submitted and journaled. Do not resend; use Verify to reconcile it.`
+          : errorToMessage(error)
+      });
     } finally {
       setIsSendingDirect(false);
     }
@@ -833,23 +1095,85 @@ function App() {
 
   async function handleCreateQrRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const requestOwner = account;
     setIsCreatingQr(true);
     setQrNotice(undefined);
 
     try {
       const notify = qrForm.notify.trim() ? handleFromInput(qrForm.notify) : undefined;
-      const remote = await createRemoteQrRequest({ ...qrForm, notify });
-      const request = remote?.request ?? (await createLocalQrRequest(qrForm));
+      if (!requestOwner) {
+        throw new Error("Connect the recipient wallet before creating a QR request.");
+      }
+      const provider = await getWalletProvider();
+      if (!provider) {
+        throw new Error("A wallet is required to authorize QR creation.");
+      }
+      const recipient = validateRecipient(qrForm.recipient);
+      if (recipient.toLowerCase() !== requestOwner.toLowerCase()) {
+        throw new Error("Connect the recipient wallet before creating this QR request.");
+      }
+      const expiresAt = BigInt(Math.floor(Date.now() / 1_000) + PAYMENT_REQUEST_AUTH_TTL_SECONDS - 30);
+      const typedData = buildPaymentRequestAuthorizationTypedData({
+        wallet: requestOwner,
+        notify: notify ?? "",
+        recipient,
+        token: "USDC",
+        amount: formatTokenAmount(parseTokenAmount(qrForm.amount, "USDC"), "USDC"),
+        label: normalizeLabel(qrForm.label),
+        note: normalizeNote(qrForm.note),
+        invoiceDate: normalizeInvoiceDate(qrForm.invoiceDate),
+        expiresAt
+      });
+      const walletTypedData = {
+        ...typedData,
+        types: {
+          EIP712Domain: DISBURSE_EIP712_DOMAIN_TYPES,
+          ...typedData.types
+        }
+      };
+      setQrNotice({ tone: "info", text: "Authorize this verified QR request in your wallet." });
+      await assertProviderAccount(provider, requestOwner);
+      const signature = await provider.request({
+        method: "eth_signTypedData_v4",
+        params: [
+          requestOwner,
+          JSON.stringify(walletTypedData, (_key, value) =>
+            typeof value === "bigint" ? value.toString() : value
+          )
+        ]
+      });
+      if (typeof signature !== "string" || !/^0x(?:[a-fA-F0-9]{2}){64,2048}$/.test(signature)) {
+        throw new Error("Wallet did not return a valid payment-request authorization.");
+      }
+      const notificationAuthorization = {
+        wallet: requestOwner,
+        expiresAt: expiresAt.toString(),
+        signature: signature as `0x${string}`
+      };
+      const remote = await createRemoteQrRequest({ ...qrForm, notify, ...notificationAuthorization });
+      if (!remote) {
+        throw new Error(
+          "Disburse could not create a server-verified QR request. Try again when the service is available."
+        );
+      }
+      const request: PaymentRequest = {
+        ...remote.request,
+        requestToken: remote.requestToken
+      };
+
+      if (!isCurrentWalletAccount(activeAccountRef.current, requestOwner)) {
+        throw new Error(
+          "The wallet changed after this request was created. Switch back to the recipient wallet to view it in history."
+        );
+      }
 
       setRequests((current) => upsertRequest(current, request));
       setSelectedId(request.id);
       setQrNotice({
         tone: "success",
-        text: remote
-          ? remote.notified
-            ? `QR payment request generated and synced. @${remote.notified} was notified in their inbox.`
-            : "QR payment request generated and synced."
-          : "QR payment request generated."
+        text: remote.notified
+          ? `QR payment request generated and synced. @${remote.notified} was notified in their inbox.`
+          : "QR payment request generated and synced."
       });
       setQrForm((current) => ({
         ...emptyQrForm,
@@ -858,7 +1182,9 @@ function App() {
         invoiceDate: current.invoiceDate
       }));
     } catch (error) {
-      setQrNotice({ tone: "error", text: errorToMessage(error) });
+      if (!requestOwner || isCurrentWalletAccount(activeAccountRef.current, requestOwner)) {
+        setQrNotice({ tone: "error", text: errorToMessage(error) });
+      }
     } finally {
       setIsCreatingQr(false);
     }
@@ -866,7 +1192,7 @@ function App() {
 
   async function handlePayEstimate() {
     const request = payRequest;
-    if (!request || !account) {
+    if (!request || !account || !payRequestVerified || !request.requestToken) {
       setPayNotice({ tone: "error", text: "Connect a wallet and load a QR request." });
       return;
     }
@@ -875,20 +1201,29 @@ function App() {
       return;
     }
     if (!isPaymentPayable(request)) {
-      setPayNotice({ tone: "error", text: "This QR payment request expired. Ask the requester for a fresh QR code." });
+      setPayNotice({
+        tone: "error",
+        text: "This QR payment request expired. Ask the requester for a fresh QR code."
+      });
       return;
     }
 
+    const estimateOwner = account;
     setIsEstimatingPay(true);
     setPayNotice({ tone: "info", text: "Estimating QR payment." });
 
     try {
-      const nextEstimate = await estimatePayment(account, request);
+      const nextEstimate = await estimatePayment(estimateOwner, request);
+      if (!isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) return;
       setPayEstimate(nextEstimate);
       await refreshPayBalances(request);
-      setPayNotice({ tone: "success", text: "Estimate ready." });
+      if (isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) {
+        setPayNotice({ tone: "success", text: "Estimate ready." });
+      }
     } catch (error) {
-      setPayNotice({ tone: "error", text: errorToMessage(error) });
+      if (isCurrentWalletAccount(activeAccountRef.current, estimateOwner)) {
+        setPayNotice({ tone: "error", text: errorToMessage(error) });
+      }
     } finally {
       setIsEstimatingPay(false);
     }
@@ -897,7 +1232,7 @@ function App() {
   async function handlePayQrRequest() {
     const provider = await getWalletProvider();
     const request = payRequest;
-    if (!request || !provider || !account) {
+    if (!request || !provider || !account || !payRequestVerified || !request.requestToken) {
       setPayNotice({ tone: "error", text: "Connect a wallet and load a QR request." });
       return;
     }
@@ -905,92 +1240,125 @@ function App() {
       setPayNotice({ tone: "error", text: "Switch to Arc Testnet before paying." });
       return;
     }
-
-    const attemptStartedAt = new Date();
-    if (!isPaymentPayable(request, attemptStartedAt)) {
-      setPayNotice({ tone: "error", text: "This QR payment request expired. Ask the requester for a fresh QR code." });
-      return;
-    }
+    const paymentOwner = account;
 
     setIsPayingQr(true);
     setPayLifecycle("preparing");
-    setPayNotice({ tone: "info", text: "Preparing QR payment." });
+    setPayNotice({ tone: "info", text: "Re-checking the canonical payment request." });
 
     try {
-      const balances = await readBalances(account, request);
+      await assertProviderAccount(provider, paymentOwner);
+      const canonicalPayload = await fetchRemoteQrStatus(request.id, request.requestToken);
+      if (!canonicalPayload || canonicalPayload.request.id !== request.id) {
+        throw new Error("Disburse could not re-verify this request. No transaction was sent.");
+      }
+      const canonicalRequest: PaymentRequest = {
+        ...canonicalPayload.request,
+        requestToken: request.requestToken
+      };
+      if (!hasSameRequestPayload(request, canonicalRequest)) {
+        applyPaySurfacePayload(canonicalPayload, request.requestToken);
+        throw new Error("The canonical payment details changed. Review them before approving a payment.");
+      }
+
+      const attemptStartedAt = new Date();
+      if (!isPaymentPayable(canonicalRequest, attemptStartedAt)) {
+        throw new Error("This QR payment request expired or closed. Ask the requester for a fresh QR code.");
+      }
+
+      const balances = await readBalances(paymentOwner, canonicalRequest);
       setPayBalances(balances);
-      ensureTokenBalance(balances, request);
+      ensureTokenBalance(balances, canonicalRequest);
 
       let transferEstimate = payEstimate;
       if (!transferEstimate) {
         setPayNotice({ tone: "info", text: "Estimating QR payment." });
-        transferEstimate = await estimatePayment(account, request);
+        transferEstimate = await estimatePayment(paymentOwner, canonicalRequest);
         setPayEstimate(transferEstimate);
       }
-      ensureGasBalance(balances, request, transferEstimate);
+      ensureGasBalance(balances, canonicalRequest, transferEstimate);
+
+      setPayLifecycle("awaiting_wallet");
+      setPayNotice({
+        tone: "info",
+        text: "Authorize the verified invoice in your wallet, then approve the transfer."
+      });
+      if (!isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+        throw new Error("The connected wallet changed. Review the payment again.");
+      }
+      await assertProviderAccount(provider, paymentOwner);
+      const paymentAuthorization = await requestQrPaymentAuthorization(
+        provider,
+        paymentOwner,
+        canonicalRequest
+      );
 
       const requestWithAttempt: PaymentRequest = {
-        ...request,
+        ...canonicalRequest,
+        paymentAuthorization,
         submittedAt: attemptStartedAt.toISOString()
       };
-      setPayLifecycle("awaiting_wallet");
       setPayNotice({ tone: "info", text: "Open your wallet and approve the payment." });
 
-      const hash = await submitPayment(provider, account, requestWithAttempt);
+      if (!isCurrentWalletAccount(activeAccountRef.current, paymentOwner)) {
+        throw new Error("The connected wallet changed. Review the payment again.");
+      }
+      await assertProviderAccount(provider, paymentOwner);
+      const hash = await submitPayment(provider, paymentOwner, requestWithAttempt);
       setPayLifecycle("submitted");
       setPayNotice({ tone: "info", text: "Transaction submitted. Verifying receipt." });
 
       let requestWithHash: PaymentRequest = { ...requestWithAttempt, txHash: hash };
       try {
-        const submission = await recordRemoteQrSubmission(request.id, hash, requestWithAttempt.submittedAt);
+        const submission = await recordRemoteQrSubmission(
+          request.id,
+          request.requestToken,
+          hash,
+          paymentAuthorization,
+          paymentOwner,
+          requestWithAttempt.submittedAt
+        );
         if (submission?.request) {
-          requestWithHash = submission.request;
+          requestWithHash = {
+            ...submission.request,
+            requestToken: request.requestToken,
+            paymentAuthorization,
+            txHash: hash
+          };
         }
       } catch (error) {
         setPayNotice({ tone: "info", text: `Transaction submitted. ${errorToMessage(error)}` });
       }
-      setRequests((current) => upsertRequest(current, requestWithHash));
+      setPaySurfaceRequest(requestWithHash);
 
       setPayLifecycle("confirming");
       try {
-        await waitForTransactionConfirmation(hash);
-      } catch (error) {
-        setPayLifecycle("submitted");
-        setPayNotice({ tone: "info", text: errorToMessage(error) });
-        return;
-      }
-
-      const remoteConfirmation = await confirmRemoteQrPayment(request.id, hash).catch((error) => {
-        setPayNotice({ tone: "info", text: errorToMessage(error) });
-        return undefined;
-      });
-      if (remoteConfirmation) {
-        applyQrStatusPayload(remoteConfirmation, setRequests, setReceipts);
-        setPayLifecycle(remoteConfirmationToLifecycle(remoteConfirmation));
-        setPayNotice(remoteConfirmationToNotice(remoteConfirmation));
-      } else {
-        const result = await verifyPayment(requestWithHash);
-        if (result.status === "paid") {
-          const paidRequest: PaymentRequest = { ...requestWithHash, status: "paid" };
-          setRequests((current) => upsertRequest(current, paidRequest));
-          setReceipts((current) => upsertReceipt(current, result.receipt));
-          setPayLifecycle("verified");
-          setPayNotice({
-            tone: "success",
-            text: "Payment confirmed. Invoice is ready."
-          });
+        await waitForConfirmedTokenTransfer(hash, canonicalRequest, paymentOwner);
+        const remoteConfirmation = await confirmRemoteQrPayment(
+          request.id,
+          request.requestToken,
+          hash,
+          paymentAuthorization
+        ).catch((error) => {
+          setPayNotice({ tone: "info", text: errorToMessage(error) });
+          return undefined;
+        });
+        if (remoteConfirmation) {
+          applyPaySurfacePayload(remoteConfirmation, request.requestToken, paymentAuthorization);
+          setPayLifecycle(remoteConfirmationToLifecycle(remoteConfirmation));
+          setPayNotice(remoteConfirmationToNotice(remoteConfirmation));
         } else {
-          const failedRequest: PaymentRequest = { ...requestWithHash, status: "failed" };
-          setRequests((current) => upsertRequest(current, failedRequest));
-          setPayLifecycle("failed");
+          setPaySurfaceRequest({ ...requestWithHash, status: "open" });
+          setPayLifecycle("submitted");
           setPayNotice({
-            tone: "error",
-            text:
-              result.status === "possible_match"
-                ? "A transfer reached the requester, but the amount does not match."
-                : result.message
+            tone: "info",
+            text: "The transfer was observed on chain, but Disburse confirmation is pending. Use Verify to retry."
           });
         }
+      } catch (error) {
+        setPayLifecycle("submitted");
+        setPayNotice({ tone: "error", text: errorToMessage(error) });
+        return;
       }
     } catch (error) {
       setPayLifecycle("failed");
@@ -1010,36 +1378,52 @@ function App() {
     setPayNotice({ tone: "info", text: "Scanning Arc Testnet logs." });
 
     try {
-      const remoteConfirmation = request.txHash
-        ? await confirmRemoteQrPayment(request.id, request.txHash).catch(() => undefined)
-        : undefined;
-      if (remoteConfirmation) {
-        applyQrStatusPayload(remoteConfirmation, setRequests, setReceipts);
-        setPayLifecycle(remoteConfirmationToLifecycle(remoteConfirmation));
-        setPayNotice(remoteConfirmationToNotice(remoteConfirmation));
-      } else {
-        const result = await verifyPayment(request);
-        if (result.status === "paid") {
-          const paidRequest: PaymentRequest = { ...request, status: "paid", txHash: result.receipt.txHash };
-          setRequests((current) => upsertRequest(current, paidRequest));
-          setReceipts((current) => upsertReceipt(current, result.receipt));
-          setPayLifecycle("verified");
-          setPayNotice({
-            tone: "success",
-            text: result.message
-          });
-        } else {
-          const failedStatus = result.status === "possible_match" ? "failed" : result.status;
-          setRequests((current) => upsertRequest(current, { ...request, status: failedStatus }));
-          setPayLifecycle("failed");
-          setPayNotice({
-            tone: failedStatus === "failed" ? "error" : "info",
-            text:
-              result.status === "possible_match"
-                ? "A transfer reached the requester, but the amount does not match."
-                : result.message
-          });
+      let paymentAuthorization = request.paymentAuthorization;
+      if (request.txHash && request.requestToken && !paymentAuthorization && account) {
+        const provider = await getWalletProvider();
+        if (provider) {
+          await assertProviderAccount(provider, account);
+          paymentAuthorization = await requestQrPaymentAuthorization(provider, account, request);
+          setPaySurfaceRequest({ ...request, paymentAuthorization });
         }
+      }
+      let remoteConfirmationError: string | undefined;
+      let remotePayload: QrStatusPayload | undefined =
+        request.txHash && request.requestToken && paymentAuthorization
+          ? await confirmRemoteQrPayment(
+              request.id,
+              request.requestToken,
+              request.txHash,
+              paymentAuthorization
+            ).catch((error) => {
+              remoteConfirmationError = errorToMessage(error);
+              return undefined;
+            })
+          : undefined;
+      if (!remotePayload && request.requestToken) {
+        remotePayload = await fetchRemoteQrStatus(request.id, request.requestToken).catch((error) => {
+          remoteConfirmationError ??= errorToMessage(error);
+          return undefined;
+        });
+      }
+      if (remotePayload && request.requestToken) {
+        applyPaySurfacePayload(remotePayload, request.requestToken, paymentAuthorization);
+        setPayLifecycle(qrStatusPayloadToLifecycle(remotePayload));
+        setPayNotice(qrStatusPayloadToNotice(remotePayload));
+      } else if (request.requestToken) {
+        setPayLifecycle(request.txHash ? "submitted" : "preparing");
+        setPayNotice({
+          tone: "info",
+          text:
+            remoteConfirmationError ??
+            "Disburse confirmation is still pending. No paid receipt was created; retry Verify shortly."
+        });
+      } else {
+        setPayLifecycle("failed");
+        setPayNotice({
+          tone: "error",
+          text: "This saved record has no server verification capability and cannot be marked paid. Create a fresh verified QR request."
+        });
       }
     } catch (error) {
       setPayLifecycle("failed");
@@ -1074,6 +1458,11 @@ function App() {
     try {
       const attestation = await createSettlementAttestation(request, receipt);
       setPayAttestation(attestation);
+      setPaySurfaceReceipt((current) =>
+        current?.requestId === receipt.requestId
+          ? { ...current, attestationUid: attestation.uid, attestationFingerprint: attestation.fingerprint }
+          : current
+      );
       setReceipts((current) =>
         current.map((r) =>
           r.requestId === receipt.requestId
@@ -1081,7 +1470,10 @@ function App() {
             : r
         )
       );
-      setPayNotice({ tone: "success", text: `Settlement attested. VSR: ${attestation.uid}` });
+      setPayNotice({
+        tone: "success",
+        text: `Local receipt fingerprint created. It is not an issuer signature. VSR: ${attestation.uid}`
+      });
       return attestation;
     } catch (error) {
       setPayNotice({ tone: "error", text: errorToMessage(error) });
@@ -1112,10 +1504,16 @@ function App() {
     if (!account) {
       return;
     }
+    const balanceOwner = account;
     try {
-      setDirectBalances(await readBalances(account, transfer));
+      const balances = await readBalances(balanceOwner, transfer);
+      if (activeAccountRef.current === balanceOwner) {
+        setDirectBalances(balances);
+      }
     } catch (error) {
-      setDirectNotice({ tone: "error", text: errorToMessage(error) });
+      if (activeAccountRef.current === balanceOwner) {
+        setDirectNotice({ tone: "error", text: errorToMessage(error) });
+      }
     }
   }
 
@@ -1123,10 +1521,16 @@ function App() {
     if (!account || !request) {
       return;
     }
+    const balanceOwner = account;
     try {
-      setPayBalances(await readBalances(account, request));
+      const balances = await readBalances(balanceOwner, request);
+      if (activeAccountRef.current === balanceOwner) {
+        setPayBalances(balances);
+      }
     } catch (error) {
-      setPayNotice({ tone: "error", text: errorToMessage(error) });
+      if (activeAccountRef.current === balanceOwner) {
+        setPayNotice({ tone: "error", text: errorToMessage(error) });
+      }
     }
   }
 
@@ -1151,43 +1555,6 @@ function App() {
     link.download = "disburse-qr-payments-export.json";
     link.click();
     URL.revokeObjectURL(url);
-  }
-
-  async function handleImport(file: File | undefined) {
-    if (!file) {
-      return;
-    }
-
-    try {
-      const bundle = parseExportBundle(await file.text());
-      setRequests((current) => {
-        const merged = [...current];
-        for (const request of bundle.requests) {
-          const index = merged.findIndex((item) => item.id === request.id);
-          if (index === -1) {
-            merged.push(request);
-          } else {
-            merged[index] = request;
-          }
-        }
-        return merged;
-      });
-      setReceipts((current) => {
-        const merged = [...current];
-        for (const receipt of bundle.receipts) {
-          const index = merged.findIndex((item) => item.txHash === receipt.txHash || item.requestId === receipt.requestId);
-          if (index === -1) {
-            merged.push(receipt);
-          } else {
-            merged[index] = receipt;
-          }
-        }
-        return merged;
-      });
-      setQrNotice({ tone: "success", text: "Import complete." });
-    } catch (error) {
-      setQrNotice({ tone: "error", text: errorToMessage(error) });
-    }
   }
 
   function handleNavigate(event: MouseEvent<HTMLAnchorElement>, target: string) {
@@ -1230,14 +1597,6 @@ function App() {
     onToggleTheme: handleThemeToggle
   };
 
-  if (page === "landing") {
-    return (
-      <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-        <LandingPage />
-      </I18nProvider>
-    );
-  }
-
   // Documentation is rendered by DocsApp on the docs host (mounted standalone
   // in main.tsx, outside the wallet provider). It is never a route in this
   // shell — /docs redirects there before App mounts.
@@ -1259,7 +1618,7 @@ function App() {
             <div className="pay-host-bar-right">
               {account && (
                 <span className="pay-host-wallet" title={account}>
-                  <span className="pay-host-wallet-dot" aria-hidden="true" />
+                  <Wallet size={12} strokeWidth={1.75} aria-hidden="true" />
                   {shortAddress(account)}
                 </span>
               )}
@@ -1269,7 +1628,11 @@ function App() {
                 onClick={handleThemeToggle}
                 aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               >
-                {theme === "dark" ? <Moon size={16} strokeWidth={1.75} /> : <Sun size={16} strokeWidth={1.75} />}
+                {theme === "dark" ? (
+                  <Moon size={16} strokeWidth={1.75} />
+                ) : (
+                  <Sun size={16} strokeWidth={1.75} />
+                )}
               </button>
             </div>
           </header>
@@ -1303,7 +1666,9 @@ function App() {
               onVerify={() => handleVerifyQrRequest(payRequest)}
               onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
               onAttest={() => payRequest && payReceipt && handleCreateAttestation(payRequest, payReceipt)}
-              onSettlementProof={() => payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)}
+              onSettlementProof={() =>
+                payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)
+              }
               onUBLExport={() => payRequest && payReceipt && handleDownloadUBLInvoice(payRequest, payReceipt)}
               attestation={payAttestation}
               onCopy={(value) => copyValue(value, setPayNotice)}
@@ -1318,220 +1683,231 @@ function App() {
   // routeMeta covers only the app-shell pages.
   type AppShellPage = Exclude<Page, "landing" | "docs">;
   const routeMeta: Record<AppShellPage, { title: string; subtitle: string }> = {
-    dashboard:       { title: "Dashboard",      subtitle: "Requests, receipts and network health at a glance." },
-    payments:        { title: "Send",           subtitle: "Pay a wallet address directly on Arc Testnet." },
-    "qr-payments":   { title: "QR",             subtitle: "Create a QR invoice for someone else to scan and pay." },
-    pay:             { title: "Pay request",    subtitle: "Review and settle a QR payment request." },
-    "import-export": { title: "Import · Export", subtitle: "Back up or restore your requests and receipts." },
-    statements:      { title: "Statements",     subtitle: "Generate settlement proof bundles for reconciliation." },
+    dashboard: { title: "Dashboard", subtitle: "Requests, receipts and network health at a glance." },
+    payments: { title: "Send", subtitle: "Pay a wallet address directly on Arc Testnet." },
+    "qr-payments": { title: "QR", subtitle: "Create a QR invoice for someone else to scan and pay." },
+    pay: { title: "Pay request", subtitle: "Review and settle a QR payment request." },
+    "import-export": {
+      title: "Data export",
+      subtitle: "Export the active wallet's server-backed payment records."
+    },
+    statements: { title: "Statements", subtitle: "Generate settlement proof bundles for reconciliation." }
   };
-  const { title: headerTitle, subtitle: headerSubtitle } = routeMeta[page as AppShellPage] ?? routeMeta.dashboard;
+  const { title: headerTitle, subtitle: headerSubtitle } =
+    routeMeta[page as AppShellPage] ?? routeMeta.dashboard;
 
   return (
     <I18nProvider initialLang={appSettings.language} initialCurrency={appSettings.currency}>
-    <div className="flex min-h-screen bg-[var(--shell-frame)] text-[var(--ink)] overflow-x-hidden relative md:h-dvh md:overflow-hidden">
-      {/* Desktop sidebar — hidden on mobile, where the drawer takes over. */}
-      <div className="hidden md:block">
-        <Sidebar
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
-          page={page}
-          onNavigate={handleNavigate}
-          account={account}
-        />
-      </div>
+      <div className="flex min-h-screen bg-[var(--shell-frame)] text-[var(--ink)] overflow-x-hidden relative md:h-dvh md:overflow-hidden">
+        {/* Desktop sidebar — hidden on mobile, where the drawer takes over. */}
+        <div className="hidden md:block">
+          <Sidebar
+            isCollapsed={isSidebarCollapsed}
+            setIsCollapsed={setIsSidebarCollapsed}
+            page={page}
+            onNavigate={handleNavigate}
+            account={account}
+          />
+        </div>
 
-      {/* Mobile nav drawer — slides in from the left on <md viewports. */}
-      <SidePanel
-        open={isNavOpen}
-        onClose={() => setIsNavOpen(false)}
-        side="left"
-        width={280}
-        scrim
-        ariaLabel="Navigation"
-        hideClose
-      >
-        <Sidebar
-          isCollapsed={false}
-          setIsCollapsed={() => {}}
-          page={page}
-          onNavigate={(e, target) => {
-            handleNavigate(e, target);
-            setIsNavOpen(false);
-          }}
-          account={account}
-          inDrawer
-        />
-      </SidePanel>
+        {/* Mobile nav drawer — slides in from the left on <md viewports. */}
+        <SidePanel
+          open={isNavOpen}
+          onClose={() => setIsNavOpen(false)}
+          side="left"
+          width={280}
+          scrim
+          ariaLabel="Navigation"
+          hideClose
+        >
+          <Sidebar
+            isCollapsed={false}
+            setIsCollapsed={() => {}}
+            page={page}
+            onNavigate={(e, target) => {
+              handleNavigate(e, target);
+              setIsNavOpen(false);
+            }}
+            account={account}
+            inDrawer
+          />
+        </SidePanel>
 
-      {/* Content sheet — the Linear/Dynamic pattern: everything except the
+        {/* Content sheet — the Linear/Dynamic pattern: everything except the
           sidebar lives on one rounded bordered surface inset 8px from the
           frame. Mobile keeps the plain full-bleed layout. */}
-      <main className={cn("flex-1 flex flex-col transition-all duration-300 relative z-10 md:py-2 md:pr-2 md:pl-2", isSidebarCollapsed ? "md:ml-[56px]" : "md:ml-[240px]")}>
-        <div className="flex min-h-0 flex-1 flex-col bg-[var(--paper)] md:overflow-hidden md:rounded-xl md:border md:border-[var(--line)]">
-        <Header
-          title={headerTitle}
-          subtitle={headerSubtitle}
-          account={account}
-          chainId={chainId}
-          expectedChainId={commonShellProps.expectedChainId}
-          expectedChainLabel={commonShellProps.expectedChainLabel}
-          isConnecting={isConnecting}
-          onConnect={handleConnectWallet}
-          onDisconnect={handleDisconnectWallet}
-          onSwitch={commonShellProps.onSwitch}
-          onToggleTheme={handleThemeToggle}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onOpenNav={() => setIsNavOpen(true)}
-          onOpenInbox={() => setIsInboxOpen(true)}
-          inboxUnreadCount={inboxUnreadCount}
-          theme={theme}
-        />
-
-        <InboxPanel
-          open={isInboxOpen}
-          onClose={() => setIsInboxOpen(false)}
-          account={account}
-          getProvider={getWalletProvider}
-          onNavigate={navigateTo}
-          onActivity={() => setInboxRefreshKey((key) => key + 1)}
-        />
-
-        <SettingsPanel
-          open={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          theme={theme}
-          onToggleTheme={handleThemeToggle}
-          rpcStatusLabel={rpcStatusLabel}
-          rpcBlockLabel={rpcBlockLabel}
-          rpcHealthy={rpcHealth?.healthy}
-        />
-
-        <DepositPanel
-          open={isDepositOpen}
-          onClose={() => setIsDepositOpen(false)}
-          account={account}
-          chainId={chainId}
-          getProvider={getWalletProvider}
-          onDeposited={() => setBalanceRefreshKey((key) => key + 1)}
-        />
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
-          {page === "dashboard" && (
-            <DashboardPage
-              requests={requests}
-              receipts={receipts}
+        <main
+          className={cn(
+            "min-w-0 flex-1 flex flex-col transition-all duration-300 relative z-10 md:py-2 md:pr-2 md:pl-2",
+            isSidebarCollapsed ? "md:ml-[56px]" : "md:ml-[240px]"
+          )}
+        >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--paper)] md:overflow-hidden md:rounded-xl md:border md:border-[var(--line)]">
+            <Header
+              title={headerTitle}
+              subtitle={headerSubtitle}
               account={account}
-              now={now}
-              onNavigate={navigateTo}
+              chainId={chainId}
+              expectedChainId={commonShellProps.expectedChainId}
+              expectedChainLabel={commonShellProps.expectedChainLabel}
+              isConnecting={isConnecting}
+              onConnect={handleConnectWallet}
+              onDisconnect={handleDisconnectWallet}
+              onSwitch={commonShellProps.onSwitch}
+              onToggleTheme={handleThemeToggle}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onOpenNav={() => setIsNavOpen(true)}
+              onOpenInbox={() => setIsInboxOpen(true)}
+              inboxUnreadCount={inboxUnreadCount}
+              theme={theme}
+            />
+
+            <InboxPanel
+              open={isInboxOpen}
+              onClose={() => setIsInboxOpen(false)}
+              account={account}
               getProvider={getWalletProvider}
-              onDeposit={() => setIsDepositOpen(true)}
-              balanceRefreshKey={balanceRefreshKey}
-            />
-          )}
-          {page === "payments" && (
-            <PaymentsPage
-              account={account}
-              wrongChain={wrongChain}
-              hasWalletProvider={hasWalletProvider}
-              form={directForm}
-              balances={directBalances}
-              estimate={directEstimate}
-              notice={directNotice}
-              walletNotice={walletNotice}
-              hash={directHash}
-              usesGatewayRecipient={directUsesGateway}
-              insufficientToken={directInsufficientToken}
-              missingGas={directMissingGas}
-              isConnecting={isConnecting}
-              isEstimating={isEstimatingDirect}
-              isSending={isSendingDirect}
-              onFormChange={(next) => {
-                setDirectForm(next);
-                setDirectEstimate(undefined);
-                setDirectBalances(undefined);
-                setDirectHash(undefined);
-              }}
-              onConnect={handleConnectWallet}
-              onSwitch={handleSwitchNetwork}
-              onEstimate={handleDirectEstimate}
-              onSend={handleDirectSend}
-              onCopy={(value) => copyValue(value, setDirectNotice)}
               onNavigate={navigateTo}
+              onActivity={() => setInboxRefreshKey((key) => key + 1)}
             />
-          )}
-          {page === "qr-payments" && (
-            <QrPaymentsPage
+
+            <SettingsPanel
+              open={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              theme={theme}
+              onToggleTheme={handleThemeToggle}
+              rpcStatusLabel={rpcStatusLabel}
+              rpcBlockLabel={rpcBlockLabel}
+              rpcHealthy={rpcHealth?.healthy}
+            />
+
+            <DepositPanel
+              open={isDepositOpen}
+              onClose={() => setIsDepositOpen(false)}
               account={account}
-              form={qrForm}
-              selectedRequest={selectedRequest}
-              selectedReceipt={selectedReceipt}
-              requests={requests}
-              receipts={receipts}
-              shareUrl={shareUrl}
-              qrDataUrl={qrDataUrl}
-              notice={qrNotice}
-              now={now}
-              isCreating={isCreatingQr}
-              importInputRef={importInputRef}
-              onFormChange={setQrForm}
-              onSubmit={handleCreateQrRequest}
-              onSelectRequest={handleSelectRequest}
-              onCopy={(value) => copyValue(value, setQrNotice)}
-              onExport={handleExport}
-              onImport={handleImport}
+              chainId={chainId}
+              getProvider={getWalletProvider}
+              onDeposited={() => setBalanceRefreshKey((key) => key + 1)}
             />
-          )}
-          {page === "pay" && (
-            <PayRequestPage
-              account={account}
-              wrongChain={payWrongChain}
-              hasWalletProvider={hasWalletProvider}
-              request={payRequest}
-              receipt={payReceipt}
-              status={payDisplayStatus}
-              balances={payBalances}
-              estimate={payEstimate}
-              notice={payNotice}
-              walletNotice={walletNotice}
-              now={now}
-              isExpired={payIsExpired}
-              isPayable={payIsPayable}
-              insufficientToken={payInsufficientToken}
-              missingGas={payMissingGas}
-              isConnecting={isConnecting}
-              isEstimating={isEstimatingPay}
-              isPaying={isPayingQr}
-              lifecycle={payLifecycle}
-              isVerifying={isVerifying}
-              isGeneratingInvoice={isGeneratingInvoice}
-              onConnect={handleConnectWallet}
-              onSwitch={handleSwitchNetwork}
-              onEstimate={handlePayEstimate}
-              onPay={handlePayQrRequest}
-              onVerify={() => handleVerifyQrRequest(payRequest)}
-              onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
-              onAttest={() => payRequest && payReceipt && handleCreateAttestation(payRequest, payReceipt)}
-              onSettlementProof={() => payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)}
-              onUBLExport={() => payRequest && payReceipt && handleDownloadUBLInvoice(payRequest, payReceipt)}
-              attestation={payAttestation}
-              onCopy={(value) => copyValue(value, setPayNotice)}
-            />
-          )}
-          {page === "import-export" && (
-            <ImportExportPage
-              requests={requests}
-              receipts={receipts}
-              importInputRef={importInputRef}
-              onExport={handleExport}
-              onImport={handleImport}
-            />
-          )}
-          {page === "statements" && <StatementsPage />}
-        </div>
-        </div>
-      </main>
-    </div>
+
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6 relative">
+              {page === "dashboard" && (
+                <DashboardPage
+                  requests={requests}
+                  receipts={receipts}
+                  account={account}
+                  now={now}
+                  onNavigate={navigateTo}
+                  getProvider={getWalletProvider}
+                  onDeposit={() => setIsDepositOpen(true)}
+                  balanceRefreshKey={balanceRefreshKey}
+                />
+              )}
+              {page === "payments" && (
+                <PaymentsPage
+                  account={account}
+                  wrongChain={wrongChain}
+                  hasWalletProvider={hasWalletProvider}
+                  form={directForm}
+                  balances={directBalances}
+                  estimate={directEstimate}
+                  notice={directNotice}
+                  walletNotice={walletNotice}
+                  hash={directHash}
+                  usesGatewayRecipient={directUsesGateway}
+                  insufficientToken={directInsufficientToken}
+                  missingGas={directMissingGas}
+                  isConnecting={isConnecting}
+                  isEstimating={isEstimatingDirect}
+                  isSending={isSendingDirect}
+                  isReconciling={isReconcilingDirect}
+                  hasPendingTransfer={Boolean(pendingDirect)}
+                  onFormChange={(next) => {
+                    setDirectForm(next);
+                    setDirectEstimate(undefined);
+                    setDirectBalances(undefined);
+                    if (!pendingDirect) {
+                      setDirectHash(undefined);
+                    }
+                  }}
+                  onConnect={handleConnectWallet}
+                  onSwitch={handleSwitchNetwork}
+                  onEstimate={handleDirectEstimate}
+                  onSend={handleDirectSend}
+                  onVerify={handleReconcileDirect}
+                  onCopy={(value) => copyValue(value, setDirectNotice)}
+                />
+              )}
+              {page === "qr-payments" && (
+                <QrPaymentsPage
+                  account={account}
+                  form={qrForm}
+                  selectedRequest={selectedRequest}
+                  selectedReceipt={selectedReceipt}
+                  requests={requests}
+                  receipts={receipts}
+                  shareUrl={shareUrl}
+                  qrDataUrl={qrDataUrl}
+                  notice={qrNotice}
+                  now={now}
+                  isCreating={isCreatingQr}
+                  onFormChange={setQrForm}
+                  onSubmit={handleCreateQrRequest}
+                  onSelectRequest={handleSelectRequest}
+                  onCopy={(value) => copyValue(value, setQrNotice)}
+                  onExport={handleExport}
+                />
+              )}
+              {page === "pay" && (
+                <PayRequestPage
+                  account={account}
+                  wrongChain={payWrongChain}
+                  hasWalletProvider={hasWalletProvider}
+                  request={payRequest}
+                  receipt={payReceipt}
+                  status={payDisplayStatus}
+                  balances={payBalances}
+                  estimate={payEstimate}
+                  notice={payNotice}
+                  walletNotice={walletNotice}
+                  now={now}
+                  isExpired={payIsExpired}
+                  isPayable={payIsPayable}
+                  insufficientToken={payInsufficientToken}
+                  missingGas={payMissingGas}
+                  isConnecting={isConnecting}
+                  isEstimating={isEstimatingPay}
+                  isPaying={isPayingQr}
+                  lifecycle={payLifecycle}
+                  isVerifying={isVerifying}
+                  isGeneratingInvoice={isGeneratingInvoice}
+                  onConnect={handleConnectWallet}
+                  onSwitch={handleSwitchNetwork}
+                  onEstimate={handlePayEstimate}
+                  onPay={handlePayQrRequest}
+                  onVerify={() => handleVerifyQrRequest(payRequest)}
+                  onInvoice={() => payRequest && payReceipt && downloadInvoicePdf(payRequest, payReceipt)}
+                  onAttest={() => payRequest && payReceipt && handleCreateAttestation(payRequest, payReceipt)}
+                  onSettlementProof={() =>
+                    payRequest && payReceipt && handleDownloadSettlementProof(payRequest, payReceipt)
+                  }
+                  onUBLExport={() =>
+                    payRequest && payReceipt && handleDownloadUBLInvoice(payRequest, payReceipt)
+                  }
+                  attestation={payAttestation}
+                  onCopy={(value) => copyValue(value, setPayNotice)}
+                />
+              )}
+              {page === "import-export" && (
+                <ImportExportPage requests={requests} receipts={receipts} onExport={handleExport} />
+              )}
+              {page === "statements" && (
+                <StatementsPage account={account} getWalletProvider={getWalletProvider} />
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
     </I18nProvider>
   );
 }
@@ -1552,13 +1928,15 @@ function PaymentsPage({
   isConnecting,
   isEstimating,
   isSending,
+  isReconciling,
+  hasPendingTransfer,
   onFormChange,
   onConnect,
   onSwitch,
   onEstimate,
   onSend,
-  onCopy,
-  onNavigate
+  onVerify,
+  onCopy
 }: {
   account?: `0x${string}`;
   wrongChain: boolean;
@@ -1575,13 +1953,15 @@ function PaymentsPage({
   isConnecting: boolean;
   isEstimating: boolean;
   isSending: boolean;
+  isReconciling: boolean;
+  hasPendingTransfer: boolean;
   onFormChange: (next: DirectFormState) => void;
   onConnect: () => void;
   onSwitch: () => void;
   onEstimate: () => void;
   onSend: () => void;
+  onVerify: () => void;
   onCopy: (value: string) => void;
-  onNavigate: (target: string) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -1593,17 +1973,26 @@ function PaymentsPage({
             <form className="form-stack" onSubmit={(event) => event.preventDefault()}>
               <Field
                 label={t("recipient")}
-                helper={usesGatewayRecipient ? "Disburse ID payments credit the recipient's Disburse balance." : t("recipientHelper")}
+                helper={
+                  usesGatewayRecipient
+                    ? "Disburse ID payments credit the recipient's Disburse balance."
+                    : t("recipientHelper")
+                }
               >
                 <input
                   value={form.recipient}
                   onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
                   placeholder="0x... or @name"
                   spellCheck={false}
+                  disabled={hasPendingTransfer}
                 />
                 <HandleHint
                   value={form.recipient}
-                  onApply={(address) => onFormChange({ ...form, recipient: address })}
+                  onApply={(address) => {
+                    if (!hasPendingTransfer) {
+                      onFormChange({ ...form, recipient: address });
+                    }
+                  }}
                   gatewayRecipient
                 />
               </Field>
@@ -1613,6 +2002,7 @@ function PaymentsPage({
                   <select
                     value={form.token}
                     onChange={(event) => onFormChange({ ...form, token: event.target.value as PaymentToken })}
+                    disabled={hasPendingTransfer}
                   >
                     <option value="USDC">USDC</option>
                     <option value="EURC">EURC</option>
@@ -1624,6 +2014,7 @@ function PaymentsPage({
                     onChange={(event) => onFormChange({ ...form, amount: event.target.value })}
                     inputMode="decimal"
                     placeholder="125.50"
+                    disabled={hasPendingTransfer}
                   />
                 </Field>
               </div>
@@ -1638,10 +2029,12 @@ function PaymentsPage({
                 onSwitch={onSwitch}
               />
 
-              {account && !wrongChain && (
-                usesGatewayRecipient ? (
+              {account &&
+                !wrongChain &&
+                (usesGatewayRecipient ? (
                   <p className="text-sm text-[var(--muted)]">
-                    Send USDC from your Disburse balance. The recipient withdraws it to their wallet from Disburse.
+                    Send USDC from your Disburse balance. The recipient withdraws it to their wallet from
+                    Disburse.
                   </p>
                 ) : (
                   <TransferState
@@ -1651,23 +2044,40 @@ function PaymentsPage({
                     insufficientToken={insufficientToken}
                     missingGas={missingGas}
                   />
-                )
-              )}
+                ))}
 
               <div className="action-row">
                 <button
                   className="secondary-button"
                   type="button"
                   onClick={onEstimate}
-                  disabled={!account || wrongChain || isEstimating}
+                  disabled={!account || wrongChain || isEstimating || hasPendingTransfer}
                 >
                   {isEstimating ? t("estimating") : t("estimate")}
                 </button>
+                {hasPendingTransfer && (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={onVerify}
+                    disabled={isReconciling}
+                  >
+                    {isReconciling ? t("verifying") : "Verify submitted transfer"}
+                  </button>
+                )}
                 <button
                   className="primary-button"
                   type="button"
                   onClick={onSend}
-                  disabled={!account || wrongChain || insufficientToken || missingGas || isSending}
+                  disabled={
+                    !account ||
+                    wrongChain ||
+                    insufficientToken ||
+                    missingGas ||
+                    isSending ||
+                    isReconciling ||
+                    hasPendingTransfer
+                  }
                 >
                   {isSending ? t("sending") : t("sendPayment")}
                 </button>
@@ -1724,7 +2134,7 @@ function StageStrip({ stage, steps }: { stage: number; steps: string[] }) {
             aria-current={ariaCurrent}
             className={cx("stage-step", status || false)}
           >
-            <span className="stage-step-dot" aria-hidden="true">
+            <span className="stage-step-mark" aria-hidden="true">
               {idx < stage ? "✓" : String(idx + 1)}
             </span>
             <div className="stage-step-label">
@@ -1774,7 +2184,7 @@ function LedgerRowCompact({
   onCopy: (value: string) => void;
 }) {
   const { t } = useI18n();
-  const requestUrl = buildShareUrl(request, getPayShareOrigin());
+  const requestUrl = request.requestToken ? buildShareUrl(request, getPayShareOrigin()) : undefined;
   const displayRequest = refreshDerivedStatus(request, now);
 
   return (
@@ -1791,7 +2201,7 @@ function LedgerRowCompact({
         }
       }}
     >
-      <span className={cx("status-dot", displayRequest.status)} aria-hidden="true" />
+      <span className={cx("status-mark", displayRequest.status)} aria-hidden="true" />
       <span className="ledger-row-compact-label">{request.label}</span>
       <span className="ledger-row-compact-amount">
         {request.amount} {request.token}
@@ -1799,16 +2209,20 @@ function LedgerRowCompact({
       <span className="ledger-row-compact-meta">
         {shortAddress(request.recipient)} · {formatInvoiceDate(request.invoiceDate)}
       </span>
-      <div
-        className="ledger-row-compact-actions"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button className="text-button" type="button" onClick={() => onCopy(requestUrl)}>
+      <div className="ledger-row-compact-actions" onClick={(event) => event.stopPropagation()}>
+        <button
+          className="text-button"
+          type="button"
+          disabled={!requestUrl}
+          onClick={() => requestUrl && onCopy(requestUrl)}
+        >
           {t("copy")}
         </button>
-        <a className="text-button" href={requestUrl}>
-          {t("payPage")}
-        </a>
+        {requestUrl && (
+          <a className="text-button" href={requestUrl}>
+            {t("payPage")}
+          </a>
+        )}
         {receipt && (
           <a className="text-button" href={receipt.explorerUrl} target="_blank" rel="noreferrer">
             {t("receipt")}
@@ -1831,13 +2245,11 @@ function QrPaymentsPage({
   notice,
   now,
   isCreating,
-  importInputRef,
   onFormChange,
   onSubmit,
   onSelectRequest,
   onCopy,
-  onExport,
-  onImport
+  onExport
 }: {
   account?: `0x${string}`;
   form: QrFormState;
@@ -1850,212 +2262,152 @@ function QrPaymentsPage({
   notice?: Notice;
   now: Date;
   isCreating: boolean;
-  importInputRef: RefObject<HTMLInputElement | null>;
   onFormChange: (next: QrFormState) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSelectRequest: (request: PaymentRequest) => void;
   onCopy: (value: string) => void;
   onExport: () => void;
-  onImport: (file: File | undefined) => void;
 }) {
   const { t } = useI18n();
   const displayRequest = selectedRequest ? refreshDerivedStatus(selectedRequest, now) : undefined;
   const qrIsFinal = displayRequest ? shouldHideQrForStatus(displayRequest.status) : false;
-  const hasFormInput = Boolean(form.recipient || form.amount || form.label || form.note || form.notify);
 
   return (
     <>
-      <section className="workbench" aria-label={t("generateQr")}>
-        <div className="desk-grid">
-          <section className="desk-pane create-pane" aria-label={t("requestDetails")}>
-            <form className="form-stack" onSubmit={onSubmit}>
-              <Field label={t("recipient")}>
-                <div className="input-row">
-                  <input
-                    value={form.recipient}
-                    onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
-                    placeholder="0x... or @name"
-                    spellCheck={false}
-                  />
-                  <button
-                    className="utility-button"
-                    type="button"
-                    aria-label={t("useConnectedWallet")}
-                    title={t("useConnectedWallet")}
-                    onClick={() => account && onFormChange({ ...form, recipient: account })}
-                    disabled={!account}
-                  >
-                    {t("me")}
-                  </button>
-                </div>
-                <HandleHint
-                  value={form.recipient}
-                  onApply={(address) => onFormChange({ ...form, recipient: address })}
-                />
-              </Field>
-
-              <div className="field-grid">
-                <Field label={t("amount")}>
-                  <input
-                    value={form.amount}
-                    onChange={(event) => onFormChange({ ...form, amount: event.target.value })}
-                    inputMode="decimal"
-                    placeholder="10"
-                  />
-                </Field>
-                <Field label={t("token")}>
-                  <input value="USDC" readOnly aria-readonly="true" />
-                </Field>
-              </div>
-
-              <Field label={t("label")}>
-                <input
-                  value={form.label}
-                  onChange={(event) => onFormChange({ ...form, label: event.target.value })}
-                  placeholder="Invoice 2"
-                />
-              </Field>
-
-              <Field label={t("note")}>
-                <textarea
-                  value={form.note}
-                  onChange={(event) => onFormChange({ ...form, note: event.target.value })}
-                  placeholder="Food and Drink"
-                  rows={3}
-                />
-              </Field>
-
-              <Field label={t("invoiceDate")}>
-                <DateInput
-                  value={form.invoiceDate}
-                  onChange={(iso) => onFormChange({ ...form, invoiceDate: iso })}
-                />
-              </Field>
-
-              <Field label={t("qrNotify")} helper={t("qrNotifyHelper")}>
-                <input
-                  value={form.notify}
-                  onChange={(event) => onFormChange({ ...form, notify: event.target.value })}
-                  placeholder="@name"
-                  spellCheck={false}
-                  maxLength={17}
-                />
-              </Field>
-
-              <button className="primary-button primary-button--lg" type="submit" disabled={isCreating}>
-                {isCreating ? t("generating") : t("generateQr")}
-              </button>
-            </form>
-
-            {notice && <NoticeBar notice={notice} />}
-          </section>
-
-          <section className="desk-pane pay-pane" aria-label={t("qrOutput")}>
-            {displayRequest && shareUrl ? (
-              <>
-                {!(selectedReceipt || displayRequest.txHash) && (
-                  <>
-                    <PaymentPreview
-                      title={displayRequest.label}
-                      note={displayRequest.note ?? t("noNote")}
-                      amount={displayRequest.amount}
-                      token={displayRequest.token}
-                      recipient={displayRequest.recipient}
-                      invoiceDate={displayRequest.invoiceDate}
-                      status={displayRequest.status}
-                    />
-                    {qrIsFinal ? (
-                      <QrFinalState request={displayRequest} receipt={selectedReceipt} />
-                    ) : (
-                      <QrShareCard
-                        request={displayRequest}
-                        qrDataUrl={qrDataUrl || undefined}
-                        shareUrl={shareUrl}
-                        liveStatusLabel={formatQrLiveStatus(displayRequest)}
-                        onCopy={onCopy}
-                        onDownload={
-                          qrDataUrl
-                            ? () => {
-                                const a = document.createElement("a");
-                                a.href = qrDataUrl;
-                                a.download = `${displayRequest.label || "qr"}.png`;
-                                a.click();
-                              }
-                            : undefined
-                        }
-                      />
-                    )}
-                  </>
-                )}
-
-                {selectedReceipt && (
-                  <ReceiptView
-                    data={{
-                      request: displayRequest,
-                      receipt: selectedReceipt,
-                      attestation: selectedReceipt
-                        ? {
-                            uid: selectedReceipt.attestationUid,
-                            fingerprint: selectedReceipt.attestationFingerprint,
-                          }
-                        : undefined,
-                      onCopy,
-                      onCopyFingerprint: onCopy,
-                    }}
-                  >
-                    {selectedReceipt && <ReceiptView.Summary />}
-                    <ReceiptView.Timeline />
-                    {selectedReceipt && <ReceiptView.Proof />}
-                  </ReceiptView>
-                )}
-              </>
-            ) : hasFormInput ? (
-              <PaymentPreview
-                title={form.label || t("requestDetails")}
-                note={form.note || t("noNote")}
-                amount={form.amount || "0"}
-                token={form.token}
-                recipient={form.recipient || ""}
-                invoiceDate={form.invoiceDate}
+      <section className="workbench qr-composer" aria-label={t("generateQr")}>
+        <form className="form-stack qr-composer-form" onSubmit={onSubmit}>
+          <Field label={t("recipient")}>
+            <div className="input-row">
+              <input
+                value={form.recipient}
+                onChange={(event) => onFormChange({ ...form, recipient: event.target.value })}
+                placeholder="0x... or @name"
+                spellCheck={false}
               />
+              <button
+                className="utility-button"
+                type="button"
+                aria-label={t("useConnectedWallet")}
+                title={t("useConnectedWallet")}
+                onClick={() => account && onFormChange({ ...form, recipient: account })}
+                disabled={!account}
+              >
+                {t("me")}
+              </button>
+            </div>
+            <HandleHint
+              value={form.recipient}
+              onApply={(address) => onFormChange({ ...form, recipient: address })}
+            />
+          </Field>
+
+          <Field label={t("amount")}>
+            <div className="amount-input">
+              <input
+                value={form.amount}
+                onChange={(event) => onFormChange({ ...form, amount: event.target.value })}
+                inputMode="decimal"
+                placeholder="10"
+                aria-describedby="qr-token-suffix"
+              />
+              <span id="qr-token-suffix">USDC</span>
+            </div>
+          </Field>
+
+          <Field label={t("label")}>
+            <input
+              value={form.label}
+              onChange={(event) => onFormChange({ ...form, label: event.target.value })}
+              placeholder="Invoice 2"
+            />
+          </Field>
+
+          <Field label={t("note")}>
+            <textarea
+              value={form.note}
+              onChange={(event) => onFormChange({ ...form, note: event.target.value })}
+              placeholder="Food and Drink"
+              rows={3}
+            />
+          </Field>
+
+          <Field label={t("invoiceDate")}>
+            <DateInput
+              value={form.invoiceDate}
+              onChange={(iso) => onFormChange({ ...form, invoiceDate: iso })}
+            />
+          </Field>
+
+          <Field label={t("qrNotify")} helper={t("qrNotifyHelper")}>
+            <input
+              value={form.notify}
+              onChange={(event) => onFormChange({ ...form, notify: event.target.value })}
+              placeholder="@name"
+              spellCheck={false}
+              maxLength={17}
+            />
+          </Field>
+
+          <button className="primary-button primary-button--lg" type="submit" disabled={isCreating}>
+            {isCreating ? t("generating") : t("generateQr")}
+          </button>
+        </form>
+
+        {notice && <NoticeBar notice={notice} />}
+
+        {displayRequest && shareUrl && (
+          <section className="qr-composer-output" aria-label={t("qrOutput")}>
+            {selectedReceipt ? (
+              <ReceiptView
+                data={{
+                  request: displayRequest,
+                  receipt: selectedReceipt,
+                  attestation: {
+                    uid: selectedReceipt.attestationUid,
+                    fingerprint: selectedReceipt.attestationFingerprint
+                  },
+                  onCopy,
+                  onCopyFingerprint: onCopy
+                }}
+              >
+                <ReceiptView.Summary />
+                <ReceiptView.Timeline />
+                <ReceiptView.Proof />
+              </ReceiptView>
+            ) : qrIsFinal ? (
+              <QrFinalState request={displayRequest} />
+            ) : displayRequest.txHash ? (
+              <NoticeBar notice={{ tone: "info", text: t("txSavedNotice") }} />
             ) : (
-              <p className="pay-pane-hint">
-                <strong>{t("flowHintLead")}</strong>
-                {t("noQrGeneratedText")}
-              </p>
+              <QrShareCard
+                request={displayRequest}
+                qrDataUrl={qrDataUrl || undefined}
+                shareUrl={shareUrl}
+                liveStatusLabel={formatQrLiveStatus(displayRequest)}
+                onCopy={onCopy}
+                onDownload={
+                  qrDataUrl
+                    ? () => {
+                        const a = document.createElement("a");
+                        a.href = qrDataUrl;
+                        a.download = `${displayRequest.label || "qr"}.png`;
+                        a.click();
+                      }
+                    : undefined
+                }
+              />
             )}
           </section>
-        </div>
+        )}
       </section>
 
       <section id="qr-ledger" className="ledger-section" aria-label={t("qrLedger")}>
         <div className="ledger-toolbar">
-          <span className="ledger-toolbar-label">
-            {t("qrRequestsStored", { count: requests.length })}
-          </span>
+          <span className="ledger-toolbar-label">{t("qrRequestsStored", { count: requests.length })}</span>
           <div className="tool-actions">
-            <button
-              className="text-button"
-              type="button"
-              onClick={onExport}
-              disabled={!requests.length}
-            >
+            <button className="text-button" type="button" onClick={onExport} disabled={!requests.length}>
               {t("export")}
             </button>
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-            >
-              {t("import")}
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json"
-              className="sr-only"
-              onChange={(event) => onImport(event.target.files?.[0])}
-            />
           </div>
         </div>
 
@@ -2187,7 +2539,10 @@ function PayRequestPage({
               {showExpiryGrid && (
                 <div className="expiry-grid">
                   <Metric label={t("timeLeft")} value={formatTimeLeft(request, now)} />
-                  <Metric label={t("validUntil")} value={formatDateTime(request.expiresAt ?? request.dueAt)} />
+                  <Metric
+                    label={t("validUntil")}
+                    value={formatDateTime(request.expiresAt ?? request.dueAt)}
+                  />
                 </div>
               )}
             </section>
@@ -2202,10 +2557,7 @@ function PayRequestPage({
                 <div className="form-section">
                   {walletNotice && <NoticeBar notice={walletNotice} compact />}
                   {!account && !hasWalletProvider && (
-                    <NoticeBar
-                      compact
-                      notice={{ tone: "info", text: t("noWalletRequest") }}
-                    />
+                    <NoticeBar compact notice={{ tone: "info", text: t("noWalletRequest") }} />
                   )}
                   {isExpired && !isPayable && (
                     <NoticeBar compact notice={{ tone: "error", text: t("qrExpiredNotice") }} />
@@ -2253,12 +2605,7 @@ function PayRequestPage({
                       {isEstimating ? t("estimating") : t("calculateGas")}
                     </button>
                     {(submittedTxHash || receipt) && (
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={onVerify}
-                        disabled={isVerifying}
-                      >
+                      <button className="text-button" type="button" onClick={onVerify} disabled={isVerifying}>
                         {isVerifying ? t("verifying") : t("verify")}
                       </button>
                     )}
@@ -2296,13 +2643,13 @@ function PayRequestPage({
                         attestation: receipt
                           ? {
                               uid: attestation?.uid ?? receipt.attestationUid,
-                              fingerprint: attestation?.fingerprint ?? receipt.attestationFingerprint,
+                              fingerprint: attestation?.fingerprint ?? receipt.attestationFingerprint
                             }
                           : undefined,
                         onCopy,
                         onCopyFingerprint: onCopy,
                         onExportPdf: receipt && !isGeneratingInvoice ? onInvoice : undefined,
-                        onExportUbl: receipt ? onUBLExport : undefined,
+                        onExportUbl: receipt ? onUBLExport : undefined
                       }}
                     >
                       {receipt && <ReceiptView.Summary />}
@@ -2318,7 +2665,11 @@ function PayRequestPage({
                         <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
                       </div>
                       <div className="receipt-actions">
-                        <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}
+                        >
                           {t("copyTx")}
                         </button>
                         <a href={submittedTxUrl} target="_blank" rel="noreferrer">
@@ -2329,53 +2680,53 @@ function PayRequestPage({
                   )}
 
                   {receipt && (
-                <>
-
-                  {/* Compliance Export Actions */}
-                  <div className="compliance-actions">
-                    <div className="compliance-header">
-                      <span className="compliance-label">{t("settlementExports")}</span>
-                      {attestation && (
-                        <span className="attestation-badge">
-                          VSR: {attestation.uid}
-                        </span>
-                      )}
-                    </div>
-                    <div className="compliance-buttons">
-                      {!attestation && onAttest && (
-                        <button className="compliance-button" type="button" onClick={onAttest}>
-                          <ShieldCheck size={14} strokeWidth={1.5} />
-                          {t("createAttestation")}
-                        </button>
-                      )}
-                      {attestation && (
-                        <button className="compliance-button attested" type="button" disabled>
-                          <Check size={14} strokeWidth={1.75} />
-                          {t("attested")}
-                        </button>
-                      )}
-                      {onSettlementProof && (
-                        <button className="compliance-button" type="button" onClick={onSettlementProof}>
-                          <FileText size={14} strokeWidth={1.5} />
-                          {t("settlementProof")}
-                        </button>
-                      )}
-                      {onUBLExport && (
-                        <button className="compliance-button" type="button" onClick={onUBLExport}>
-                          <Download size={14} strokeWidth={1.5} />
-                          {t("ublInvoiceXml")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
+                    <>
+                      {/* Compliance Export Actions */}
+                      <div className="compliance-actions">
+                        <div className="compliance-header">
+                          <span className="compliance-label">{t("settlementExports")}</span>
+                          {attestation && (
+                            <span className="attestation-badge">Local VSR: {attestation.uid}</span>
+                          )}
+                        </div>
+                        <div className="compliance-buttons">
+                          {!attestation && onAttest && (
+                            <button className="compliance-button" type="button" onClick={onAttest}>
+                              <ShieldCheck size={14} strokeWidth={1.5} />
+                              {t("createAttestation")}
+                            </button>
+                          )}
+                          {attestation && (
+                            <button className="compliance-button attested" type="button" disabled>
+                              <Check size={14} strokeWidth={1.75} />
+                              {t("attested")}
+                            </button>
+                          )}
+                          {onSettlementProof && (
+                            <button className="compliance-button" type="button" onClick={onSettlementProof}>
+                              <FileText size={14} strokeWidth={1.5} />
+                              {t("settlementProof")}
+                            </button>
+                          )}
+                          {onUBLExport && (
+                            <button className="compliance-button" type="button" onClick={onUBLExport}>
+                              <Download size={14} strokeWidth={1.5} />
+                              {t("ublInvoiceXml")}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </section>
           </div>
         ) : (
-          <EmptyState title={t("noQrRequestLoaded")} text={t("noQrRequestLoadedText")} />
+          <div className="form-section">
+            <EmptyState title={t("noQrRequestLoaded")} text={t("noQrRequestLoadedText")} />
+            {notice && <NoticeBar notice={notice} />}
+          </div>
         )}
       </section>
     </>
@@ -2472,9 +2823,7 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
         {isExpired && !isPayable && (
           <NoticeBar compact notice={{ tone: "error", text: t("qrExpiredNotice") }} />
         )}
-        {hasSubmittedTransaction && (
-          <NoticeBar compact notice={{ tone: "info", text: t("txSavedNotice") }} />
-        )}
+        {hasSubmittedTransaction && <NoticeBar compact notice={{ tone: "info", text: t("txSavedNotice") }} />}
 
         <WalletActionBlock
           account={account}
@@ -2569,7 +2918,11 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
                 <strong>{shortAddress(submittedTxHash, 10, 8)}</strong>
               </div>
               <div className="receipt-actions">
-                <button className="text-button" type="button" onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => submittedTxUrl && onCopy(submittedTxUrl)}
+                >
                   {t("copyTx")}
                 </button>
                 <a href={submittedTxUrl} target="_blank" rel="noreferrer">
@@ -2583,7 +2936,7 @@ function HostedPayPage(props: ComponentProps<typeof PayRequestPage>) {
             <details className="pay-host-exports">
               <summary>
                 <span>{t("settlementExports")}</span>
-                {attestation && <span className="attestation-badge">VSR: {attestation.uid}</span>}
+                {attestation && <span className="attestation-badge">Local VSR: {attestation.uid}</span>}
               </summary>
               <div className="compliance-buttons">
                 {!attestation && onAttest && (
@@ -2761,11 +3114,19 @@ function TransferState({
     <>
       <div className="wallet-table">
         <Metric label={t("wallet")} value={shortAddress(account)} />
-        <Metric label={t("tokenBalance", { token })} value={balances ? `${trimDisplay(balances.tokenBalance, 6)} ${token}` : t("loading")} />
-        <Metric label={t("gasBalance")} value={balances ? `${trimDisplay(balances.nativeGas, 8)} ${nativeSymbol}` : t("loading")} />
+        <Metric
+          label={t("tokenBalance", { token })}
+          value={balances ? `${trimDisplay(balances.tokenBalance, 6)} ${token}` : t("loading")}
+        />
+        <Metric
+          label={t("gasBalance")}
+          value={balances ? `${trimDisplay(balances.nativeGas, 8)} ${nativeSymbol}` : t("loading")}
+        />
         <Metric label={t("network")} value={networkLabel} />
       </div>
-      {insufficientToken && <NoticeBar compact notice={{ tone: "error", text: t("insufficientTokenBalance", { token }) }} />}
+      {insufficientToken && (
+        <NoticeBar compact notice={{ tone: "error", text: t("insufficientTokenBalance", { token }) }} />
+      )}
       {(insufficientToken || missingGas) && (
         <RecoveryPanel
           account={account}
@@ -2783,25 +3144,21 @@ function TransferState({
 function EstimateGrid({ estimate }: { estimate: TransferEstimate }) {
   const { t } = useI18n();
   const symbol = estimate.nativeSymbol ?? "USDC";
-  const gasLabel = estimate.needsApproval && estimate.approvalGas ? t("approvalPaymentGas") : t("estimatedGas");
+  const gasLabel =
+    estimate.needsApproval && estimate.approvalGas ? t("approvalPaymentGas") : t("estimatedGas");
   return (
     <div className="estimate-line">
       <Metric label={gasLabel} value={estimate.gas.toString()} />
-      <Metric label={t("gasPrice")} value={`${trimDisplay(formatUnits(estimate.gasPrice, 18), 8)} ${symbol}`} />
+      <Metric
+        label={t("gasPrice")}
+        value={`${trimDisplay(formatUnits(estimate.gasPrice, 18), 8)} ${symbol}`}
+      />
       <Metric label={t("estimatedFee")} value={`${trimDisplay(estimate.fee, 8)} ${symbol}`} />
     </div>
   );
 }
 
-function Field({
-  label,
-  helper,
-  children
-}: {
-  label: string;
-  helper?: string;
-  children: ReactNode;
-}) {
+function Field({ label, helper, children }: { label: string; helper?: string; children: ReactNode }) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -2863,7 +3220,12 @@ function RecoveryPanel({
           <a className="secondary-button" href={ARC_FAUCET_URL} target="_blank" rel="noreferrer">
             {t("faucet")}
           </a>
-          <a className="secondary-button" href={toExplorerAddressUrl(account)} target="_blank" rel="noreferrer">
+          <a
+            className="secondary-button"
+            href={toExplorerAddressUrl(account)}
+            target="_blank"
+            rel="noreferrer"
+          >
             {t("arcscanWallet")}
           </a>
         </div>
@@ -2879,7 +3241,7 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
     paid: "paid",
     expired: "expired",
     failed: "failed",
-    possible_match: "review",
+    possible_match: "review"
   };
   return <span className={`status-badge ${status}`}>{t(keyByStatus[status])}</span>;
 }
@@ -2910,6 +3272,35 @@ function remoteConfirmationToNotice(confirmation: QrConfirmationPayload): Notice
   return {
     tone: "info",
     text: confirmation.message ?? "Source payment is still being checked for Arc settlement."
+  };
+}
+
+function qrStatusPayloadToLifecycle(payload: QrStatusPayload): PayLifecycle {
+  if (payload.request.status === "paid") {
+    return "verified";
+  }
+  if (payload.request.status === "failed" || payload.request.status === "expired") {
+    return "failed";
+  }
+  return payload.request.txHash ? "submitted" : "preparing";
+}
+
+function qrStatusPayloadToNotice(payload: QrStatusPayload): Notice {
+  if (payload.request.status === "paid") {
+    return {
+      tone: "success",
+      text: payload.message ?? "Payment settled on Arc. Invoice is ready."
+    };
+  }
+  if (payload.request.status === "failed" || payload.request.status === "expired") {
+    return {
+      tone: "error",
+      text: payload.message ?? "This payment request is no longer payable."
+    };
+  }
+  return {
+    tone: "info",
+    text: payload.message ?? "Disburse confirmation is still pending."
   };
 }
 
@@ -2964,32 +3355,24 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 type RequestStateWriter = (updater: (current: PaymentRequest[]) => PaymentRequest[]) => void;
 type ReceiptStateWriter = (updater: (current: Receipt[]) => Receipt[]) => void;
 
-function applyQrStatusPayload(payload: QrStatusPayload, setRequests: RequestStateWriter, setReceipts: ReceiptStateWriter) {
-  setRequests((current) => upsertRequest(current, payload.request));
+function applyQrStatusPayload(
+  payload: QrStatusPayload,
+  setRequests: RequestStateWriter,
+  setReceipts: ReceiptStateWriter,
+  requestToken?: string,
+  paymentAuthorization?: `0x${string}`
+) {
+  setRequests((current) => {
+    const local = current.find((request) => request.id === payload.request.id);
+    return upsertRequest(current, {
+      ...payload.request,
+      requestToken: requestToken ?? local?.requestToken,
+      paymentAuthorization: paymentAuthorization ?? local?.paymentAuthorization
+    });
+  });
   if (payload.receipt) {
     setReceipts((current) => upsertReceipt(current, payload.receipt as Receipt));
   }
-}
-
-async function createLocalQrRequest(form: QrFormState): Promise<PaymentRequest> {
-  const recipient = validateRecipient(form.recipient);
-  const token = "USDC";
-  const amount = formatTokenAmount(parseTokenAmount(form.amount, token), token);
-  const createdAt = new Date().toISOString();
-
-  return {
-    id: crypto.randomUUID(),
-    recipient,
-    token,
-    amount,
-    label: normalizeLabel(form.label),
-    note: normalizeNote(form.note),
-    invoiceDate: normalizeInvoiceDate(form.invoiceDate),
-    expiresAt: createExpiry(createdAt),
-    createdAt,
-    startBlock: "0",
-    status: "open"
-  };
 }
 
 function buildTokenTransfer(form: DirectFormState): TokenTransfer {
@@ -3015,7 +3398,9 @@ async function resolveGatewayRecipient(form: DirectFormState) {
 
   const id = await resolveIdByHandle(form.recipient);
   if (!id) {
-    throw new Error(`No Disburse ID named @${handleFromInput(form.recipient)}. Use a wallet address to send directly instead.`);
+    throw new Error(
+      `No Disburse ID named @${handleFromInput(form.recipient)}. Use a wallet address to send directly instead.`
+    );
   }
 
   return {
@@ -3028,60 +3413,23 @@ async function resolveGatewayRecipient(form: DirectFormState) {
   };
 }
 
-// Builds the in-app record for a confirmed direct send. Intentionally does NOT
-// download anything — auto-downloading files right after a transaction reads as
-// suspicious. The receipt is saved to history; the user exports it on demand.
-//
-// label/note may be provided for direct disbursements (agent rails / CLI use).
-// Falls back to the previous generic label when omitted so existing web direct
-// behavior is unchanged.
-function buildDirectSendRecord(input: {
-  transfer: TokenTransfer;
-  payer: `0x${string}`;
-  txHash: Hash;
-  blockNumber: string;
-  label?: string;
+function normalizeDirectPaymentMetadata(form: DirectFormState): {
+  label: string;
   note?: string;
-}): { request: PaymentRequest; receipt: Receipt } {
-  const { transfer, payer, txHash, blockNumber, label, note } = input;
-  const nowIso = new Date().toISOString();
-  const requestId = `direct-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)}`;
-
-  const request: PaymentRequest = {
-    id: requestId,
-    recipient: transfer.recipient,
-    token: transfer.token,
-    amount: transfer.amount,
-    label: (label && label.trim()) ? normalizeLabel(label) : `Direct send · ${transfer.token}`,
-    note: note ? normalizeNote(note) : undefined,
-    invoiceDate: todayInputValue(),
-    createdAt: nowIso,
-    startBlock: blockNumber,
-    status: "paid",
-    txHash
+  invoiceDate: string;
+} {
+  return {
+    label: form.label && form.label.trim() ? normalizeLabel(form.label) : `Direct send · ${form.token}`,
+    note: form.note && form.note.trim() ? normalizeNote(form.note) : undefined,
+    invoiceDate: todayInputValue()
   };
-
-  const receipt: Receipt = {
-    requestId,
-    txHash,
-    from: payer,
-    to: transfer.recipient,
-    token: transfer.token,
-    amount: transfer.amount,
-    blockNumber,
-    confirmedAt: nowIso,
-    explorerUrl: toExplorerTxUrl(txHash)
-  };
-
-  return { request, receipt };
-}
-
-function hasTransferInput(form: DirectFormState): boolean {
-  return Boolean(form.recipient.trim() && form.amount.trim());
 }
 
 function ensureTokenBalance(balances: Balances, transfer: TokenTransfer) {
-  if (parseTokenAmount(balances.tokenBalance, transfer.token) < parseTokenAmount(transfer.amount, transfer.token)) {
+  if (
+    parseTokenAmount(balances.tokenBalance, transfer.token) <
+    parseTokenAmount(transfer.amount, transfer.token)
+  ) {
     throw new Error(`Insufficient ${transfer.token} balance.`);
   }
 }
@@ -3104,13 +3452,19 @@ function hasInsufficientGas(
   return hasInsufficientNativeSpendBalance(balances, transfer, estimate);
 }
 
-function useInsufficientToken(balances: Balances | undefined, transfer: TokenTransfer | DirectFormState | undefined): boolean {
+function useInsufficientToken(
+  balances: Balances | undefined,
+  transfer: TokenTransfer | DirectFormState | undefined
+): boolean {
   return useMemo(() => {
     if (!balances || !transfer?.amount || !transfer.token) {
       return false;
     }
     try {
-      return parseTokenAmount(balances.tokenBalance, transfer.token) < parseTokenAmount(transfer.amount, transfer.token);
+      return (
+        parseTokenAmount(balances.tokenBalance, transfer.token) <
+        parseTokenAmount(transfer.amount, transfer.token)
+      );
     } catch {
       return false;
     }
@@ -3170,392 +3524,5 @@ function trimDisplay(value: string, maxDecimals: number): string {
   const trimmed = fraction.slice(0, maxDecimals).replace(/0+$/, "");
   return trimmed ? `${whole}.${trimmed}` : whole;
 }
-
-function DashboardPage({
-  requests, receipts, account, now, onNavigate, getProvider, onDeposit, balanceRefreshKey
-}: {
-  requests: PaymentRequest[];
-  receipts: Receipt[];
-  account?: `0x${string}`;
-  now: Date;
-  onNavigate: (target: string) => void;
-  getProvider: () => Promise<EthereumProvider | undefined>;
-  onDeposit: () => void;
-  balanceRefreshKey: number;
-}) {
-  const { t } = useI18n();
-  const [disburseBalance, setDisburseBalance] = useState<number | undefined>();
-
-  // Reflect the user's deposited Circle Gateway balance on the headline card.
-  // Re-runs when the wallet changes or a deposit reports success upstream.
-  useEffect(() => {
-    if (!account) {
-      setDisburseBalance(undefined);
-      return;
-    }
-    let cancelled = false;
-    void fetchGatewayBalance(account)
-      .then((balance) => {
-        if (!cancelled) setDisburseBalance(Number(balance.formatted));
-      })
-      .catch(() => {
-        if (!cancelled) setDisburseBalance(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [account, balanceRefreshKey]);
-  const totalVolume = requests.reduce((sum, request) => sum + Number(request.amount || 0), 0);
-  const verifiedVolume = requests
-    .filter((request) => refreshDerivedStatus(request, now).status === "paid")
-    .reduce((sum, request) => sum + Number(request.amount || 0), 0);
-  const pendingVolume = requests
-    .filter((request) => refreshDerivedStatus(request, now).status === "open")
-    .reduce((sum, request) => sum + Number(request.amount || 0), 0);
-  const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-  const activityData = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(now);
-    date.setDate(date.getDate() - (6 - offset));
-    const key = date.toISOString().slice(0, 10);
-    const dayRequests = requests.filter((request) => request.createdAt.slice(0, 10) === key);
-    return {
-      name: dayFormatter.format(date),
-      volume: dayRequests.reduce((sum, request) => sum + Number(request.amount || 0), 0),
-      count: dayRequests.length
-    };
-  });
-
-  const hasActivity = requests.length > 0;
-  // Compute a 7-day trend delta (second half vs first half) for the
-  // headline sparkline chip. This mirrors the logic in MonthlyStats so
-  // the two cards tell a consistent story.
-  const trendSeries = activityData.map((d) => ({ value: d.volume }));
-  const trendDeltaPct = computeTrendDelta(activityData.map((d) => d.volume));
-
-  return (
-    <div className="ql-dashboard relative z-10 mx-auto flex w-full max-w-[1120px] flex-col pb-6">
-
-      {/* HEADLINE BALANCE ─ full width, the day's main statement. The page
-          title lives in the Header (routeMeta); this card is the first thing
-          under it. */}
-      <section className="ql-section">
-        <BalanceCard
-          totalVolume={totalVolume}
-          verifiedVolume={verifiedVolume}
-          pendingVolume={pendingVolume}
-          requestCount={requests.length}
-          receiptCount={receipts.length}
-          account={account}
-          onNavigate={onNavigate}
-          onDeposit={onDeposit}
-          disburseBalance={disburseBalance}
-          trend={trendSeries}
-          trendDeltaPct={trendDeltaPct ?? undefined}
-        />
-      </section>
-
-      {/* IDENTITY ─ the wallet's Disburse ID; payment requests to this name
-          land in the in-app inbox. */}
-      <section className="ql-section mt-4">
-        <DisburseIdCard account={account} getProvider={getProvider} />
-      </section>
-
-      {/* ACTIVITY ─ only once there is something to plot. An empty chart is
-          noise, not information. */}
-      {hasActivity && (
-        <>
-          <SectionRule label={t("activity") || "Activity"} />
-          <section className="ql-section">
-            <MonthlyStats activityData={activityData} />
-          </section>
-        </>
-      )}
-
-      {/* LEDGER ─ recent transactions. TransactionsTable renders its own
-          empty state, so it carries the zero case on its own. */}
-      <SectionRule label={t("ledger") || "Ledger"} />
-      <section className="ql-section">
-        <TransactionsTable
-          requests={requests}
-          receipts={receipts}
-          now={now}
-          onNavigate={onNavigate}
-        />
-      </section>
-
-    </div>
-  );
-}
-
-/** Section heading — quiet muted label above its card, Linear-style. */
-function SectionRule({ label }: { label: string }) {
-  return (
-    <div className="mb-3 mt-8">
-      <h2 className="text-sm font-medium text-[var(--muted)]">{label}</h2>
-    </div>
-  );
-}
-
-/** Second-half vs first-half percent delta for a short series. */
-function computeTrendDelta(series: number[]): number | null {
-  if (series.length < 4) return null;
-  const mid = Math.floor(series.length / 2);
-  const prev = series.slice(0, mid).reduce((a, b) => a + b, 0);
-  const curr = series.slice(mid).reduce((a, b) => a + b, 0);
-  if (prev === 0 && curr === 0) return null;
-  if (prev === 0) return 100;
-  return ((curr - prev) / prev) * 100;
-}
-
-function ImportExportPage({
-  requests, receipts, importInputRef, onExport, onImport
-}: {
-  requests: PaymentRequest[];
-  receipts: Receipt[];
-  importInputRef: RefObject<HTMLInputElement | null>;
-  onExport: () => void;
-  onImport: (file: File | undefined) => void;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <>
-      <section className="ql-page" aria-label="Backup">
-        <p className="ql-page-lede">
-          Your ledger lives locally in this browser. Export to JSON for safe-keeping, or import a previous
-          backup to restore everything in one click.
-        </p>
-
-        <div className="ql-ie-grid">
-          <article className="ql-ie-card">
-            <p className="form-section-label">Export</p>
-            <h3>{t("exportHistory")}</h3>
-            <p className="ql-ie-card-text">
-              {t("exportHistoryText", { requests: requests.length, receipts: receipts.length })}
-            </p>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={onExport}
-              disabled={!requests.length}
-            >
-              {t("exportJson")}
-            </button>
-          </article>
-
-          <article className="ql-ie-card">
-            <p className="form-section-label">Import</p>
-            <h3>{t("importPaymentData")}</h3>
-            <p className="ql-ie-card-text">{t("importPaymentDataText")}</p>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-            >
-              {t("chooseFile")}
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json"
-              className="sr-only"
-              onChange={(event) => onImport(event.target.files?.[0])}
-            />
-          </article>
-        </div>
-
-        <aside className="ql-ie-note">
-          <p className="form-section-label">Privacy</p>
-          <p>
-            <strong>{t("dataStaysLocal")}</strong> {t("dataStaysLocalText")}
-          </p>
-        </aside>
-      </section>
-    </>
-  );
-}
-
-// ---------- Statements Page ----------
-
-function StatementsPage() {
-  const [recipient, setRecipient] = useState("");
-  const [payer, setPayer] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [bundle, setBundle] = useState<StatementBundleView | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleGenerate(e: FormEvent) {
-    e.preventDefault();
-    if (!recipient && !payer) {
-      setError("Provide at least a recipient or payer address.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setBundle(null);
-
-    try {
-      const res = await fetch("/api/statements", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          recipient: recipient || undefined,
-          payer: payer || undefined,
-          from: fromDate || undefined,
-          to: toDate || undefined,
-          token: "USDC",
-          network_mode: "testnet"
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to generate statement");
-      }
-      const data = await res.json();
-      setBundle(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error");
-    }
-    setLoading(false);
-  }
-
-  function handleDownloadJson() {
-    if (!bundle) return;
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `disburse-statement-${bundle.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <>
-      <section className="ql-page" aria-labelledby="statements-heading">
-        <p className="ql-page-lede">
-          Generate a verified statement bundle — every settlement proof between you and a counterparty
-          over any period. Export as JSON for accounting, audits, or tax reporting.
-        </p>
-
-        <form onSubmit={handleGenerate} className="ql-form-card">
-          <div className="form-section">
-            <p className="form-section-label">Counterparty</p>
-            <div className="field-grid">
-              <Field label="Recipient address">
-                <input
-                  placeholder="0x..."
-                  value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
-                  spellCheck={false}
-                />
-              </Field>
-              <Field label="Payer / counterparty">
-                <input
-                  placeholder="0x..."
-                  value={payer}
-                  onChange={(e) => setPayer(e.target.value)}
-                  spellCheck={false}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <div className="form-section">
-            <p className="form-section-label">Period</p>
-            <div className="field-grid">
-              <Field label="From">
-                <DateInput value={fromDate} onChange={setFromDate} />
-              </Field>
-              <Field label="To">
-                <DateInput value={toDate} onChange={setToDate} />
-              </Field>
-            </div>
-          </div>
-
-          <div className="action-row">
-            <button className="primary-button" type="submit" disabled={loading}>
-              {loading ? "Generating…" : "Generate statement"}
-            </button>
-          </div>
-        </form>
-
-        {error && <div className="notice notice-error">{error}</div>}
-
-        {bundle && (
-          <div className="ql-statement-result">
-            <div className="ql-statement-result-head">
-              <h3>Statement summary</h3>
-              <button className="secondary-button" type="button" onClick={handleDownloadJson}>
-                Download JSON
-              </button>
-            </div>
-
-            <div className="ql-metric-grid">
-              <div className="ql-metric">
-                <p className="ql-metric-label">Total amount</p>
-                <p className="ql-metric-value">
-                  {bundle.summary.totalAmount} <span className="ql-metric-unit">{bundle.summary.token}</span>
-                </p>
-              </div>
-              <div className="ql-metric">
-                <p className="ql-metric-label">Proofs</p>
-                <p className="ql-metric-value">{bundle.summary.totalProofs}</p>
-              </div>
-              <div className="ql-metric">
-                <p className="ql-metric-label">Period</p>
-                <p className="ql-metric-detail">
-                  {new Date(bundle.summary.period.from).toLocaleDateString()} —{" "}
-                  {new Date(bundle.summary.period.to).toLocaleDateString()}
-                </p>
-              </div>
-              <div className="ql-metric">
-                <p className="ql-metric-label">Network</p>
-                <p className="ql-metric-detail">{bundle.summary.networkMode}</p>
-              </div>
-            </div>
-
-            {bundle.proofs.length > 0 && (
-              <div className="ql-proof-list">
-                <p className="form-section-label">Individual proofs</p>
-                <div className="ql-proof-rows">
-                  {bundle.proofs.map((psp: StatementPspView) => (
-                    <div key={psp.uid} className="ql-proof-row">
-                      <div className="ql-proof-row-main">
-                        <span className="ql-proof-uid">{psp.uid}</span>
-                        <span className="ql-proof-label">{psp.invoice?.label || "—"}</span>
-                      </div>
-                      <span className="ql-proof-amount">
-                        {psp.invoice?.amount} {psp.invoice?.token}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
-type StatementBundleView = {
-  id: string;
-  summary: {
-    totalProofs: number;
-    totalAmount: string;
-    token: string;
-    period: { from: string; to: string };
-    networkMode: string;
-  };
-  proofs: StatementPspView[];
-};
-type StatementPspView = {
-  uid: string;
-  invoice?: { label?: string; amount?: string; token?: string };
-};
 
 export default App;

@@ -1,261 +1,236 @@
-<div align="center">
-
-<img src="public/disburse-logo.png" alt="Disburse" width="96" />
-
 # Disburse
 
-**A receipt layer for stablecoin payments.**
+Disburse is a testnet receipt layer for stablecoin payments. It creates
+wallet-authorized payment requests, verifies confirmed Arc token transfers,
+and issues Portable Settlement Proofs (PSPs) for accounting and audit
+workflows.
 
-Issue a QR invoice. The payer settles in USDC from any supported chain. Disburse turns the onchain transfer into a structured, verifiable receipt. This receipt is a document your accountant, auditor, or tax office can file.
+> **Testnet and source-availability notice**
+>
+> This repository is not production payment infrastructure. Its supported
+> scope is the Arc Testnet payment gateway and the source-controlled PSP
+> verifier. Do not deploy or fund contracts outside that reviewed scope.
 
-[App](https://app.disburse.online) &middot; [Docs](https://docs.disburse.online) &middot; [X](https://x.com/Disburs3) &middot; [GitHub](https://github.com/Disburse-pay)
+## What is implemented
 
-</div>
-
----
+- **Server-backed QR requests:** the recipient wallet signs every request.
+  The QR contains only an opaque request ID and a high-entropy capability;
+  canonical invoice fields are fetched from the API.
+- **Arc settlement verification:** a request is marked paid only after a
+  successful receipt contains the exact token contract, payer, recipient,
+  amount, transaction hash, and an in-window block.
+- **Atomic payment state:** transaction reuse, concurrent confirmation, expiry,
+  the receipt insert, and the paid event are enforced in database transactions.
+- **Direct sends:** the web app and CLI transfer USDC or EURC on Arc Testnet,
+  validate the exact confirmed transfer, and register payer-authorized invoice
+  metadata.
+- **Portable Settlement Proofs:** PSP JSON is content-addressed and signed.
+  Trusted verification requires an issuer address obtained independently from
+  the proof.
+- **Private statements and inboxes:** wallet signatures scope server reads to
+  the participating wallet. Statement filtering occurs before pagination and
+  token totals use exact integer arithmetic.
+- **Wallet-owned webhooks:** registrations are signed, recipient-scoped,
+  quota-limited, HTTPS-only, protected against private-network SSRF, and
+  delivered with HMAC-SHA256 signatures.
 
 ## CLI
 
-Install the Disburse CLI to send stablecoin payments with verifiable invoice proofs:
+Install the direct-disbursement CLI:
 
 ```bash
 npm install -g @disburse/cli
 ```
 
-Send a payment:
+The CLI rejects private keys passed in command-line arguments because process
+listings and shell history can expose them. Prefer a secret manager that injects
+`DISBURSE_PRIVATE_KEY` into the process environment. Review with `--dry-run`;
+an interactive broadcast then requires typing `SEND` or `BATCH`.
 
 ```bash
-disburse send --to 0xRecipient --amount 10 --label "Invoice 1" --private-key 0xYourPrivateKey
+# DISBURSE_PRIVATE_KEY is injected by your secret manager, not typed literally.
+disburse send \
+  --to 0xRecipient \
+  --amount 10 \
+  --label "Invoice 1" \
+  --dry-run
+
+disburse send \
+  --to 0xRecipient \
+  --amount 10 \
+  --label "Invoice 1"
 ```
 
-Batch payments:
+For non-interactive secret-manager output, use `--private-key-stdin`. Unattended
+broadcasts require explicit `--yes`; perform and review the matching dry run
+first.
 
 ```bash
-disburse batch --csv payouts.csv --private-key 0xYourPrivateKey
+secret-manager read disburse-key | disburse batch \
+  --csv payouts.csv \
+  --private-key-stdin \
+  --dry-run
 ```
 
-More info: [packages/cli/README.md](packages/cli/README.md)
+See [packages/cli/README.md](packages/cli/README.md) for the complete CLI
+workflow.
 
----
+## QR security model
 
-## Technical Overview
+1. The recipient signs the normalized request fields with EIP-712.
+2. The server reserves the authorization atomically to prevent replay and
+   enforce per-wallet and inbox quotas.
+3. The payment-request row stores only a SHA-256 digest of the random QR
+   capability. AES-256-GCM envelopes for owner history and optional inbox
+   delivery live only in private, service-role tables and are bound to their
+   wallet/request context.
+4. A payer resolves the opaque QR reference through the authenticated status
+   API and reviews the canonical fields.
+5. The payer signs an EIP-712 authorization for that request before sending.
+6. Confirmation verifies a successful Arc receipt, exact ERC-20 `Transfer`
+   log, payer signature, request start block, expiry timestamp, and global
+   transaction uniqueness.
+7. The database atomically stores the receipt and transitions the request to
+   paid. Invalid caller-supplied hashes do not terminally fail the invoice.
 
-Disburse is a cryptographic receipt and settlement layer for stablecoin transactions. It validates onchain transfers of USDC across different EVM testnets and produces content-addressed, mathematically verifiable PDF, XML (UBL 2.1), and JSON documents.
+Historical requests and receipts are never cached in browser storage. The
+active wallet signs a short-lived history authorization, and the API returns
+only rows where that wallet is payer or recipient. A wallet-specific local
+journal is used solely to recover a broadcast direct transfer until its
+canonical server registration completes.
 
-### Key Features
+Legacy v1/v2 QR payloads embedded unsigned invoice fields. They are intentionally
+not payable and must be recreated as v3 server-backed requests.
 
-1. **Structured QR Invoicing**: Generates signed JSON invoices containing metadata (recipient, amount, label, invoice date, expiry) packed into base64url payloads inside QR codes.
-2. **Cross-Chain Payments**: Payers can pay from **Base Sepolia** or **Monad Testnet** using remote escrows that route settlements to **Arc Testnet** via Polymer cryptographic state proofs in 2 to 5 minutes.
-3. **Direct Send (Wallet-to-Wallet)**: Direct peer-to-peer payments on Arc Testnet, generating immediate verifiable receipts.
-4. **Portable Settlement Proofs (PSP)**: Cryptographically signed, content-addressed JSON proofs verifying stablecoin settlement without relying on Disburse infrastructure.
-5. **Prediction Markets (Beta)**: Binary YES/NO outcome markets with orderbooks operating on Arc Testnet, allowing shares to be minted, traded, and claimed, generating specialized market-claim PSPs.
-6. **Webhooks & APIs**: Secure event notification using HMAC-SHA256 signatures with automatic retry policies and deactivation limits.
+## PSP trust model
 
----
+A PSP has two distinct verification levels:
 
-## Cryptographic Specifications
+- **Self-consistency:** its digest, UID, and signature agree with the issuer key
+  embedded in the same document. Anyone can create such a self-consistent
+  document, so this does not establish trust.
+- **Trusted issuer verification:** the recovered signer matches an issuer
+  address obtained independently, such as deployment configuration or an
+  audited registry.
 
-### Portable Settlement Proof (PSP) v1.0
-A PSP proves that a specific invoice was paid by a specific onchain transfer. It is structured, content-addressed, and independently verifiable.
-
-#### Structure
-A PSP document contains:
-- `version` (currently `1`)
-- `networkMode` (`"testnet"` or `"mainnet"`)
-- `issuer` information including EVM public signing key
-- `invoice` metadata (payer, recipient, amount, note, dates)
-- `settlement` data (block number, transaction hash, settlement ID)
-- `signature` containing a compact 65-byte EVM signature (`secp256k1-keccak256`) over the canonicalized document digest
-
-#### Verification Flow
-Verification requires no interaction with Disburse servers:
-1. **Omit ephemeral fields**: Remove `digest`, `signature`, `uid`, and `createdAt` from the document.
-2. **Canonicalize**: Deterministically sort keys lexicographically, strip whitespace, lowercase hex strings, and format as JSON.
-3. **Prepend Domain Separator**: Prepend `"DISBURSE-PSP-v1\n" + networkMode + "\n"`.
-4. **Compute Digest**: Compute the `keccak256` hash of the canonical bytes.
-5. **Recover Signer**: Recover the EVM address from the EIP-191 personal sign signature and assert it matches the registered `issuer.publicKey`.
-6. **Onchain Check**: (Optional) Verify via [PspVerifier.sol](file:///d:/Stressed/contracts/src/PspVerifier.sol) on Arc to ensure the settlement transaction was recorded.
-
-### PSP v1.1 Markets Addendum
-Extends PSPs to support prediction-market claims. Instead of an `invoice` block, the proof includes a `marketClaim` block specifying:
-- `marketId` (off-chain UUID)
-- `onchainMarket` (address of the [Market.sol](file:///d:/Stressed/contracts/src/markets/Market.sol) contract)
-- `outcome` and `winningOutcome` redeemed
-- `sharesRedeemed` and `payoutAmount` (using 1e6 fixed-point scale)
-- Payout transactions emit `MarketClaimed` events matched by [MarketsPspVerifier.sol](file:///d:/Stressed/contracts/src/markets/MarketsPspVerifier.sol).
-
----
-
-## Repository Architecture
-
-The project is structured as a TypeScript monorepo containing smart contracts, frontend client apps, Vercel API handlers, and background helper scripts:
-
-```
-├── .env.example                       # Base environment template
-├── api/                               # Main API routing
-│   └── index.ts                       # Vercel serverless request router
-├── api-handlers/                      # Vercel serverless endpoint controllers
-│   ├── markets*.ts                    # Prediction markets read/write handlers
-│   ├── psp*.ts                        # PSP document retrieval & verification handlers
-│   └── qr*.ts                         # QR invoice registration and event streams
-├── contracts/                         # Solidity smart contracts
-│   ├── README.md                      # Contract deployment guides
-│   └── src/                           # Solidity source directory
-│       ├── PspVerifier.sol            # Onchain validation of EIP-191 signatures
-│       ├── QrPaymentSettlement.sol    # Arc settlement & cross-chain proof verification
-│       ├── QrPaymentSource.sol        # Cross-chain remote token escrow
-│       └── markets/                   # Central Limit Orderbook prediction market suite
-├── deployments/                       # Compiled ABIs and contract deployment logs
-├── docs/                              # In-depth technical articles and specifications
-├── packages/                          # Monorepo packages
-│   └── psp-verify/                    # Standalone TS validator & CLI utility
-├── public/                            # Static asset directory
-├── scripts/                           # Maintenance and simulation helper scripts
-├── server/                            # Persistent Node.js/Express backend service
-│   ├── markets/                       # Market order-book processing and repo engine
-│   ├── psp/                           # Background PSP issuance and event monitoring
-│   └── crosschain.ts                  # Polymer proof listener and relay routines
-├── src/                               # Frontend application directory
-│   ├── App.tsx                        # Main payments app client interface
-│   ├── BetApp.tsx                     # Whitelist gated prediction markets portal
-│   ├── LandingPage.tsx                # Marketing landing page
-│   ├── lib/                           # Frontend shared utility libraries
-│   └── pages/                         # Sub-application page modules
-└── supabase/                          # Database configuration and migrations
-```
-
----
-
-## Component Directories
-
-### 1. Smart Contracts (`contracts/`)
-Disburse settles payments and validates claims onchain.
-- [QrPaymentSource.sol](file:///d:/Stressed/contracts/src/QrPaymentSource.sol): Deployed on source chains (**Base Sepolia**, **Monad Testnet**). Escrows payment tokens and emits `QrPaymentInitiated` for Polymer to bridge.
-- [QrPaymentSettlement.sol](file:///d:/Stressed/contracts/src/QrPaymentSettlement.sol): Deployed on destination (**Arc Testnet**). Validates Polymer state proofs, prevents double spending, and disburses USDC to recipients from its prefunded liquidity pool.
-- [PspVerifier.sol](file:///d:/Stressed/contracts/src/PspVerifier.sol): Exposes onchain verification interface to check signatures of payment settlement receipts.
-- [Exchange.sol](file:///d:/Stressed/contracts/src/markets/Exchange.sol): Central limit orderbook for binary markets YES/NO shares.
-- [Market.sol](file:///d:/Stressed/contracts/src/markets/Market.sol): Models share minting, resolution, and settlement payouts.
-- [MarketsPspVerifier.sol](file:///d:/Stressed/contracts/src/markets/MarketsPspVerifier.sol): Validates market claims and records settlement details.
-
-### 2. Frontend Client (`src/`)
-Built with React, Vite, and Dynamic SDK for Web3 authentication.
-- [App.tsx](file:///d:/Stressed/src/App.tsx): Contains direct send forms, invoice generators, statement tools, and real-time payment timelines.
-- [BetApp.tsx](file:///d:/Stressed/src/BetApp.tsx): A separate subdomain layout gating access to prediction markets via whitelist verification.
-- [lib/compliance.ts](file:///d:/Stressed/src/lib/compliance.ts): Handles client-side PSP generation, verification, and PDF/UBL-XML/JSON exporting.
-- [lib/crosschain.ts](file:///d:/Stressed/src/lib/crosschain.ts): Cross-chain route estimation and config matching.
-- [lib/realtime.ts](file:///d:/Stressed/src/lib/realtime.ts): Integrates with Supabase database listeners to stream payment state.
-
-### 3. Server (`server/`)
-Runs the background operations.
-- [server/crosschain.ts](file:///d:/Stressed/server/crosschain.ts): Listens to remote chains, constructs Polymer proofs, and submits them to Arc.
-- [server/qr.ts](file:///d:/Stressed/server/qr.ts): Monitors direct payments and tracks remote invoice updates.
-- [server/markets/operator.ts](file:///d:/Stressed/server/markets/operator.ts): Manages orderbooks, matches buyer/seller limits, and updates caches.
-- [server/psp/issue.ts](file:///d:/Stressed/server/psp/issue.ts): Monitors transaction logs and issues signed PSP structures.
-
-### 4. Database Config (`supabase/`)
-Uses Supabase PostgreSQL for tracking state:
-- [migrations](file:///d:/Stressed/supabase/migrations/): Sets up SQL tables for `payment_requests`, `psp_documents`, `market_fills`, and `market_positions` with triggers for realtime feeds.
-
----
-
-## Development Setup
-
-### Prerequisite Environment Configuration
-Copy `.env.example` to `.env.local` and configure your API keys and private keys:
+Offline CLI verification therefore requires `--issuer`:
 
 ```bash
-cp .env.example .env.local
+npx @disburse/psp-verify proof.json \
+  --issuer 0xIndependentlyTrustedIssuer
 ```
 
-Important variables include:
-- `VITE_DYNAMIC_ENVIRONMENT_ID`: Dynamic authentication config.
-- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`: Supabase API connection.
-- `DISBURSE_PSP_SIGNING_KEY`: Private key used by the backend to sign generated PSPs.
-- `QR_DEPLOYER_PRIVATE_KEY`: Key used to deploy and configure smart contracts.
+Offline verification does not assert that settlement exists onchain. The
+version-2 [PspVerifier contract](contracts/src/PspVerifier.sol) supports explicit
+`direct-signature-only` and `settlement` claims, trusted-issuer and settlement
+registries, EIP-712 field binding, and two-step ownership. See
+[contracts/PSP_VERIFIER.md](contracts/PSP_VERIFIER.md). A proof needs a matching
+onchain claim, and the verifier must be deployed and configured, before online
+verification can report a confirmed settlement.
 
-### Commands
+## Repository layout
 
-Install dependencies:
+```text
+api/                    Vercel API router
+api-handlers/           Endpoint controllers
+contracts/              PspVerifier v2 source, tests, and operator notes
+docs/                    Product and API documentation
+packages/cli/            Direct-disbursement CLI
+packages/psp-verify/     Standalone PSP verification library and CLI
+server/                  QR, PSP, statement, notification, and webhook logic
+src/                     React application and shared browser-safe libraries
+supabase/migrations/     Database schema and security migrations
+tests/                   API-focused tests
+```
+
+## Local development
+
+Requirements: Node.js 20 or newer.
+
 ```bash
 npm install
-```
-
-Start the Vite development frontend server:
-```bash
+npm run typecheck
+npm test
+npm run lint
+npm run build
 npm run dev
 ```
 
-Run typescript typechecking:
+The development and preview servers bind to `127.0.0.1` by default.
+
+Copy `.env.example` to a local, ignored environment file and configure only the
+services you need. Important server-only values include:
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `DISBURSE_CAPABILITY_ENCRYPTION_KEY`
+- `DISBURSE_PSP_SIGNING_KEY`
+- `PSP_TRUSTED_ISSUER`
+- PSP verifier deployment settings documented in
+  [contracts/PSP_VERIFIER.md](contracts/PSP_VERIFIER.md)
+
+Never expose service-role or signing keys through `VITE_*` variables.
+
+Optional `REDIS_URL` enables a standard Redis/Redis Cloud connection. As an
+alternative, `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` enable
+short-lived hashed abuse-rate counters for signed API routes. Redis is never a
+payment ledger or replay source of truth; the Supabase RPCs remain authoritative.
+
+## Database rollout
+
+The source changes depend on the latest Supabase migrations, including:
+
+- wallet-owned webhook and statement privacy controls;
+- atomic signed QR creation, replay, and quota enforcement;
+- exact receipt block-hash/log-index evidence;
+- atomic QR status, submission, confirmation, and direct-payment writes;
+- atomic webhook delivery accounting and single-use create/delete signatures;
+- in-place redaction of legacy raw QR capabilities from notifications; and
+- removal of public PSP/event enumeration.
+
+Treat migrations `202607290101` through `202607290103` as a coordinated,
+write-paused cutover:
+
+1. Drain outstanding 15-minute QR links and pause QR/direct writes plus webhook
+   management and delivery.
+2. Apply `101` and `102`. Migration `101` removes only the legacy
+   `payload.request.requestToken` key from existing payment-request
+   notifications (rows and encrypted envelopes are preserved). Migration
+   `102` adds `block_hash` and `settlement_log_index` under `NOT VALID`
+   constraints; unsafe new rows are rejected immediately.
+3. Backfill every legacy receipt from its exact canonical successful
+   transaction, including `block_hash`, `settlement_log_index`, and `chain_id`.
+   Never guess a log index or chain. Quarantine ambiguous rows for manual
+   adjudication.
+4. Apply `103`. Its preflight aborts on case-insensitive transaction replay,
+   request/receipt divergence, invalid financial values, or missing exact
+   evidence. It never deletes or repairs data.
+5. Deploy callers wired to the new service-role-only RPC signatures, smoke-test
+   one QR and one direct payment, then resume writes. Legacy webhooks must be
+   re-registered by their wallet owners.
+
+Validate this sequence in a non-production environment first. This repository
+change does not apply remote migrations or deploy contracts automatically.
+
+## Contracts
+
+Run the PSP verifier tests with Foundry when it is installed:
+
 ```bash
-npm run typecheck
+forge test --root contracts -vvv
 ```
 
-Execute the Vitest test suites:
-```bash
-npm test
-```
+The PSP verifier has a separate, explicit deployment workflow described in
+[contracts/PSP_VERIFIER.md](contracts/PSP_VERIFIER.md).
 
-Build the production bundle:
-```bash
-npm run build
-```
+## Security
 
----
-
-## Smart Contract Administration
-
-### Deploying Cross-Chain Settlement
-To deploy the cross-chain contracts (Source on Base/Monad, Settlement on Arc):
-```bash
-# Compile contracts first
-npm run deploy:qr-contracts -- --compile-only
-
-# Perform a full deployment to Arc, Base Sepolia, and Monad Testnet
-npm run deploy:qr-contracts -- --full
-```
-
-### Deploys & Upgrades for Prediction Markets
-- [deploy-markets.mjs](file:///d:/Stressed/scripts/deploy-markets.mjs): Deploys prediction market factory and routers.
-- [deploy-exchange-upgrade.mjs](file:///d:/Stressed/scripts/deploy-exchange-upgrade.mjs): Upgrades the exchange logic contracts on Arc Testnet.
-- [create-market.ts](file:///d:/Stressed/scripts/create-market.ts): Helper tool to construct new binary markets:
-  ```bash
-  npm run markets:create
-  ```
-
----
-
-## Testing & Automation Tools
-
-### Standalone PSP verification CLI
-You can test PSP verification locally using the packaged CLI tool inside [packages/psp-verify](file:///d:/Stressed/packages/psp-verify/src/verify.ts):
-
-```bash
-# Run CLI verification
-npx --workspace packages/psp-verify psp-verify proof.json --issuer 0xYourIssuerAddress
-```
-
-### Prediction Market Smoke Testing
-Disburse includes a full integration smoke test for prediction markets. It deploys, mints, resolutions, claims, and verifies claim PSPs locally:
-
-```bash
-# Run markets integration smoke test
-npx tsx scripts/smoke-markets.ts
-```
-
-### Market Making Bot
-You can boot the trading bot simulator to execute market-making operations on Arc Testnet:
-
-```bash
-# Launch bot
-npx tsx scripts/mm-bot.ts
-```
-
----
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Do not include keys, secrets, private customer data, or live webhook endpoints
+in public issues.
 
 ## License
 
-This repository is licensed under the MIT License. See [LICENSE](file:///d:/Stressed/LICENSE) for more details.
+MIT. See [LICENSE](LICENSE).
 
----
-
-<sub>Disburse is an independent project built on the USDC ecosystem. Not affiliated with Circle Internet Financial.</sub>
+Disburse is an independent project built on the USDC ecosystem and is not
+affiliated with Circle Internet Financial.

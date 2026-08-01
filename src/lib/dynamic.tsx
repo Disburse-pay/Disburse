@@ -1,7 +1,6 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
   DynamicContextProvider,
-  mergeNetworks,
   useDynamicContext,
   useSwitchNetwork,
   type EvmNetwork,
@@ -9,8 +8,8 @@ import {
 } from "@dynamic-labs/sdk-react-core";
 import { EthereumWalletConnectors, isEthereumWallet } from "@dynamic-labs/ethereum";
 import { getAddress, numberToHex, type Address } from "viem";
-import { ARC_CHAIN_ID } from "./arc";
-import { CROSSCHAIN_CHAINS, PAYMENT_SOURCE_CHAIN_IDS } from "./crosschain";
+import { sepolia } from "viem/chains";
+import { ARC_CHAIN_ID, ARC_EXPLORER_URL, ARC_RPC_ENDPOINTS, arcTestnet } from "./arc";
 import type { EthereumProvider } from "./onchain";
 
 type DynamicWalletBridgeContextValue = {
@@ -37,23 +36,37 @@ type WalletClientWithRequest = {
 
 export const DYNAMIC_ENVIRONMENT_ID = import.meta.env.VITE_DYNAMIC_ENVIRONMENT_ID?.trim() ?? "";
 
-export const dynamicPaymentNetworks: EvmNetwork[] = PAYMENT_SOURCE_CHAIN_IDS.map((chainId) => {
-  const config = CROSSCHAIN_CHAINS[chainId];
-  return {
-    blockExplorerUrls: [config.explorerUrl],
-    chainId,
-    chainName: config.label,
+export const dynamicPaymentNetworks: EvmNetwork[] = [{
+  blockExplorerUrls: [ARC_EXPLORER_URL],
+  chainId: ARC_CHAIN_ID,
+  chainName: arcTestnet.name,
+  iconUrls: ["/favicon.png"],
+  isTestnet: true,
+  key: "arc-testnet",
+  name: arcTestnet.name,
+  nativeCurrency: arcTestnet.nativeCurrency,
+  networkId: ARC_CHAIN_ID,
+  privateCustomerRpcUrls: ARC_RPC_ENDPOINTS.map((endpoint) => endpoint.url),
+  rpcUrls: ARC_RPC_ENDPOINTS.map((endpoint) => endpoint.url),
+  vanityName: arcTestnet.name
+}];
+
+export const dynamicBridgeNetworks: EvmNetwork[] = [
+  {
+    blockExplorerUrls: [sepolia.blockExplorers.default.url],
+    chainId: sepolia.id,
+    chainName: sepolia.name,
     iconUrls: ["/favicon.png"],
-    isTestnet: config.chain.testnet,
-    key: config.key,
-    name: config.label,
-    nativeCurrency: config.chain.nativeCurrency,
-    networkId: chainId,
-    privateCustomerRpcUrls: [config.rpcUrl],
-    rpcUrls: [config.rpcUrl],
-    vanityName: config.label
-  };
-});
+    isTestnet: true,
+    key: "ethereum-sepolia",
+    name: sepolia.name,
+    nativeCurrency: sepolia.nativeCurrency,
+    networkId: sepolia.id,
+    rpcUrls: [sepolia.rpcUrls.default.http[0]],
+    vanityName: "Ethereum Sepolia"
+  },
+  dynamicPaymentNetworks[0]
+];
 
 const disabledDynamicWalletBridge: DynamicWalletBridgeContextValue = {
   enabled: false,
@@ -80,7 +93,13 @@ const disabledDynamicWalletBridge: DynamicWalletBridgeContextValue = {
 
 const DynamicWalletBridgeContext = createContext<DynamicWalletBridgeContextValue>(disabledDynamicWalletBridge);
 
-export function DisburseDynamicProvider({ children }: { children: ReactNode }) {
+export function DisburseDynamicProvider({
+  children,
+  surface = "payments"
+}: {
+  children: ReactNode;
+  surface?: "payments" | "bridge";
+}) {
   if (!DYNAMIC_ENVIRONMENT_ID) {
     return (
       <DynamicWalletBridgeContext.Provider value={disabledDynamicWalletBridge}>
@@ -92,17 +111,21 @@ export function DisburseDynamicProvider({ children }: { children: ReactNode }) {
   return (
     <DynamicContextProvider
       settings={{
-        appName: "Disburse",
+        appName: surface === "bridge" ? "Disburse Bridge" : "Disburse",
         enableConnectOnlyFallback: true,
         environmentId: DYNAMIC_ENVIRONMENT_ID,
         initialAuthenticationMode: "connect-only",
         networkValidationMode: "never",
         overrides: {
-          evmNetworks: (dashboardNetworks) => mergeNetworks(dashboardNetworks, dynamicPaymentNetworks)
+          // The payment gateway stays Arc-only. The separate bridge surface
+          // admits exactly the two explicit CCTP testnet route endpoints.
+          evmNetworks: () => surface === "bridge" ? dynamicBridgeNetworks : dynamicPaymentNetworks
         },
         useMetamaskSdk: false,
         walletConnectors: [EthereumWalletConnectors],
-        walletConnectPreferredChains: [`eip155:${ARC_CHAIN_ID}`]
+        walletConnectPreferredChains: surface === "bridge"
+          ? [`eip155:${sepolia.id}`, `eip155:${ARC_CHAIN_ID}`]
+          : [`eip155:${ARC_CHAIN_ID}`]
       }}
     >
       <DynamicWalletBridge>{children}</DynamicWalletBridge>

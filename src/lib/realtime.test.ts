@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ARC_DESTINATION_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID } from "./crosschain";
 import type { PaymentRequest, Receipt } from "./payments";
-import { applyQrRealtimeEvent, rowToPaymentRequest, shouldHideQrForStatus, paymentRequestToRow } from "./realtime";
+import {
+  applyQrRealtimeEvent,
+  paymentRequestToRow,
+  receiptToRow,
+  rowToPaymentRequest,
+  rowToReceipt,
+  shouldHideQrForStatus
+} from "./realtime";
 
 const request: PaymentRequest = {
   id: "req_live_001",
@@ -93,6 +100,18 @@ describe("QR realtime event reducer", () => {
     expect(rowToPaymentRequest(paymentRequestToRow(failed))).toMatchObject({
       status: "failed",
       txHash: receipt.txHash
+    });
+  });
+
+  it("round-trips exact receipt block and log evidence", () => {
+    const exactReceipt: Receipt = {
+      ...receipt,
+      blockHash: `0x${"b".repeat(64)}`,
+      directSettlementLogIndex: 7
+    };
+    expect(rowToReceipt(receiptToRow(exactReceipt))).toMatchObject({
+      blockHash: exactReceipt.blockHash,
+      directSettlementLogIndex: 7
     });
   });
 });

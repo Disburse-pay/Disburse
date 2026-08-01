@@ -2,7 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { ApiResponse } from "../../server/http";
 import handler from "../../api-handlers/notifications.js";
+import {
+  authorizePaymentRequestCreation,
+  openNotificationRequestToken,
+  sealNotificationRequestToken
+} from "../../server/notifications.js";
+import { publicClient } from "../../src/lib/arc.js";
 import { buildInboxAccessTypedData, INBOX_ACCESS_TTL_SECONDS } from "../../src/lib/ids.js";
+import {
+  buildPaymentRequestAuthorizationTypedData,
+  PAYMENT_REQUEST_AUTH_TTL_SECONDS
+} from "../../src/lib/paymentRequestNotificationAuthorization.js";
+
+vi.spyOn(publicClient, "verifyTypedData").mockResolvedValue(false);
 
 type IdRow = { handle: string; address: string };
 type NoteRow = {
@@ -17,11 +29,18 @@ type NoteRow = {
 
 const db = vi.hoisted(() => ({
   ids: [] as IdRow[],
-  notifications: [] as NoteRow[]
+  notifications: [] as NoteRow[],
+  reservationResult: "ok",
+  reservationError: null as { message: string } | null,
+  rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>
 }));
 
 vi.mock("../../server/supabase.js", () => ({
   getSupabaseAdmin: () => ({
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      db.rpcCalls.push({ name, args });
+      return { data: db.reservationResult, error: db.reservationError };
+    },
     from: (table: string) => {
       if (table === "disburse_ids") {
         return {
@@ -106,10 +125,35 @@ async function postInbox(body: Record<string, unknown>) {
   return response;
 }
 
+describe("notification capability encryption", () => {
+  it("stores no plaintext bearer token and binds decryption to its inbox row", () => {
+    const previous = process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY;
+    process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY = "ab".repeat(32);
+    try {
+      const token = "cd".repeat(32);
+      const associatedData = "alice_01:22222222-2222-4222-8222-222222222222";
+      const envelope = sealNotificationRequestToken(token, associatedData);
+
+      expect(JSON.stringify(envelope)).not.toContain(token);
+      expect(openNotificationRequestToken(envelope, associatedData)).toBe(token);
+      expect(() => openNotificationRequestToken(envelope, `mallory:${associatedData}`)).toThrow();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY;
+      } else {
+        process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY = previous;
+      }
+    }
+  });
+});
+
 describe("/api/notifications", () => {
   beforeEach(() => {
     db.ids.length = 0;
     db.notifications.length = 0;
+    db.reservationResult = "ok";
+    db.reservationError = null;
+    db.rpcCalls.length = 0;
     db.ids.push({ handle: "alice_01", address: account.address.toLowerCase() });
   });
 
@@ -135,6 +179,77 @@ describe("/api/notifications", () => {
     const { notifications } = response.body as { notifications: Array<{ id: string; kind: string }> };
     expect(notifications).toHaveLength(2);
     expect(notifications[0].kind).toBe("payment_request");
+  });
+
+  it("never returns a legacy plaintext capability without a valid encrypted envelope", async () => {
+    const legacyToken = "cd".repeat(32);
+    seedNotification({
+      payload: {
+        request: {
+          id: "22222222-2222-4222-8222-222222222222",
+          amount: "10",
+          token: "USDC",
+          requestToken: legacyToken
+        },
+        requestToken: legacyToken
+      }
+    });
+    const expiresAt = futureExpiry();
+    const response = await postInbox({
+      wallet: account.address,
+      expiresAt,
+      signature: await signAccess(account, expiresAt),
+      action: "list"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain(legacyToken);
+    expect(response.body).toMatchObject({
+      notifications: [{ payload: { capabilityUnavailable: true } }]
+    });
+  });
+
+  it("returns a capability only after decrypting the envelope for the exact inbox row", async () => {
+    const previous = process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY;
+    process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY = "ab".repeat(32);
+    try {
+      const requestToken = "ef".repeat(32);
+      const requestId = "22222222-2222-4222-8222-222222222222";
+      seedNotification({
+        request_id: requestId,
+        payload: {
+          request: { id: requestId, amount: "10", token: "USDC" },
+          requestTokenEnvelope: sealNotificationRequestToken(
+            requestToken,
+            `alice_01:${requestId}`
+          )
+        }
+      });
+      const expiresAt = futureExpiry();
+      const response = await postInbox({
+        wallet: account.address,
+        expiresAt,
+        signature: await signAccess(account, expiresAt),
+        action: "list"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toMatchObject({
+        notifications: [{
+          payload: {
+            request: { requestToken }
+          }
+        }]
+      });
+      expect(JSON.stringify(response.body)).not.toContain("requestTokenEnvelope");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY;
+      } else {
+        process.env.DISBURSE_NOTIFICATION_ENCRYPTION_KEY = previous;
+      }
+    }
   });
 
   it("marks everything read when the inbox is opened", async () => {
@@ -230,10 +345,106 @@ describe("/api/notifications", () => {
     const badAction = await postInbox({ wallet: account.address, expiresAt, signature, action: "purge" });
     expect(badAction.statusCode).toBe(400);
 
-    const badId = await postInbox({ wallet: account.address, expiresAt, signature, action: "ignore", id: "nope" });
+    const badId = await postInbox({
+      wallet: account.address,
+      expiresAt,
+      signature,
+      action: "ignore",
+      id: "nope"
+    });
     expect(badId.statusCode).toBe(400);
     expect(db.notifications[0].status).toBe("unread");
   });
+});
+
+describe("payment-request notification authorization", () => {
+  beforeEach(() => {
+    db.reservationResult = "ok";
+    db.reservationError = null;
+    db.rpcCalls.length = 0;
+  });
+
+  it("accepts a short-lived recipient signature covering every displayed field", async () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + PAYMENT_REQUEST_AUTH_TTL_SECONDS - 30;
+    const authorization = {
+      wallet: account.address,
+      notify: "alice_01",
+      recipient: account.address,
+      token: "USDC" as const,
+      amount: "12.34",
+      label: "Invoice 42",
+      note: "July services",
+      invoiceDate: "2026-07-29",
+      expiresAt: BigInt(expiresAt)
+    };
+    const signature = await account.signTypedData(buildPaymentRequestAuthorizationTypedData(authorization));
+
+    await expect(
+      authorizePaymentRequestCreation({
+        ...authorization,
+        expiresAt,
+        signature
+      })
+    ).resolves.toMatchObject(authorization);
+  });
+
+  it("rejects an altered target or invoice field", async () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 120;
+    const authorization = {
+      wallet: account.address,
+      notify: "alice_01",
+      recipient: account.address,
+      token: "USDC" as const,
+      amount: "12.34",
+      label: "Invoice 42",
+      note: "",
+      invoiceDate: "2026-07-29",
+      expiresAt: BigInt(expiresAt)
+    };
+    const signature = await account.signTypedData(buildPaymentRequestAuthorizationTypedData(authorization));
+
+    await expect(
+      authorizePaymentRequestCreation({
+        ...authorization,
+        notify: "mallory_01",
+        expiresAt,
+        signature
+      })
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("requires the recipient signature even when no inbox target is requested", async () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 120;
+    const authorization = {
+      wallet: account.address,
+      notify: "",
+      recipient: account.address,
+      token: "USDC" as const,
+      amount: "1",
+      label: "Signed QR",
+      note: undefined,
+      invoiceDate: "2026-07-29",
+      expiresAt: BigInt(expiresAt)
+    };
+    const signature = await account.signTypedData(buildPaymentRequestAuthorizationTypedData(authorization));
+
+    const authorized = await authorizePaymentRequestCreation({
+      ...authorization,
+      expiresAt,
+      signature
+    });
+    expect(authorized).toMatchObject(authorization);
+    expect(authorized.authorizationDigest).toMatch(/^0x[0-9a-f]{64}$/);
+
+    await expect(
+      authorizePaymentRequestCreation({
+        ...authorization,
+        expiresAt,
+        signature: ""
+      })
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
 });
 
 function createResponse() {

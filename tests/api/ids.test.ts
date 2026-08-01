@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { ApiResponse } from "../../server/http";
 import handler from "../../api-handlers/ids.js";
+import { publicClient } from "../../src/lib/arc.js";
 import { buildIdClaimTypedData } from "../../src/lib/ids.js";
+
+vi.spyOn(publicClient, "verifyTypedData").mockResolvedValue(false);
 
 type IdRow = { handle: string; address: string; claimed_at: string };
 
@@ -90,7 +93,10 @@ describe("/api/ids", () => {
 
     const response = createResponse();
     await handler(
-      { method: "POST", body: { handle: "alice_01", address: account.address, expiresAt, signature: foreignSignature } },
+      {
+        method: "POST",
+        body: { handle: "alice_01", address: account.address, expiresAt, signature: foreignSignature }
+      },
       response.api
     );
     expect(response.statusCode).toBe(401);
@@ -103,7 +109,12 @@ describe("/api/ids", () => {
     await handler(
       {
         method: "POST",
-        body: { handle: "alice_01", address: account.address, expiresAt: past, signature: await signClaim(account, "alice_01", past) }
+        body: {
+          handle: "alice_01",
+          address: account.address,
+          expiresAt: past,
+          signature: await signClaim(account, "alice_01", past)
+        }
       },
       expired.api
     );
@@ -114,7 +125,12 @@ describe("/api/ids", () => {
     await handler(
       {
         method: "POST",
-        body: { handle: "alice_01", address: account.address, expiresAt: farFuture, signature: await signClaim(account, "alice_01", farFuture) }
+        body: {
+          handle: "alice_01",
+          address: account.address,
+          expiresAt: farFuture,
+          signature: await signClaim(account, "alice_01", farFuture)
+        }
       },
       tooLong.api
     );
@@ -127,7 +143,12 @@ describe("/api/ids", () => {
     await handler(
       {
         method: "POST",
-        body: { handle: "no spaces!", address: account.address, expiresAt, signature: await signClaim(account, "no spaces!", expiresAt) }
+        body: {
+          handle: "no spaces!",
+          address: account.address,
+          expiresAt,
+          signature: await signClaim(account, "no spaces!", expiresAt)
+        }
       },
       response.api
     );
@@ -138,28 +159,60 @@ describe("/api/ids", () => {
     const expiresAt = futureExpiry();
     const first = createResponse();
     await handler(
-      { method: "POST", body: { handle: "alice_01", address: account.address, expiresAt, signature: await signClaim(account, "alice_01", expiresAt) } },
+      {
+        method: "POST",
+        body: {
+          handle: "alice_01",
+          address: account.address,
+          expiresAt,
+          signature: await signClaim(account, "alice_01", expiresAt)
+        }
+      },
       first.api
     );
     expect(first.statusCode).toBe(200);
 
     const repeat = createResponse();
     await handler(
-      { method: "POST", body: { handle: "alice_01", address: account.address, expiresAt, signature: await signClaim(account, "alice_01", expiresAt) } },
+      {
+        method: "POST",
+        body: {
+          handle: "alice_01",
+          address: account.address,
+          expiresAt,
+          signature: await signClaim(account, "alice_01", expiresAt)
+        }
+      },
       repeat.api
     );
     expect(repeat.statusCode).toBe(200);
 
     const stolen = createResponse();
     await handler(
-      { method: "POST", body: { handle: "alice_01", address: otherAccount.address, expiresAt, signature: await signClaim(otherAccount, "alice_01", expiresAt) } },
+      {
+        method: "POST",
+        body: {
+          handle: "alice_01",
+          address: otherAccount.address,
+          expiresAt,
+          signature: await signClaim(otherAccount, "alice_01", expiresAt)
+        }
+      },
       stolen.api
     );
     expect(stolen.statusCode).toBe(409);
 
     const second = createResponse();
     await handler(
-      { method: "POST", body: { handle: "alice_02", address: account.address, expiresAt, signature: await signClaim(account, "alice_02", expiresAt) } },
+      {
+        method: "POST",
+        body: {
+          handle: "alice_02",
+          address: account.address,
+          expiresAt,
+          signature: await signClaim(account, "alice_02", expiresAt)
+        }
+      },
       second.api
     );
     expect(second.statusCode).toBe(409);

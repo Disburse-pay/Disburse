@@ -1,4 +1,13 @@
-import { assertMethod, readJsonBody, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
+import { getAddress, isAddress, zeroAddress } from "viem";
+import {
+  assertMethod,
+  HttpError,
+  readJsonBody,
+  sendError,
+  sendJson,
+  type ApiRequest,
+  type ApiResponse,
+} from "../server/http.js";
 import { verify } from "../src/lib/psp/verify.js";
 
 /**
@@ -10,7 +19,7 @@ import { verify } from "../src/lib/psp/verify.js";
  * No authentication required — verification is a pure function.
  *
  * Request body: a PSP JSON document (the full PspV1 object)
- * Optional query: ?issuer=0x... to additionally check expected issuer
+ * Required query: ?issuer=0x... supplied from an independent trust source
  *
  * Response:
  *   200 { ok: true, fields: { requestId, payer, recipient, ... } }
@@ -23,19 +32,31 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
     const body = readJsonBody(request);
     if (!body || typeof body !== "object" || !("version" in body)) {
-      response.status(400).json({
+      sendJson(response, 400, {
         error: "Request body must be a PSP document (JSON object with version field)."
       });
       return;
     }
 
-    // Optional issuer check from query string
+    // Never silently accept a missing, malformed, or repeated trust root.
     const issuerParam = request.query?.issuer;
-    const expectedIssuer = typeof issuerParam === "string" && /^0x[0-9a-fA-F]{40}$/.test(issuerParam)
-      ? issuerParam as `0x${string}`
-      : undefined;
+    if (Array.isArray(issuerParam)) {
+      throw new HttpError(400, 'Query parameter "issuer" must be provided exactly once.');
+    }
+    if (
+      typeof issuerParam !== "string" ||
+      !isAddress(issuerParam) ||
+      getAddress(issuerParam) === zeroAddress
+    ) {
+      throw new HttpError(
+        400,
+        'Provide one non-zero trusted issuer address in the "issuer" query parameter.'
+      );
+    }
 
-    const result = await verify(body, expectedIssuer ? { expectedIssuer } : undefined);
+    const result = await verify(body, {
+      expectedIssuer: getAddress(issuerParam),
+    });
 
     // Always 200 — ok: true/false indicates verification status
     sendJson(response, 200, result);

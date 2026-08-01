@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildShareUrl, decodeRequestPayload, validateRecipient, type PaymentRequest } from "./payments";
+import { buildShareUrl, decodeRequestReference, validateRecipient, type PaymentRequest } from "./payments";
 import { buildQrDataUrl } from "./qr";
 
 const request: PaymentRequest = {
   id: "req_qr_001",
+  requestToken: "capability_token_abcdefghijklmnopqrstuvwxyz_123456",
   recipient: validateRecipient("0x1111111111111111111111111111111111111111"),
   token: "USDC",
   amount: "10",
@@ -25,14 +26,10 @@ describe("QR payment links", () => {
 
     const encoded = new URL(shareUrl).searchParams.get("r");
     expect(encoded).toBeTruthy();
-    expect(decodeRequestPayload(encoded ?? "")).toMatchObject({
-      recipient: request.recipient,
-      token: "USDC",
-      amount: "10",
-      label: "Invoice 2",
-      note: "Food and Drink",
-      invoiceDate: "2026-04-29",
-      expiresAt: "2026-04-29T10:15:00.000Z"
+    expect(decodeRequestReference(encoded ?? "")).toEqual({
+      version: 3,
+      id: request.id,
+      requestToken: request.requestToken
     });
   });
 });

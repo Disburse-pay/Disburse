@@ -6,9 +6,11 @@ import {
   buildShareUrl,
   createExpiry,
   decodeRequestPayload,
+  decodeRequestReference,
   decodeTransferLog,
   encodeRequestPayload,
   formatTokenAmount,
+  hasSameRequestPayload,
   isPaymentExpired,
   isPaymentPayable,
   mergeScannedRequest,
@@ -21,9 +23,11 @@ import {
 
 const recipient = validateRecipient("0x1111111111111111111111111111111111111111");
 const sender = validateRecipient("0x2222222222222222222222222222222222222222");
+const requestToken = "capability_token_abcdefghijklmnopqrstuvwxyz_123456";
 
 const baseRequest: PaymentRequest = {
   id: "req_test_001",
+  requestToken,
   recipient,
   token: "USDC",
   amount: "12.34",
@@ -55,28 +59,31 @@ describe("payment amount conversion", () => {
 });
 
 describe("request payload URLs", () => {
-  it("round-trips share payloads through base64url JSON", () => {
+  it("encodes only an opaque server capability reference", () => {
     const encoded = encodeRequestPayload(baseRequest);
     expect(encoded).not.toContain("+");
     expect(encoded).not.toContain("/");
 
-    const decoded = decodeRequestPayload(encoded);
-    expect(decoded).toMatchObject({
+    const decoded = decodeRequestReference(encoded);
+    expect(decoded).toEqual({
+      version: 3,
       id: baseRequest.id,
-      recipient: baseRequest.recipient,
-      token: baseRequest.token,
-      amount: baseRequest.amount,
-      label: baseRequest.label,
-      note: baseRequest.note,
-      invoiceDate: baseRequest.invoiceDate,
-      expiresAt: baseRequest.expiresAt,
-      startBlock: baseRequest.startBlock,
-      status: "open"
+      requestToken
     });
+    const json = Buffer.from(encoded, "base64url").toString("utf8");
+    expect(json).not.toContain(baseRequest.recipient);
+    expect(json).not.toContain(baseRequest.amount);
+    expect(json).not.toContain(baseRequest.label);
   });
 
   it("builds the /pay request URL", () => {
     expect(buildShareUrl(baseRequest, "https://desk.example")).toMatch(/^https:\/\/desk\.example\/pay\?r=/);
+  });
+
+  it("fails closed instead of generating legacy self-asserted payment links", () => {
+    const { requestToken: _requestToken, ...legacyRequest } = baseRequest;
+    expect(() => encodeRequestPayload(legacyRequest)).toThrow("server-verified");
+    expect(() => buildShareUrl(legacyRequest, "https://desk.example")).toThrow("server-verified");
   });
 });
 
@@ -107,7 +114,21 @@ describe("QR request metadata", () => {
 describe("scanned request recovery", () => {
   it("preserves a submitted local transaction when the same QR is reopened", () => {
     const txHash = `0x${"b".repeat(64)}` as `0x${string}`;
-    const scanned = decodeRequestPayload(encodeRequestPayload(baseRequest));
+    const scanned = decodeRequestPayload(
+      encodeRawPayload({
+        version: 1,
+        id: baseRequest.id,
+        recipient: baseRequest.recipient,
+        token: baseRequest.token,
+        amount: baseRequest.amount,
+        label: baseRequest.label,
+        note: baseRequest.note,
+        invoiceDate: baseRequest.invoiceDate,
+        expiresAt: baseRequest.expiresAt,
+        createdAt: baseRequest.createdAt,
+        startBlock: baseRequest.startBlock
+      })
+    );
     const merged = mergeScannedRequest(
       {
         ...baseRequest,
@@ -140,7 +161,23 @@ describe("scanned request recovery", () => {
         destinationChainId: ARC_DESTINATION_CHAIN_ID
       }
     };
-    const scanned = decodeRequestPayload(encodeRequestPayload(crossChainRequest));
+    const scanned = decodeRequestPayload(
+      encodeRawPayload({
+        version: 2,
+        id: crossChainRequest.id,
+        recipient: crossChainRequest.recipient,
+        token: "USDC",
+        amount: crossChainRequest.amount,
+        label: crossChainRequest.label,
+        note: crossChainRequest.note,
+        invoiceDate: crossChainRequest.invoiceDate,
+        expiresAt: crossChainRequest.expiresAt,
+        dueAt: crossChainRequest.dueAt,
+        createdAt: crossChainRequest.createdAt,
+        destinationChainId: ARC_DESTINATION_CHAIN_ID,
+        allowedSourceChainIds: crossChainRequest.allowedSourceChainIds
+      })
+    );
     const merged = mergeScannedRequest(
       {
         ...crossChainRequest,
@@ -166,6 +203,17 @@ describe("scanned request recovery", () => {
       sourceLogIndex: 1,
       stage: "settling"
     });
+  });
+
+  it("detects a canonical recipient or amount change before payment", () => {
+    expect(hasSameRequestPayload(baseRequest, { ...baseRequest, status: "paid" })).toBe(true);
+    expect(hasSameRequestPayload(baseRequest, { ...baseRequest, amount: "999" })).toBe(false);
+    expect(
+      hasSameRequestPayload(baseRequest, {
+        ...baseRequest,
+        recipient: validateRecipient("0x3333333333333333333333333333333333333333")
+      })
+    ).toBe(false);
   });
 
   it("rejects malformed request date fields from QR payloads", () => {

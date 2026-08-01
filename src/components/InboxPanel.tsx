@@ -83,10 +83,17 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
   const [isLoading, setIsLoading] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const hasLoadedRef = useRef(false);
+  const loadedWalletRef = useRef<string | undefined>(undefined);
+  const activeAccountRef = useRef<Address | undefined>(account);
+  activeAccountRef.current = account;
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const prefersReducedMotion = useReducedMotion();
+  const currentAuth =
+    auth && account && auth.wallet.toLowerCase() === account.toLowerCase()
+      ? auth
+      : undefined;
+  const visiblePayload = currentAuth ? payload : undefined;
 
   // Anchor the popover under the header bell (its wrapper carries
   // data-inbox-anchor). Align the card's right edge to the bell's right edge
@@ -133,19 +140,24 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
 
   const loadInbox = useCallback(
     async (nextAuth: InboxAuth) => {
+      const walletKey = nextAuth.wallet.toLowerCase();
       setIsLoading(true);
       setError(undefined);
       try {
         // Opening the inbox reads it: everything unread flips to read.
         const next = await markInboxRead(nextAuth);
+        if (activeAccountRef.current?.toLowerCase() !== walletKey) return;
         setPayload(next);
         onActivity();
       } catch (loadError) {
+        if (activeAccountRef.current?.toLowerCase() !== walletKey) return;
         setAuth(undefined);
         setPayload(undefined);
         setError(loadError instanceof Error ? loadError.message : String(loadError));
       } finally {
-        setIsLoading(false);
+        if (activeAccountRef.current?.toLowerCase() === walletKey) {
+          setIsLoading(false);
+        }
       }
     },
     [onActivity]
@@ -153,13 +165,22 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
 
   useEffect(() => {
     if (!open) {
-      hasLoadedRef.current = false;
+      loadedWalletRef.current = undefined;
       return;
     }
-    if (!account || hasLoadedRef.current) {
+    if (!account) {
+      loadedWalletRef.current = undefined;
+      setAuth(undefined);
+      setPayload(undefined);
+      setIsLoading(false);
+      setError(undefined);
       return;
     }
-    hasLoadedRef.current = true;
+    const walletKey = account.toLowerCase();
+    if (loadedWalletRef.current === walletKey) {
+      return;
+    }
+    loadedWalletRef.current = walletKey;
     const cached = readCachedInboxAuth(account);
     setAuth(cached);
     setPayload(undefined);
@@ -192,11 +213,12 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
   }
 
   async function handleIgnore(id: string) {
-    if (!auth) {
+    if (!currentAuth) {
       return;
     }
     try {
-      const next = await ignoreInboxNotification(auth, id);
+      const next = await ignoreInboxNotification(currentAuth, id);
+      if (activeAccountRef.current?.toLowerCase() !== currentAuth.wallet.toLowerCase()) return;
       setPayload(next);
       onActivity();
     } catch (ignoreError) {
@@ -210,6 +232,10 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
   function handlePayNow(notification: InboxNotification) {
     const request = notification.payload.request;
     if (!request) {
+      return;
+    }
+    if (!request.requestToken) {
+      setError("This notification uses an older payment link. Ask the requester for a fresh verified QR request.");
       return;
     }
     onClose();
@@ -246,8 +272,8 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
           <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-3">
             <div className="min-w-0">
               <h2 className="text-md font-semibold tracking-tight text-[var(--ink)]">{t("inbox")}</h2>
-              {payload?.handle && (
-                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">@{payload.handle}</p>
+              {visiblePayload?.handle && (
+                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">@{visiblePayload.handle}</p>
               )}
             </div>
             <button
@@ -264,7 +290,7 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             {!account && <p className="text-sm text-[var(--muted)]">{t("disburseIdConnect")}</p>}
 
-            {account && !auth && (
+            {account && !currentAuth && (
               <div className="flex flex-col items-start gap-3">
                 <p className="text-sm text-[var(--muted)]">{t("inboxUnlockHint")}</p>
                 <button
@@ -278,22 +304,22 @@ export default function InboxPanel({ open, onClose, account, getProvider, onNavi
               </div>
             )}
 
-            {account && auth && isLoading && <p className="text-sm text-[var(--muted)]">{t("loading")}</p>}
+            {account && currentAuth && isLoading && <p className="text-sm text-[var(--muted)]">{t("loading")}</p>}
 
-            {account && auth && !isLoading && payload && payload.handle === null && (
+            {account && currentAuth && !isLoading && visiblePayload && visiblePayload.handle === null && (
               <p className="text-sm text-[var(--muted)]">{t("inboxNoName")}</p>
             )}
 
-            {account && auth && !isLoading && payload && payload.handle !== null && payload.notifications.length === 0 && (
+            {account && currentAuth && !isLoading && visiblePayload && visiblePayload.handle !== null && visiblePayload.notifications.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <InboxIcon size={20} strokeWidth={1.5} className="text-[var(--muted)]" />
                 <p className="text-sm text-[var(--muted)]">{t("inboxEmpty")}</p>
               </div>
             )}
 
-            {account && auth && !isLoading && payload && payload.notifications.length > 0 && (
+            {account && currentAuth && !isLoading && visiblePayload && visiblePayload.notifications.length > 0 && (
               <ul className="flex flex-col gap-2.5">
-                {payload.notifications.map((notification) => (
+                {visiblePayload.notifications.map((notification) => (
                   <NotificationItem
                     key={notification.id}
                     notification={notification}
@@ -335,6 +361,7 @@ function NotificationItem({
 
   if (notification.kind === "payment_request") {
     const request = payload.request;
+    const canPay = Boolean(request?.requestToken);
     const title = payload.fromHandle
       ? t("inboxRequestFrom", { from: payload.fromHandle, amount: request?.amount ?? "", token: request?.token ?? "" })
       : t("inboxRequestAnon", { amount: request?.amount ?? "", token: request?.token ?? "" });
@@ -357,7 +384,9 @@ function NotificationItem({
             <button
               type="button"
               onClick={onPayNow}
-              className="inline-flex h-7 items-center rounded-md bg-[var(--primary-bg)] px-3 text-sm font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+              disabled={!canPay}
+              title={canPay ? undefined : "Ask the requester for a fresh verified QR request."}
+              className="inline-flex h-7 items-center rounded-md bg-[var(--primary-bg)] px-3 text-sm font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
             >
               {t("payNow")}
             </button>

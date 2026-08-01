@@ -1,7 +1,7 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
 import type { DocsSection, DocsSummaryItem } from "./types";
-import { docsSections, arcadeSections } from "./en";
+import { docsSections } from "./en";
 
 /**
  * Fully translated sections, keyed by the canonical English title from en.ts.
@@ -61,19 +61,6 @@ const translated: Record<string, DocsSection> = {
       "Gas: Schätzungen werden für Anzeige und Saldo-Prüfungen genutzt; die Wallet finalisiert das Transaktionsgas beim Signieren."
     ]
   },
-  "Local ledger and realtime": {
-    title: "Lokales Ledger und Realtime",
-    body: [
-      "QR-Anfragen und Belege werden im localStorage des Browsers gespeichert, damit der Anforderer ohne Konto arbeiten kann. Das Ledger unterstützt JSON-Export und -Import für Backup oder Migration.",
-      "Wenn Supabase konfiguriert ist, können QR-Anfragen auch über Vercel-API-Funktionen geschrieben werden. Realtime-Events schließen den QR-Code in der Anfordereransicht, wenn der Zahler sendet, bestätigt, fehlschlägt oder eine Anfrage abläuft."
-    ],
-    points: [
-      "Storage-Keys: disburse.requests und disburse.receipts.",
-      "Legacy-Keys werden weiter gelesen: arc-pay-desk.requests und arc-pay-desk.receipts.",
-      "Anfragen werden nach request id gespeichert. Belege werden nach request id oder transaction hash upserted.",
-      "Importierte Explorer-URLs werden aus dem verifizierten Arcscan-Transaktionshash neu erzeugt."
-    ]
-  },
   "Invoice output": {
     title: "Rechnungsausgabe",
     body: [
@@ -105,23 +92,14 @@ const translated: Record<string, DocsSection> = {
 const fallbackTitles: Record<string, string> = {
   "What Disburse is": "Was Disburse ist",
   "Tech and stack": "Technik und Stack",
+  "Wallet-scoped history": "Wallet-bezogener Zahlungsverlauf",
   Contracts: "Smart Contracts",
   "Portable Settlement Proofs": "Portable Settlement Proofs",
   "API and webhooks": "API und Webhooks"
 };
 
-const arcadeTitles: Record<string, string> = {
-  "Cluck Run": "Cluck Run",
-  "The coin slot": "Der Coin Slot",
-  "Runs and the leaderboard": "Runs und das Leaderboard"
-};
-
 export const docsSectionsDe: DocsSection[] = docsSections.map(
   (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
-);
-
-export const arcadeSectionsDe: DocsSection[] = arcadeSections.map(
-  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
 );
 
 export const docsSummaryItemsDe: DocsSummaryItem[] = [

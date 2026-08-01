@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Bell, LogOut, Menu, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { AlertTriangle, Bell, LogOut, Menu, Moon, Settings as SettingsIcon, Sun, Wallet } from "lucide-react";
 import { useI18n } from "../lib/i18n";
 
 type Props = {
@@ -42,7 +42,7 @@ export default function Header({
   onOpenNav,
   onOpenInbox,
   inboxUnreadCount = 0,
-  theme,
+  theme
 }: Props) {
   const { t } = useI18n();
   const wrongChain = account && chainId !== undefined && chainId !== expectedChainId;
@@ -69,9 +69,7 @@ export default function Header({
             {displayTitle}
           </h1>
           {displaySubtitle && (
-            <p className="mt-0.5 truncate text-sm leading-tight text-[var(--muted)]">
-              {displaySubtitle}
-            </p>
+            <p className="mt-0.5 truncate text-sm leading-tight text-[var(--muted)]">{displaySubtitle}</p>
           )}
         </div>
       </div>
@@ -83,10 +81,8 @@ export default function Header({
           className="hidden items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper-2)] px-3 py-1.5 md:inline-flex"
           title={`${expectedChainLabel} · chainId ${expectedChainId}`}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-soft)]" aria-hidden="true" />
-          <span className="text-sm font-medium text-[var(--ink)]">
-            {expectedChainLabel}
-          </span>
+          <span className="h-4 w-px bg-[var(--line-strong)]" aria-hidden="true" />
+          <span className="text-sm font-medium text-[var(--ink)]">{expectedChainLabel}</span>
           <span className="text-xs text-[var(--muted)]">{t("testnet")}</span>
         </div>
 
@@ -98,7 +94,7 @@ export default function Header({
             {inboxUnreadCount > 0 && (
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary-bg)] px-1 text-[10px] font-semibold leading-none text-[color:var(--primary-text)]"
+                className="pointer-events-none absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-sm bg-[var(--primary-bg)] px-1 text-[10px] font-semibold leading-none text-[color:var(--primary-text)]"
               >
                 {inboxUnreadCount > 9 ? "9+" : inboxUnreadCount}
               </span>
@@ -147,9 +143,10 @@ export default function Header({
             type="button"
             onClick={onConnect}
             disabled={isConnecting}
-            className="rounded-md bg-[var(--primary-bg)] px-3.5 py-1.5 text-base font-medium text-[color:var(--primary-text)] transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:opacity-60 shadow-sm"
+            className="inline-flex h-8 min-w-8 items-center justify-center rounded-md bg-[var(--primary-bg)] px-2.5 text-base font-medium text-[color:var(--primary-text)] shadow-sm transition-colors hover:bg-[var(--primary-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:opacity-60 sm:h-auto sm:px-3.5 sm:py-1.5"
           >
-            {isConnecting ? t("connecting") : t("connectWallet")}
+            <Wallet className="sm:hidden" size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span className="hidden sm:inline">{isConnecting ? t("connecting") : t("connectWallet")}</span>
           </button>
         ) : wrongChain ? (
           <button
@@ -162,40 +159,45 @@ export default function Header({
             {t("switchToNetwork", { network: expectedChainLabel })}
           </button>
         ) : (
-          <ConnectedWalletPill shortAddr={shortAddr ?? ""} onDisconnect={onDisconnect} />
+          <ConnectedWalletControl shortAddr={shortAddr ?? ""} onDisconnect={onDisconnect} />
         )}
       </div>
     </header>
   );
 }
 
-function translateHeaderTitle(title: string, t: (key: string, params?: Record<string, string | number>) => string) {
+function translateHeaderTitle(
+  title: string,
+  t: (key: string, params?: Record<string, string | number>) => string
+) {
   const keyByTitle: Record<string, string> = {
     Overview: "overview",
     "Direct send": "directSend",
     "QR requests": "qrPayments",
     "Pay request": "routePayTitle",
     "Import · Export": "routeBackupTitle",
-    Documentation: "documentation",
+    Documentation: "documentation"
   };
   return keyByTitle[title] ? t(keyByTitle[title]) : title;
 }
 
-function translateHeaderSubtitle(subtitle: string, t: (key: string, params?: Record<string, string | number>) => string) {
+function translateHeaderSubtitle(
+  subtitle: string,
+  t: (key: string, params?: Record<string, string | number>) => string
+) {
   const keyBySubtitle: Record<string, string> = {
     "Requests, receipts and network health at a glance.": "routeOverviewSubtitle",
     "Pay a wallet address directly on Arc Testnet.": "routePaymentsSubtitle",
     "Create a QR invoice for someone else to scan and pay.": "routeQrSubtitle",
     "Review and settle a QR payment request.": "routePaySubtitle",
-    "Back up or restore your requests and receipts.": "routeBackupSubtitle",
-    "How Disburse settles, verifies, and exports payments.": "routeDocsSubtitle",
+    "How Disburse settles, verifies, and exports payments.": "routeDocsSubtitle"
   };
   return keyBySubtitle[subtitle] ? t(keyBySubtitle[subtitle]) : subtitle;
 }
 
-function ConnectedWalletPill({
+function ConnectedWalletControl({
   shortAddr,
-  onDisconnect,
+  onDisconnect
 }: {
   shortAddr: string;
   onDisconnect?: () => void;
@@ -220,10 +222,8 @@ function ConnectedWalletPill({
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--paper-2)]"
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--green-text)]" aria-hidden="true" />
-        <span className="font-mono text-sm leading-none text-[var(--ink)]">
-          {shortAddr}
-        </span>
+        <Wallet size={12} strokeWidth={1.75} className="text-[var(--green-text)]" aria-hidden="true" />
+        <span className="font-mono text-sm leading-none text-[var(--ink)]">{shortAddr}</span>
       </button>
       {open && onDisconnect && (
         <div className="absolute right-0 top-[calc(100%+8px)] z-30 min-w-[170px] overflow-hidden rounded-md border border-[var(--line)] bg-[var(--paper)] shadow-md">
@@ -247,7 +247,7 @@ function ConnectedWalletPill({
 function IconButton({
   onClick,
   ariaLabel,
-  children,
+  children
 }: {
   onClick: () => void;
   ariaLabel: string;

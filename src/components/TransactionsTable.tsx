@@ -5,7 +5,7 @@ import {
   encodeRequestPayload,
   isCrossChainPaymentRequest,
   refreshDerivedStatus,
-  shortAddress,
+  shortAddress
 } from "../lib/payments";
 import { formatInvoiceDate } from "../lib/invoice";
 import { useI18n } from "../lib/i18n";
@@ -17,22 +17,13 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-/* Monochrome status: state is read from the label text, not the color.
- *   paid    → filled ink dot
- *   open    → ring-only (hollow) dot
- *   expired → muted-soft hollow dot
- *   failed  → filled ink dot, italic label
- *   review  → ring-only dot, italic label
- */
-const STATUS_CONFIG: Record<
-  PaymentStatus,
-  { labelKey: string; dot: string; text: string }
-> = {
-  open:           { labelKey: "open",    dot: "bg-transparent ring-1 ring-inset ring-[var(--ink-soft)]",  text: "text-[var(--muted)]" },
-  paid:           { labelKey: "paid",    dot: "bg-[var(--ink)]",                                           text: "text-[var(--ink)]" },
-  expired:        { labelKey: "expired", dot: "bg-transparent ring-1 ring-inset ring-[var(--muted-soft)]", text: "text-[var(--muted)]" },
-  failed:         { labelKey: "failed",  dot: "bg-[var(--ink)]",                                           text: "text-[var(--ink)] italic" },
-  possible_match: { labelKey: "review",  dot: "bg-transparent ring-1 ring-inset ring-[var(--ink-soft)]",  text: "text-[var(--muted)] italic" },
+/* Monochrome status uses a compact glyph plus the full text label. */
+const STATUS_CONFIG: Record<PaymentStatus, { labelKey: string; mark: string; text: string }> = {
+  open: { labelKey: "open", mark: "—", text: "text-[var(--muted)]" },
+  paid: { labelKey: "paid", mark: "✓", text: "text-[var(--ink)]" },
+  expired: { labelKey: "expired", mark: "×", text: "text-[var(--muted)]" },
+  failed: { labelKey: "failed", mark: "!", text: "text-[var(--ink)] italic" },
+  possible_match: { labelKey: "review", mark: "~", text: "text-[var(--muted)] italic" }
 };
 
 const FILTERS = ["all", "open", "paid", "expired", "failed"] as const;
@@ -41,26 +32,21 @@ const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = {
   open: "open",
   paid: "paid",
   expired: "expired",
-  failed: "failed",
+  failed: "failed"
 };
 
 /**
  * Ledger of recent payment requests. Plain-language column headers, calm
- * status pills, navigable rows.
+ * explicit status labels, navigable rows.
  */
-export default function TransactionsTable({
-  requests,
-  receipts,
-  now,
-  onNavigate,
-}: Props) {
+export default function TransactionsTable({ requests, receipts, now, onNavigate }: Props) {
   const { t } = useI18n();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
 
   const displayRequests = useMemo(() => {
     const derived = requests.map((r) => refreshDerivedStatus(r, now));
     const sorted = [...derived].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     if (filter === "all") return sorted;
     return sorted.filter((r) => r.status === filter);
@@ -84,9 +70,7 @@ export default function TransactionsTable({
             <p className="text-lg font-semibold tracking-[-0.012em] text-[var(--ink)]">
               {t("recentRequestsLower")}
             </p>
-            <p className="mt-0.5 text-sm text-[var(--muted)]">
-              {t("ledger")}
-            </p>
+            <p className="mt-0.5 text-sm text-[var(--muted)]">{t("ledger")}</p>
           </div>
           {requests.length > 0 && (
             <span className="text-sm text-[var(--muted)]">
@@ -109,7 +93,7 @@ export default function TransactionsTable({
                   "rounded px-2.5 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
                   active
                     ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]",
+                    : "text-[var(--muted)] hover:text-[var(--ink)]"
                 ].join(" ")}
               >
                 {t(FILTER_LABEL[f])}
@@ -117,7 +101,7 @@ export default function TransactionsTable({
                   <span
                     className={[
                       "ml-1 text-xs tabular-nums",
-                      active ? "text-[var(--muted)]" : "text-[var(--muted-soft)]",
+                      active ? "text-[var(--muted)]" : "text-[var(--muted-soft)]"
                     ].join(" ")}
                   >
                     {count}
@@ -147,23 +131,34 @@ export default function TransactionsTable({
               {displayRequests.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] ?? STATUS_CONFIG.open;
                 const receipt = receipts.find((rec) => rec.requestId === r.id);
+                const canOpenVerifiedRequest = Boolean(r.requestToken);
                 return (
                   <tr
                     key={r.id}
-                    className="group cursor-pointer transition-colors hover:bg-[var(--paper-2)]"
-                    onClick={() =>
-                      onNavigate(`/pay?r=${encodeRequestPayload(r)}`)
+                    className={[
+                      "group transition-colors",
+                      canOpenVerifiedRequest ? "cursor-pointer hover:bg-[var(--paper-2)]" : "cursor-default"
+                    ].join(" ")}
+                    title={
+                      canOpenVerifiedRequest
+                        ? undefined
+                        : "Saved record only. Create a fresh verified QR request to share or pay."
                     }
+                    onClick={() => {
+                      if (canOpenVerifiedRequest) {
+                        onNavigate(`/pay?r=${encodeRequestPayload(r)}`);
+                      }
+                    }}
                   >
                     <Td>
                       <span className="inline-flex items-center gap-1.5">
                         <span
-                          className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}
+                          className="inline-flex w-3 justify-center font-mono text-xs text-[var(--ink-soft)]"
                           aria-hidden="true"
-                        />
-                        <span className={`text-sm font-medium ${cfg.text}`}>
-                          {t(cfg.labelKey)}
+                        >
+                          {cfg.mark}
                         </span>
+                        <span className={`text-sm font-medium ${cfg.text}`}>{t(cfg.labelKey)}</span>
                         {receipt && (
                           <span
                             className="inline-flex text-[var(--muted)]"
@@ -176,9 +171,7 @@ export default function TransactionsTable({
                       </span>
                     </Td>
                     <Td>
-                      <span className="text-base font-medium text-[var(--ink)]">
-                        {r.label}
-                      </span>
+                      <span className="text-base font-medium text-[var(--ink)]">{r.label}</span>
                       {r.note && (
                         <span className="ml-2 hidden max-w-[24ch] truncate align-middle text-sm text-[var(--muted)] md:inline-block">
                           {r.note}
@@ -194,19 +187,18 @@ export default function TransactionsTable({
                       <span className="text-sm text-[var(--muted)]">
                         {isCrossChainPaymentRequest(r) ? t("crossChain") : t("arcDirect")}
                       </span>
+                      {!canOpenVerifiedRequest && !receipt && (
+                        <span className="block text-xs text-[var(--muted-soft)]">
+                          Saved record only · recreate a verified QR to pay
+                        </span>
+                      )}
                     </Td>
                     <Td align="right">
-                      <span className="text-base font-medium text-[var(--ink)] tabular-nums">
-                        {r.amount}
-                      </span>
-                      <span className="ml-1 text-xs text-[var(--muted)]">
-                        {r.token}
-                      </span>
+                      <span className="text-base font-medium text-[var(--ink)] tabular-nums">{r.amount}</span>
+                      <span className="ml-1 text-xs text-[var(--muted)]">{r.token}</span>
                     </Td>
                     <Td align="right">
-                      <span className="text-sm text-[var(--muted)]">
-                        {formatRelative(r.createdAt, now)}
-                      </span>
+                      <span className="text-sm text-[var(--muted)]">{formatRelative(r.createdAt, now)}</span>
                       <span className="block text-xs text-[var(--muted-soft)]">
                         {formatInvoiceDate(r.invoiceDate)}
                       </span>
@@ -215,7 +207,10 @@ export default function TransactionsTable({
                       <ChevronRight
                         size={15}
                         strokeWidth={1.75}
-                        className="text-[var(--muted-soft)] opacity-0 transition-opacity group-hover:opacity-100"
+                        className={[
+                          "text-[var(--muted-soft)] transition-opacity",
+                          canOpenVerifiedRequest ? "opacity-0 group-hover:opacity-100" : "opacity-0"
+                        ].join(" ")}
                         aria-hidden="true"
                       />
                     </td>
@@ -232,18 +227,12 @@ export default function TransactionsTable({
   );
 }
 
-function Th({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
+function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
   return (
     <th
       className={[
         "px-5 py-3 text-sm font-medium text-[var(--muted)]",
-        align === "right" ? "text-right" : "text-left",
+        align === "right" ? "text-right" : "text-left"
       ].join(" ")}
     >
       {children}
@@ -251,32 +240,13 @@ function Th({
   );
 }
 
-function Td({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
+function Td({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
   return (
-    <td
-      className={[
-        "px-5 py-3.5",
-        align === "right" ? "text-right" : "text-left",
-      ].join(" ")}
-    >
-      {children}
-    </td>
+    <td className={["px-5 py-3.5", align === "right" ? "text-right" : "text-left"].join(" ")}>{children}</td>
   );
 }
 
-function EmptyState({
-  filter,
-  onCreate,
-}: {
-  filter: (typeof FILTERS)[number];
-  onCreate: () => void;
-}) {
+function EmptyState({ filter, onCreate }: { filter: (typeof FILTERS)[number]; onCreate: () => void }) {
   const { t } = useI18n();
   const isFiltered = filter !== "all";
   return (
@@ -285,12 +255,12 @@ function EmptyState({
         <QrCode size={20} strokeWidth={1.5} />
       </div>
       <p className="mb-1 text-lg font-medium text-[var(--ink)]">
-        {isFiltered ? t("noFilteredRequests", { filter: t(FILTER_LABEL[filter]).toLowerCase() }) : t("noRequests")}
+        {isFiltered
+          ? t("noFilteredRequests", { filter: t(FILTER_LABEL[filter]).toLowerCase() })
+          : t("noRequests")}
       </p>
       <p className="mb-4 max-w-[32ch] text-base leading-relaxed text-[var(--muted)]">
-        {isFiltered
-          ? t("changeFilter")
-          : t("createQrStartCollecting")}
+        {isFiltered ? t("changeFilter") : t("createQrStartCollecting")}
       </p>
       {!isFiltered && (
         <button

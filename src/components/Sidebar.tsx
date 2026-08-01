@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   BookOpen,
   ChevronsLeft,
   Database,
@@ -10,17 +11,17 @@ import {
   Send,
 } from "lucide-react";
 import { useI18n } from "../lib/i18n";
-import { getDocsHref, type Page } from "../lib/routing";
+import { getBridgeHref, getDocsHref, type Page } from "../lib/routing";
 import { cn } from "../lib/utils";
 
 export type { Page };
 
 type NavItem = {
-  page: Page;
+  page?: Page;
+  id: string;
   labelKey: string;
   href: string;
   icon: LucideIcon;
-  group: "operate" | "manage" | "reference";
 };
 
 type Props = {
@@ -33,21 +34,21 @@ type Props = {
 };
 
 const navItems: NavItem[] = [
-  { page: "dashboard",     labelKey: "overview",      href: "/",               icon: LayoutGrid, group: "operate" },
-  { page: "qr-payments",   labelKey: "qrPayments",    href: "/qr-payments",    icon: QrCode,     group: "operate" },
-  { page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send,       group: "operate" },
-  { page: "statements",    labelKey: "statements",    href: "/statements",     icon: FileText,   group: "manage"  },
-  { page: "import-export", labelKey: "backup",        href: "/import-export",  icon: Database,   group: "manage"  },
-  { page: "docs",          labelKey: "documentation", href: "/docs",           icon: BookOpen,   group: "reference" },
+  { id: "dashboard", page: "dashboard",     labelKey: "overview",      href: "/",               icon: LayoutGrid },
+  { id: "qr",        page: "qr-payments",   labelKey: "qrPayments",    href: "/qr-payments",    icon: QrCode },
+  { id: "send",      page: "payments",      labelKey: "directSend",    href: "/payments",       icon: Send },
+  { id: "bridge",                              labelKey: "bridge",        href: "/bridge",         icon: ArrowLeftRight },
+  { id: "statements",page: "statements",    labelKey: "statements",    href: "/statements",     icon: FileText },
+  { id: "export",    page: "import-export", labelKey: "backup",        href: "/import-export",  icon: Database },
+  { id: "docs",      page: "docs",          labelKey: "documentation", href: "/docs",           icon: BookOpen },
 ];
 
 /**
- * Primary navigation rail. Quiet, plain-language group headings, calm
- * active state, no mono-uppercase chrome.
+ * Primary navigation rail. One uninterrupted product hierarchy keeps every
+ * destination equally discoverable without artificial section gaps.
  */
 export default function Sidebar({ isCollapsed: rawCollapsed, setIsCollapsed, page, onNavigate, inDrawer = false }: Props) {
   const { t } = useI18n();
-  const groups: NavItem["group"][] = ["operate", "manage", "reference"];
   const isCollapsed = inDrawer ? false : rawCollapsed;
   // Labels stay mounted and clip/fade during the width transition so the
   // rail and its contents animate as one piece instead of popping.
@@ -88,63 +89,52 @@ export default function Sidebar({ isCollapsed: rawCollapsed, setIsCollapsed, pag
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-4">
-        {groups.map((group, gi) => {
-          const items = navItems.filter((i) => i.group === group);
-          return (
-            <div key={group} className={cn("py-1.5", gi > 0 && "mt-4")}>
-              <p className={cn("mb-2 overflow-hidden px-5 text-xs font-medium text-[var(--muted)]", labelCls)}>
-                {t(group)}
-              </p>
-              {items.map((item) => {
-                const Icon = item.icon;
-                // Documentation lives on the dedicated docs subdomain; link
-                // there (cross-origin) rather than the in-app /docs route.
-                const isDocs = item.page === "docs";
-                const href = isDocs ? getDocsHref() : item.href;
-                const isActive =
-                  !isDocs &&
-                  (page === item.page ||
-                    (item.page === "qr-payments" && page === "pay"));
-                const itemLabel = t(item.labelKey);
+      <div className="flex flex-1 flex-col gap-1 overflow-y-auto py-4">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          // Documentation lives on the dedicated docs subdomain; link there
+          // rather than mounting it inside the authenticated console shell.
+          const isDocs = item.page === "docs";
+          const isBridge = item.id === "bridge";
+          const href = isDocs ? getDocsHref() : isBridge ? getBridgeHref() : item.href;
+          const isActive =
+            !isDocs &&
+            (page === item.page || (item.page === "qr-payments" && page === "pay"));
+          const itemLabel = t(item.labelKey);
 
-                return (
-                  <a
-                    key={item.page}
-                    href={href}
-                    onClick={(e) => onNavigate(e, href)}
-                    title={isCollapsed ? itemLabel : undefined}
-                    aria-current={isActive ? "page" : undefined}
-                    className={cn(
-                      // px stays constant: the 16px icon sits centered in the
-                      // 40px collapsed item, so it never shifts horizontally.
-                      "relative mx-2 flex items-center gap-3 overflow-hidden rounded-md px-3 py-[7px] text-base transition-colors",
-                      isActive
-                        ? "bg-[var(--shell-active)] text-[var(--ink)] font-medium shadow-[0_0_0_1px_var(--line)]"
-                        : "text-[var(--muted)] hover:bg-[var(--shell-active)] hover:text-[var(--ink)]",
-                    )}
-                  >
-                    <Icon
-                      size={16}
-                      strokeWidth={1.75}
-                      className={cn(
-                        "flex-shrink-0 transition-colors",
-                        isActive ? "text-[var(--ink)]" : "text-[var(--muted)]",
-                      )}
-                    />
-                    <span className={labelCls}>{itemLabel}</span>
-                    {isDocs && (
-                      <ExternalLink
-                        size={12}
-                        strokeWidth={1.75}
-                        className={cn("ml-auto flex-shrink-0 text-[var(--muted-soft)]", labelCls)}
-                        aria-hidden="true"
-                      />
-                    )}
-                  </a>
-                );
-              })}
-            </div>
+          return (
+            <a
+              key={item.id}
+              href={href}
+              onClick={(e) => onNavigate(e, href)}
+              title={isCollapsed ? itemLabel : undefined}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                // Constant padding keeps the icon fixed during rail collapse.
+                "relative mx-2 flex items-center gap-3 overflow-hidden rounded-md px-3 py-[7px] text-base transition-colors",
+                isActive
+                  ? "bg-[var(--shell-active)] font-medium text-[var(--ink)] shadow-[0_0_0_1px_var(--line)]"
+                  : "text-[var(--muted)] hover:bg-[var(--shell-active)] hover:text-[var(--ink)]",
+              )}
+            >
+              <Icon
+                size={16}
+                strokeWidth={1.75}
+                className={cn(
+                  "flex-shrink-0 transition-colors",
+                  isActive ? "text-[var(--ink)]" : "text-[var(--muted)]",
+                )}
+              />
+              <span className={labelCls}>{itemLabel}</span>
+              {(isDocs || isBridge) && (
+                <ExternalLink
+                  size={12}
+                  strokeWidth={1.75}
+                  className={cn("ml-auto flex-shrink-0 text-[var(--muted-soft)]", labelCls)}
+                  aria-hidden="true"
+                />
+              )}
+            </a>
           );
         })}
       </div>

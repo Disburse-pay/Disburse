@@ -1,14 +1,15 @@
-# Disburse Documentation
+# Disburse documentation
 
-Welcome to the Disburse documentation. Disburse is a receipt layer for stablecoin payments.
+Disburse is a testnet receipt layer for Arc stablecoin payments. New QR
+requests are wallet-authorized and server-backed; direct sends and confirmed
+QR payments can produce signed Portable Settlement Proofs.
 
-Issue a QR invoice. The payer settles in USDC from any supported chain. Disburse turns the onchain transfer into a structured, verifiable receipt. This receipt is a document your accountant, auditor, or tax office can file.
-
-## Table of Contents
+Start here:
 
 1. [Payments and QR](01-Payments-and-QR.md)
-2. [Prediction Markets (Beta)](02-Prediction-Markets.md)
-3. [Compliance and Receipts](03-Compliance-and-Receipts.md)
-5. [Webhooks and API](05-Webhooks-and-API.md)
-6. [Smart Contracts](06-Smart-Contracts.md)
-7. [Credit (revenue-backed lines)](07-Credit.md)
+2. [Compliance and receipts](03-Compliance-and-Receipts.md)
+3. [Webhooks and API](05-Webhooks-and-API.md)
+4. [Smart contracts](06-Smart-Contracts.md)
+
+This documentation covers only the Arc Testnet payment gateway, QR invoices,
+receipts, PSP verification, statements, and payment webhooks.

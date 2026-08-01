@@ -1,27 +1,54 @@
-# Compliance and Receipts
+# Compliance and receipts
 
-Disburse turns on-chain transfers into structured, verifiable documents suitable for accounting, tax reporting, and auditing.
+Disburse turns confirmed testnet transfers into structured records that can
+support accounting and audit workflows. These artifacts are technical evidence,
+not legal, tax, or regulatory approval.
 
-## Portable Settlement Proofs (PSP)
+## Portable Settlement Proofs
 
-Every settled payment can produce a Portable Settlement Proof (PSP). A PSP is a signed, content-addressed JSON document verifiable in three ways:
+A PSP is a signed, content-addressed JSON document. Verification has distinct
+levels:
 
-1. **Offline**: Using the `@disburse/psp-verify` npm package.
-2. **CLI**: Running `npx @disburse/psp-verify proof.json --issuer 0x...`
-3. **On-chain**: Calling `PspVerifier.verify` on Arc.
+1. **Self-consistency** checks that the digest, UID, document, and signature
+   agree. This does not establish trust because the issuer key came from the
+   same document.
+2. **Trusted offline verification** uses
+   `npx @disburse/psp-verify proof.json --issuer 0x...`, where the issuer address
+   comes from independent configuration. This verifies the signed document but
+   reports settlement as not checked.
+3. **PspVerifier v2 verification** requires a separately signed EIP-712
+   `onchainClaim` bound to a deployed verifier. Direct mode checks a trusted
+   issuer only; settlement mode also checks a versioned registered settlement
+   contract.
 
-PSPs do not require trust in Disburse infrastructure. They mathematically prove that a specific stablecoin invoice was settled by a specific on-chain transfer.
+Legacy PSPs without a v2 claim remain eligible for trusted offline
+verification, but must not be described as onchain settlement-verified.
 
-## Export Formats
+`createdAt` is unsigned PSP v1 envelope metadata. It is never used to derive
+statement periods or settlement chronology; those use the signed
+`settlement.settledAt` field.
 
-A successful verification produces three export formats. All are derived from the same underlying on-chain fact.
+## Export formats
 
-* **VSR (JSON)**: Structured settlement record with a SHA-256 fingerprint. Built for auditors and third-party verifiers.
-* **UBL 2.1 (XML)**: Machine-readable invoice compatible with existing EU e-invoicing pipelines, public sector systems, and enterprise AP systems.
-* **PDF**: Clean one-page receipt with amount, parties, transaction hash, and an Arcscan link. Ideal for human reading and finance inboxes.
+- **JSON/local VSR:** a structured settlement record with a self-generated
+  fingerprint for change detection. This fingerprint is not an issuer
+  signature; use the signed PSP when independent issuer trust is required.
+  workflows.
+- **UBL 2.1 XML:** a standards-based machine-readable invoice starting point.
+  Country, network, and recipient-specific e-invoicing profiles may require
+  additional validation or fields.
+- **PDF:** a human-readable summary with the parties, amount, transaction hash,
+  and explorer link.
 
-## Statement Generation
+The PDF and XML are derived documents. Verify the PSP trust root and, when
+needed, the underlying chain evidence before relying on them.
 
-Disburse can generate statement bundles for counterparties. This aggregates PSPs over a time period into exportable statement documents. 
+## Statements
 
-Use cases include monthly reconciliation, tax reporting, and audit bundles.
+Statement generation requires a short-lived wallet authorization, and the
+authorizing wallet must be a payer or recipient in the signed query. Database
+filters are applied before pagination. Token values are summed with exact
+integer arithmetic; mixed USDC/EURC statements report separate totals.
+
+Statement bundles can support reconciliation and audit collection, but users
+remain responsible for jurisdiction-specific tax and accounting treatment.

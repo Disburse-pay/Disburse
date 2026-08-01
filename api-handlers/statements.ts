@@ -1,8 +1,28 @@
-import { assertMethod, readJsonBody, readQueryString, sendError, sendJson, type ApiRequest, type ApiResponse } from "../server/http.js";
-import { generateStatement, type StatementQuery } from "../server/statements.js";
+import {
+  assertMethod,
+  HttpError,
+  readHeaderString,
+  readJsonBody,
+  readQueryString,
+  sendError,
+  sendJson,
+  type ApiRequest,
+  type ApiResponse
+} from "../server/http.js";
+import {
+  authorizeStatementQuery,
+  generateStatement,
+  type StatementAccessCredential,
+  type StatementQuery
+} from "../server/statements.js";
+import { enforceRedisRateLimit } from "../server/rate-limit.js";
 
 /**
  * Statement Bundle API
+ *
+ * Every request requires a short-lived EIP-712 authorization in the
+ * x-disburse-wallet, x-disburse-expires-at, and x-disburse-signature headers.
+ * The authorizing wallet must be one of the requested statement parties.
  *
  * POST /api/statements — Generate a statement bundle
  *
@@ -30,17 +50,13 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         from: readQueryString(request, "from") || undefined,
         to: readQueryString(request, "to") || undefined,
         token: (readQueryString(request, "token") as "USDC" | "EURC") || undefined,
-        networkMode: (readQueryString(request, "network_mode") as "testnet" | "mainnet") || "testnet"
+        networkMode: (readQueryString(request, "network_mode") as "testnet" | "mainnet") || "testnet",
+        limit: readOptionalLimit(readQueryString(request, "limit"))
       };
 
-      if (!query.recipient && !query.payer) {
-        sendJson(response, 400, {
-          error: "Provide at least one of: recipient, payer (address filter required)."
-        });
-        return;
-      }
-
-      const bundle = await generateStatement(query);
+      const auth = await authorizeStatementQuery(readStatementCredential(request), query);
+      await enforceRedisRateLimit("statements", auth.wallet);
+      const bundle = await generateStatement(auth.query, auth.wallet);
       sendJson(response, 200, bundle);
       return;
     }
@@ -58,16 +74,29 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       limit: typeof body.limit === "number" ? body.limit : undefined
     };
 
-    if (!query.recipient && !query.payer) {
-      sendJson(response, 400, {
-        error: "Provide at least one of: recipient, payer (address filter required)."
-      });
-      return;
-    }
-
-    const bundle = await generateStatement(query);
+    const auth = await authorizeStatementQuery(readStatementCredential(request), query);
+    await enforceRedisRateLimit("statements", auth.wallet);
+    const bundle = await generateStatement(auth.query, auth.wallet);
     sendJson(response, 200, bundle);
   } catch (error) {
     sendError(response, error);
   }
+}
+
+function readStatementCredential(request: ApiRequest): StatementAccessCredential {
+  const wallet = readHeaderString(request, "x-disburse-wallet")?.trim();
+  const expiresAt = readHeaderString(request, "x-disburse-expires-at")?.trim();
+  const signature = readHeaderString(request, "x-disburse-signature")?.trim();
+  if (!wallet || !expiresAt || !signature) {
+    throw new HttpError(401, "Statement authorization headers are required.");
+  }
+  return { wallet, expiresAt, signature };
+}
+
+function readOptionalLimit(value: string | undefined): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new HttpError(400, "limit must be a positive integer.");
+  }
+  return Number(value);
 }

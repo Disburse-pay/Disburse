@@ -17,9 +17,9 @@ export type DocsPage = {
   sections: DocsSection[];
 };
 
-/** Top-level category in the gitbook sidebar (e.g. "App", "Arcade"). */
+/** Top-level category in the gitbook sidebar. */
 export type DocsCategory = {
-  slug: "app" | "arcade";
+  slug: string;
   title: string;
   pages: DocsPage[];
 };

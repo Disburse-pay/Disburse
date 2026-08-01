@@ -13,27 +13,24 @@ import { useReceipt } from "./context";
  * These fields appear here and ONLY here in the receipt surface.
  */
 export default function ReceiptSummary() {
-  const { request, receipt, attestation, onCopyFingerprint, onExportJson, onExportUbl, onExportPdf } = useReceipt();
+  const { request, receipt, attestation, onCopyFingerprint, onExportJson, onExportUbl, onExportPdf } =
+    useReceipt();
 
   const chainId = receipt?.chainId ?? ARC_CHAIN_ID;
   const networkLabel = chainId === ARC_CHAIN_ID ? "Arc Testnet" : getCrossChainLabel(chainId as never);
   const fingerprint = attestation?.fingerprint;
-  const shortFingerprint = fingerprint
-    ? `${fingerprint.slice(0, 10)}…${fingerprint.slice(-6)}`
-    : undefined;
+  const shortFingerprint = fingerprint ? `${fingerprint.slice(0, 10)}…${fingerprint.slice(-6)}` : undefined;
   const shortTx = receipt ? `${receipt.txHash.slice(0, 10)}…${receipt.txHash.slice(-8)}` : undefined;
   const issuedAt = receipt?.confirmedAt;
 
-  const statusPill = statusToPill(request.status);
+  const statusTone = statusToTone(request.status);
 
   return (
     <div className="px-5 pb-4 pt-4">
       {/* Headline: amount + status. Each appears once on the whole receipt. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-[var(--muted)]">
-            Verifiable Settlement Receipt
-          </p>
+          <p className="text-sm font-medium text-[var(--muted)]">Verifiable Settlement Receipt</p>
           <h3 className="mt-1.5 truncate text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
             {request.label || "Untitled request"}
           </h3>
@@ -43,16 +40,14 @@ export default function ReceiptSummary() {
             <span className="font-mono text-2xl font-semibold tracking-[-0.01em] tabular-nums text-[var(--ink)]">
               {receipt?.amount ?? request.amount}
             </span>
-            <span className="text-sm font-medium text-[var(--muted)]">
-              {receipt?.token ?? request.token}
-            </span>
+            <span className="text-sm font-medium text-[var(--muted)]">{receipt?.token ?? request.token}</span>
           </div>
           <span
             className="inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-2xs tracking-[0.06em]"
-            style={{ color: statusPill.color, background: statusPill.bg }}
+            style={{ color: statusTone.color, background: statusTone.bg }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusPill.color }} />
-            {statusPill.label}
+            <span className="h-px w-3" style={{ background: statusTone.color }} />
+            {statusTone.label}
           </span>
         </div>
       </div>
@@ -69,7 +64,7 @@ export default function ReceiptSummary() {
         {shortTx && receipt && (
           <Field.Row label="Tx hash">
             <span className="inline-flex items-center gap-1.5">
-              <span className="border-b border-dotted border-[var(--muted)]">{shortTx}</span>
+              <span className="border-b border-solid border-[var(--muted)]">{shortTx}</span>
               {receipt.explorerUrl && (
                 <a
                   href={receipt.explorerUrl}
@@ -84,7 +79,7 @@ export default function ReceiptSummary() {
             </span>
           </Field.Row>
         )}
-        {attestation?.uid && <Field.Row label="VSR UID">{attestation.uid}</Field.Row>}
+        {attestation?.uid && <Field.Row label="Local VSR UID">{attestation.uid}</Field.Row>}
       </dl>
 
       {shortFingerprint && (
@@ -93,12 +88,8 @@ export default function ReceiptSummary() {
             <ShieldCheck size={14} strokeWidth={1.6} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-[var(--muted)]">
-              SHA-256 fingerprint
-            </p>
-            <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink)]">
-              {shortFingerprint}
-            </p>
+            <p className="text-xs font-medium text-[var(--muted)]">SHA-256 fingerprint</p>
+            <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink)]">{shortFingerprint}</p>
           </div>
           {onCopyFingerprint && (
             <Button
@@ -116,22 +107,35 @@ export default function ReceiptSummary() {
 
       {(onExportJson || onExportUbl || onExportPdf || receipt?.explorerUrl) && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-3">
-          <p className="text-xs font-medium text-[var(--muted)]">
-            Export
-          </p>
+          <p className="text-xs font-medium text-[var(--muted)]">Export</p>
           <div className="flex flex-wrap gap-1.5">
             {onExportJson && (
-              <Button variant="secondary" size="sm" onClick={onExportJson} iconLeft={<FileText size={12} strokeWidth={1.75} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onExportJson}
+                iconLeft={<FileText size={12} strokeWidth={1.75} />}
+              >
                 JSON
               </Button>
             )}
             {onExportUbl && (
-              <Button variant="secondary" size="sm" onClick={onExportUbl} iconLeft={<FileText size={12} strokeWidth={1.75} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onExportUbl}
+                iconLeft={<FileText size={12} strokeWidth={1.75} />}
+              >
                 UBL 2.1
               </Button>
             )}
             {onExportPdf && (
-              <Button variant="secondary" size="sm" onClick={onExportPdf} iconLeft={<ReceiptText size={12} strokeWidth={1.75} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onExportPdf}
+                iconLeft={<ReceiptText size={12} strokeWidth={1.75} />}
+              >
                 PDF
               </Button>
             )}
@@ -153,9 +157,9 @@ export default function ReceiptSummary() {
   );
 }
 
-type Pill = { label: string; color: string; bg: string };
+type StatusTone = { label: string; color: string; bg: string };
 
-function statusToPill(status: string): Pill {
+function statusToTone(status: string): StatusTone {
   switch (status) {
     case "paid":
       return { label: "Verified onchain", color: "var(--green-text)", bg: "var(--green-bg)" };

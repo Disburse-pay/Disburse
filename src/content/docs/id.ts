@@ -1,7 +1,7 @@
 import { ARC_CHAIN_ID, ARC_RPC_URL, ARC_RPC_ENDPOINTS, TOKENS } from "../../lib/arc";
 import { PAYMENT_VALIDITY_MINUTES } from "../../lib/payments";
 import type { DocsSection, DocsSummaryItem } from "./types";
-import { docsSections, arcadeSections } from "./en";
+import { docsSections } from "./en";
 
 /**
  * Fully translated sections, keyed by the canonical English title from en.ts.
@@ -61,19 +61,6 @@ const translated: Record<string, DocsSection> = {
       "Gas: estimasi dipakai untuk tampilan dan pemeriksaan saldo; wallet menentukan gas transaksi akhir saat signing."
     ]
   },
-  "Local ledger and realtime": {
-    title: "Ledger lokal dan realtime",
-    body: [
-      "Permintaan QR dan receipt disimpan di localStorage browser agar requester bisa mengelola pekerjaan tanpa membuat akun. Ledger mendukung export dan import JSON untuk backup atau migrasi.",
-      "Saat Supabase dikonfigurasi, permintaan QR juga bisa ditulis melalui fungsi API Vercel. Event realtime membuat tampilan requester dapat menutup QR code ketika payer mengirim, mengonfirmasi, menggagalkan, atau membuat permintaan kedaluwarsa."
-    ],
-    points: [
-      "Storage key: disburse.requests dan disburse.receipts.",
-      "Key lama tetap dibaca: arc-pay-desk.requests dan arc-pay-desk.receipts.",
-      "Permintaan diindeks memakai request id. Receipt di-upsert memakai request id atau transaction hash.",
-      "URL explorer hasil import dibuat ulang dari hash transaksi Arcscan yang sudah diverifikasi."
-    ]
-  },
   "Invoice output": {
     title: "Output invoice",
     body: [
@@ -105,23 +92,14 @@ const translated: Record<string, DocsSection> = {
 const fallbackTitles: Record<string, string> = {
   "What Disburse is": "Apa itu Disburse",
   "Tech and stack": "Teknologi dan stack",
+  "Wallet-scoped history": "Riwayat khusus wallet",
   Contracts: "Kontrak",
   "Portable Settlement Proofs": "Portable Settlement Proofs",
   "API and webhooks": "API dan webhook"
 };
 
-const arcadeTitles: Record<string, string> = {
-  "Cluck Run": "Cluck Run",
-  "The coin slot": "Slot koin",
-  "Runs and the leaderboard": "Run dan leaderboard"
-};
-
 export const docsSectionsId: DocsSection[] = docsSections.map(
   (section) => translated[section.title] ?? { ...section, title: fallbackTitles[section.title] ?? section.title },
-);
-
-export const arcadeSectionsId: DocsSection[] = arcadeSections.map(
-  (section) => ({ ...section, title: arcadeTitles[section.title] ?? section.title }),
 );
 
 export const docsSummaryItemsId: DocsSummaryItem[] = [

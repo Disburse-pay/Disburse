@@ -1,18 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { formatUnits, parseGwei, parseUnits, type Address } from "viem";
-import { ARC_MIN_GAS_PRICE, TOKENS } from "./arc";
+import {
+  encodeAbiParameters,
+  encodeEventTopics,
+  formatUnits,
+  parseGwei,
+  parseUnits,
+  type Address,
+  type Hash,
+  type TransactionReceipt
+} from "viem";
+import { ARC_MIN_GAS_PRICE, TOKENS, erc20Abi } from "./arc";
 import {
   applyArcGasFloor,
+  assertSuccessfulTransactionReceipt,
   buildErc20TransferTransaction,
-  buildLogBlockRanges,
+  getConfirmedTokenTransfer,
   getSpendabilityCheck,
   hasInsufficientNativeSpendBalance,
-  resolveTransferVerification,
   selectActiveRpcEndpoint,
   type Balances,
   type RpcEndpointStatus
 } from "./onchain";
-import type { DecodedTransfer, PaymentRequest } from "./payments";
+import type { PaymentRequest } from "./payments";
 
 const recipient = "0x1111111111111111111111111111111111111111" as Address;
 const sender = "0x2222222222222222222222222222222222222222" as Address;
@@ -27,16 +36,6 @@ const baseRequest: PaymentRequest = {
   startBlock: "700",
   status: "open"
 };
-
-function transfer(value: bigint, blockNumber: bigint, suffix: string): DecodedTransfer {
-  return {
-    txHash: `0x${suffix.repeat(64)}` as `0x${string}`,
-    blockNumber,
-    from: sender,
-    to: recipient,
-    value
-  };
-}
 
 describe("Arc gas policy", () => {
   it("enforces the documented 20 gwei minimum gas price", () => {
@@ -67,6 +66,69 @@ describe("wallet transfer transaction", () => {
     expect(transaction.nonce).toBe("0x0");
     expect(transaction).not.toHaveProperty("gas");
     expect(transaction).not.toHaveProperty("gasPrice");
+  });
+});
+
+describe("transaction receipt confirmation", () => {
+  const hash = `0x${"d".repeat(64)}` as Hash;
+  const amount = 12_340_000n;
+  const transferLog = {
+    address: TOKENS.USDC.address,
+    blockNumber: 701n,
+    transactionHash: hash,
+    logIndex: 4,
+    topics: encodeEventTopics({
+      abi: erc20Abi,
+      eventName: "Transfer",
+      args: { from: sender, to: recipient }
+    }),
+    data: encodeAbiParameters([{ type: "uint256" }], [amount])
+  };
+
+  it("rejects reverted and replacement receipts", () => {
+    expect(() =>
+      assertSuccessfulTransactionReceipt(
+        { status: "reverted", transactionHash: hash } as unknown as TransactionReceipt,
+        hash
+      )
+    ).toThrow("reverted");
+    expect(() =>
+      assertSuccessfulTransactionReceipt(
+        {
+          status: "success",
+          transactionHash: `0x${"e".repeat(64)}`
+        } as unknown as TransactionReceipt,
+        hash
+      )
+    ).toThrow("replaced");
+  });
+
+  it("accepts only the exact token, sender, recipient, and amount log", () => {
+    const receipt = {
+      status: "success",
+      transactionHash: hash,
+      blockNumber: 701n,
+      logs: [transferLog]
+    } as unknown as TransactionReceipt;
+
+    expect(getConfirmedTokenTransfer(receipt, hash, baseRequest, sender)).toMatchObject({
+      txHash: hash,
+      from: sender,
+      to: recipient,
+      value: amount,
+      logIndex: 4
+    });
+    expect(() =>
+      getConfirmedTokenTransfer(receipt, hash, { ...baseRequest, amount: "12.35" }, sender)
+    ).toThrow("did not emit");
+    expect(() =>
+      getConfirmedTokenTransfer(
+        receipt,
+        hash,
+        baseRequest,
+        "0x3333333333333333333333333333333333333333"
+      )
+    ).toThrow("did not emit");
   });
 });
 
@@ -115,43 +177,6 @@ describe("payer spendability checks", () => {
     expect(getSpendabilityCheck(lowTokenBalances, transfer, estimate).hasEnoughToken).toBe(false);
     expect(hasInsufficientNativeSpendBalance(fundedBalances, transfer, estimate)).toBe(false);
     expect(hasInsufficientNativeSpendBalance(lowGasBalances, transfer, estimate)).toBe(true);
-  });
-});
-
-describe("Arc log scan windows", () => {
-  it("splits scans into 10,000 block windows by default", () => {
-    expect(buildLogBlockRanges(100n, 20_100n)).toEqual([
-      { fromBlock: 100n, toBlock: 10_099n },
-      { fromBlock: 10_100n, toBlock: 20_099n },
-      { fromBlock: 20_100n, toBlock: 20_100n }
-    ]);
-  });
-
-  it("returns no ranges when the request starts after the latest block", () => {
-    expect(buildLogBlockRanges(900n, 899n)).toEqual([]);
-  });
-});
-
-describe("transfer verification resolution", () => {
-  it("prioritizes an exact transfer over a newer possible match", () => {
-    const result = resolveTransferVerification(baseRequest, [
-      transfer(5_000_000n, 701n, "a"),
-      transfer(12_340_000n, 702n, "b"),
-      transfer(9_000_000n, 703n, "c")
-    ]);
-
-    expect(result.status).toBe("paid");
-    expect(result.status === "paid" ? result.receipt.txHash : undefined).toBe(`0x${"b".repeat(64)}`);
-  });
-
-  it("returns the latest transfer as a possible match when amount differs", () => {
-    const result = resolveTransferVerification(baseRequest, [
-      transfer(5_000_000n, 701n, "a"),
-      transfer(9_000_000n, 703n, "c")
-    ]);
-
-    expect(result.status).toBe("possible_match");
-    expect(result.status === "possible_match" ? result.transfer.txHash : undefined).toBe(`0x${"c".repeat(64)}`);
   });
 });
 

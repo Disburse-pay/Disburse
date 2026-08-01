@@ -93,7 +93,7 @@ export const publicClient = createPublicClient({
   )
 }) as ReturnType<typeof createPublicClient>;
 
-export function createArcPublicClient(rpcUrl?: string) {
+export function createArcPublicClient(rpcUrl?: string): ReturnType<typeof createPublicClient> {
   if (!rpcUrl) return publicClient;
   return createPublicClient({
     chain: arcTestnet,

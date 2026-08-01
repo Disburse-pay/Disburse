@@ -5,6 +5,7 @@ import psp from "../api-handlers/psp.js";
 import pspVerify from "../api-handlers/psp-verify.js";
 import pspViewer from "../api-handlers/psp-viewer.js";
 import disburse from "../api-handlers/disburse.js";
+import history from "../api-handlers/history.js";
 import ids from "../api-handlers/ids.js";
 import notifications from "../api-handlers/notifications.js";
 import qrConfirmations from "../api-handlers/qr-confirmations.js";
@@ -21,6 +22,7 @@ const handlers: Record<string, Handler> = {
   "psp-verify": pspVerify,
   "psp-viewer": pspViewer,
   disburse,
+  history,
   ids,
   notifications,
   "qr-confirmations": qrConfirmations,
