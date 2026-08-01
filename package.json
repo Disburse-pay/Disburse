@@ -18,8 +18,9 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@circle-fin/adapter-viem-v2": "1.12.1",
-    "@circle-fin/bridge-kit": "1.11.1",
+    "@circle-fin/adapter-solana": "1.6.4",
+    "@circle-fin/adapter-viem-v2": "1.14.1",
+    "@circle-fin/bridge-kit": "1.12.2",
     "@dynamic-labs/ethereum": "4.95.1",
     "@dynamic-labs/sdk-react-core": "4.95.1",
     "@redis/client": "6.2.0",
