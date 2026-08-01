@@ -81,5 +81,17 @@ describe("routing", () => {
     stubLocation({ hostname: "localhost", pathname: "/bridge" });
     expect(isBridgeSurface()).toBe(true);
     expect(getBridgeHref()).toBe("/bridge");
+
+    stubLocation({
+      hostname: "app.disburse.online",
+      pathname: "/bridge",
+      port: "",
+      protocol: "https:"
+    });
+    expect(isBridgeSurface()).toBe(true);
+    expect(getBridgeHref()).toBe("/bridge");
+
+    stubLocation({ hostname: "www.disburse.online", port: "", protocol: "https:" });
+    expect(getBridgeHref()).toBe("https://app.disburse.online/bridge");
   });
 });
